@@ -35,10 +35,18 @@ jobs:
 
       - name: Setup XNU build environment
         run: |
+          export XNU_SRC="$PWD/xnu-src"
+          export XNU_ARCH=arm64e
+          export MACHINE=BCM2837
+          export RC_DARWIN_KERNEL_VERSION=26.0.0
+          export RC_ProjectSourceVersion=12377.121.6
+          export RC_ProjectName=xnu
+          export XNU_SDK_VERSION=26.0
+
           cd base/xnu-deps
           bash setup.sh --stage1
           cd ../..
-          chmod -R +x base/xnu-deps/host/bin
+          chmod -R +x base/xnu-deps/host/bin base/xnu-deps/build/pthread/*.sh
 
           # Install availability.pl and internal headers into host Xcode iPhoneOS SDK
           SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
@@ -56,6 +64,19 @@ jobs:
             echo "Synced overlay usr/local headers to $SDK_PATH/usr/local"
           fi
 
+          # Build stage 2: compile libfirehose_kernel.a and libpthread_kext.a
+          echo "Building stage 2 static libraries (firehose & pthread)..."
+          cd base/xnu-deps
+          bash setup.sh --stage2
+          cd ../..
+
+          # Install compiled libraries into host SDK and target build obj dir
+          if [ -d base/xnu-deps/sdk/iPhoneOS.xnu.sdk/usr/local/lib/kernel ]; then
+            sudo cp -v base/xnu-deps/sdk/iPhoneOS.xnu.sdk/usr/local/lib/kernel/*.a "$SDK_PATH/usr/local/lib/kernel/" 2>/dev/null || true
+            mkdir -p xnu-src/BUILD/obj/DEVELOPMENT_ARM64_BCM2837
+            cp -v base/xnu-deps/sdk/iPhoneOS.xnu.sdk/usr/local/lib/kernel/*.a xnu-src/BUILD/obj/DEVELOPMENT_ARM64_BCM2837/ 2>/dev/null || true
+          fi
+
       - name: Compile XNU Kernel
         run: |
           export XNU_SRC="$PWD/xnu-src"
@@ -66,6 +87,7 @@ jobs:
           export RC_ProjectName=xnu
           export XNU_SDK_VERSION=26.0
           export XNU_SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
+          export LIBRARY_PATH="$(xcrun --sdk iphoneos --show-sdk-path)/usr/local/lib/kernel:$PWD/base/xnu-deps/sdk/iPhoneOS.xnu.sdk/usr/local/lib/kernel:$LIBRARY_PATH"
           bash base/xnu-build.sh -j$(sysctl -n hw.ncpu) -k || true
           ls -la xnu-src/BUILD/obj/*/mach.* 2>/dev/null || true
 

@@ -210,7 +210,8 @@ stage1_darwin() {
 # of the kernel build comes first.
 stage2() {
 	[ -f "$XNU_SRC/makedefs/MakeInc.def" ] || die "no kernel tree in $XNU_SRC (xnu/apply.sh makes it)"
-	[ -x host/bin/migcom ] && [ -d "$XNU_SDK_PATH/usr/local/lib/kernel" ] || die "stage 1 has not been done"
+	mkdir -p "$XNU_SDK_PATH/usr/local/lib/kernel"
+	[ -x host/bin/migcom ] || die "stage 1 has not been done"
 	local lib=$XNU_SDK_PATH/usr/local/lib/kernel hdrs=$XNU_SRC/BUILD/obj/EXPORT_HDRS file
 	# three Mach-O headers for the build tools the kernel build compiles for this machine (SETUP/)
 	mkdir -p hostinc/mach-o
@@ -219,19 +220,19 @@ stage2() {
 	done
 	if [ -n "$REBUILD_LIBS" ]; then rm -f $lib/libfirehose_kernel.a $lib/libpthread_kext.a $lib/.arch; fi
 	if [ -f $lib/libfirehose_kernel.a ] && [ -f $lib/libpthread_kext.a ] &&
-		[ "$(cat $lib/.arch 2>/dev/null)" = "${XNU_ARCH:-arm64}" ]; then
+		[ "$(cat $lib/.arch 2>/dev/null)" = "${XNU_ARCH:-arm64e}" ]; then
 		log "stage 2: nothing to do"
 		return 0
 	fi
 	# the libraries are linked into the kernel image, so they have to be built for its architecture
-	[ "$(cat $lib/.arch 2>/dev/null)" = "${XNU_ARCH:-arm64}" ] || rm -f $lib/libfirehose_kernel.a $lib/libpthread_kext.a
+	[ "$(cat $lib/.arch 2>/dev/null)" = "${XNU_ARCH:-arm64e}" ] || rm -f $lib/libfirehose_kernel.a $lib/libpthread_kext.a
 	log "exporting the kernel's headers (xnu-build.sh exporthdrs)"
-	"$DARWIN_REDWOOD/xnu-build.sh" -j$JOBS exporthdrs > exporthdrs.log 2>&1 && [ -d "$hdrs/osfmk" ] ||
-		die "the kernel headers were not exported, see xnu-deps/exporthdrs.log"
+	"$DARWIN_REDWOOD/xnu-build.sh" -j$JOBS exporthdrs ||
+		{ [ -f exporthdrs.log ] && cat exporthdrs.log >&2; die "the kernel headers were not exported"; }
 	if [ ! -f $lib/libfirehose_kernel.a ]; then
 		log "building libfirehose_kernel.a"
 		mkdir -p build/firehose
-		xnu-clang -arch ${XNU_ARCH:-arm64} -c -Os -mkernel -nostdinc -fno-builtin \
+		xnu-clang -arch ${XNU_ARCH:-arm64e} -c -Os -mkernel -nostdinc -fno-builtin \
 			-DKERNEL=1 -DKERNEL_PRIVATE=1 -DXNU_KERNEL_PRIVATE=0 -DPRIVATE=1 -D__DARWIN_64_BIT_INO_T=1 \
 			-DDISPATCH_USE_DTRACE=0 -DOS_ATOMIC_CONFIG_MEMORY_ORDER_DEPENDENCY=1 \
 			-DOS_ATOMIC_CONFIG_STARVATION_FREE_ONLY=0 -DOS_FIREHOSE_SPI=1 -DARM64_BOARD_CONFIG_BCM2837 \
@@ -247,7 +248,7 @@ stage2() {
 		build/pthread/build.sh
 	fi
 	log "stage 2 done; now: ./xnu-build.sh -j$JOBS -k"
-	echo "${XNU_ARCH:-arm64}" > $lib/.arch
+	echo "${XNU_ARCH:-arm64e}" > $lib/.arch
 }
 
 [ -n "$XNU_HOST_DARWIN" ] && stage1() { stage1_darwin; }
