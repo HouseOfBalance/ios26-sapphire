@@ -52,3 +52,10 @@ if [ -f "$D/makedefs/MakeInc.def" ]; then
 	echo "removed -lfirehose_kernel from MakeInc.def"
 fi
 
+# Fix C23 generic builtins (__builtin_clzg / __builtin_ctzg) for compilers < Clang 19
+if [ -f "$D/osfmk/kern/bits.h" ]; then
+	sed -i '' 's/__builtin_clzg(bitmap, 64)/(bitmap ? __builtin_clzll(bitmap) : 64)/g' "$D/osfmk/kern/bits.h" 2>/dev/null || sed -i 's/__builtin_clzg(bitmap, 64)/(bitmap ? __builtin_clzll(bitmap) : 64)/g' "$D/osfmk/kern/bits.h"
+	sed -i '' 's/__builtin_ctzg(bitmap, -1)/(bitmap ? __builtin_ctzll(bitmap) : -1)/g' "$D/osfmk/kern/bits.h" 2>/dev/null || sed -i 's/__builtin_ctzg(bitmap, -1)/(bitmap ? __builtin_ctzll(bitmap) : -1)/g' "$D/osfmk/kern/bits.h"
+	echo "patched clzg/ctzg compatibility in $D/osfmk/kern/bits.h"
+fi
+

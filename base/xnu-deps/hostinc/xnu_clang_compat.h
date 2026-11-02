@@ -7,6 +7,12 @@
 #ifndef XNU_CLANG_COMPAT_H
 #define XNU_CLANG_COMPAT_H
 #if !defined(ASSEMBLER) && !defined(__ASSEMBLER__)
+#if !__has_builtin(__builtin_clzg)
+#define __builtin_clzg(x, fallback) ((x) ? __builtin_clzll((unsigned long long)(x)) : (fallback))
+#endif
+#if !__has_builtin(__builtin_ctzg)
+#define __builtin_ctzg(x, fallback) ((x) ? __builtin_ctzll((unsigned long long)(x)) : (fallback))
+#endif
 #if !__has_builtin(__builtin_xnu_type_signature)
 #define XNU_NO_TYPE_BUILTINS                     1
 #define __builtin_xnu_type_signature(type)       "12"
