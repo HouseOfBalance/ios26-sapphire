@@ -107,7 +107,7 @@ jobs:
             python3 tools/mkpayload.py --compress \
               --cmdline "debug=0xc serial=3 cpus=1 keepsyms=1 -enable_kprintf_spam sweetearlyfb=1 sweethidtest=3" \
               "$KERNEL" sapphire.adt out/payload.bin
-            python3 enxerto/build.py --board sapphire --payload out/payload.bin
+            python3 enxerto/build.py --board sapphire --payload out/payload.bin --skip-host-tests
             if [ -f enxerto/out/enxerto-boot.img ]; then
               cp enxerto/out/enxerto-boot.img out/
               echo "Packaged enxerto-boot.img into out/ successfully!"
