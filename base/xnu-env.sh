@@ -4,7 +4,7 @@
 DARWIN_REDWOOD=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 export DARWIN_REDWOOD
 export THEOS=${THEOS:-$HOME/theos}
-export XNU_SRC=${XNU_SRC:-$DARWIN_REDWOOD/xnu-src/xnu-8796.121.2}
+export XNU_SRC=${XNU_SRC:-$DARWIN_REDWOOD/../xnu-src}
 export XNUDEPS=$DARWIN_REDWOOD/xnu-deps
 export PATH=$XNUDEPS/host/bin:$PATH
 export XNU_SDK_PATH=${XNU_SDK_PATH:-$XNUDEPS/sdk/iPhoneOS.xnu.sdk}

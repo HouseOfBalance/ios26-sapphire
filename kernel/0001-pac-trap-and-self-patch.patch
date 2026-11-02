@@ -176,39 +176,37 @@ index 0000000..f98642a
 +#include <stdbool.h>
 +#include <stddef.h>
 +
-+#if defined(__has_include) && __has_include(<arm/thread.h>)
-+#include <arm/thread.h>
-+#include <mach/machine/thread_status.h>
-+#include <kern/thread.h>
-+#include <kern/task.h>
-+#include <vm/vm_map.h>
-+#else
++#include "pac_decode.h"
++
++/* Forward declarations of XNU kernel types and functions */
 +typedef struct arm_saved_state arm_saved_state_t;
-+typedef void *thread_t;
-+typedef struct task { char pad[32]; struct vm_map *map; } *task_t;
-+typedef struct vm_map { char pad[40]; void *pmap; } *vm_map_t;
-+extern thread_t current_thread(void);
-+extern task_t get_threadtask(thread_t th);
++typedef struct arm_saved_state64 arm_saved_state64_t;
++
++extern arm_saved_state64_t *saved_state64(arm_saved_state_t *state);
 +extern uint64_t get_saved_state_reg(arm_saved_state_t *state, unsigned int reg);
 +extern void set_saved_state_reg(arm_saved_state_t *state, unsigned int reg, uint64_t val);
 +extern uint64_t get_saved_state_sp(arm_saved_state_t *state);
 +extern void set_saved_state_sp(arm_saved_state_t *state, uint64_t sp);
 +extern uint64_t get_saved_state_pc(arm_saved_state_t *state);
 +extern void set_saved_state_pc(arm_saved_state_t *state, uint64_t pc);
-+typedef uint64_t user_addr_t;
-+typedef uint64_t vm_size_t;
-+typedef uint64_t vm_offset_t;
-+#endif
 +
-+#include "pac_decode.h"
++extern int copyin(const void *uaddr, void *kaddr, size_t len);
++extern uintptr_t pmap_find_phys(void *pmap, uintptr_t va);
++extern uint64_t kvtophys(uintptr_t va);
++extern void *current_task(void);
++
++typedef struct task {
++	char pad[32];
++	struct vm_map *map;
++} *task_t;
++
++typedef struct vm_map {
++	char pad[40];
++	void *pmap;
++} *vm_map_t;
 +
 +extern unsigned long gVirtBase, gPhysBase;
 +#define PHYSTOKV(pa) ((uint64_t)(pa) + (gVirtBase - gPhysBase))
-+
-+extern uint64_t kvtophys(vm_offset_t va);
-+extern uint64_t pmap_find_phys(void *pmap, uint64_t va);
-+extern int copyin(const user_addr_t user_addr, void *kernel_addr, vm_size_t nbytes);
-+extern void loader_log_line(const char *line);
 +
 +/* Thống kê hiệu năng runtime */
 +static uint64_t pac_patch_count = 0;
@@ -256,7 +254,7 @@ index 0000000..f98642a
 +	uint64_t loaded_val = 0;
 +
 +	if (is_user) {
-+		if (copyin((user_addr_t)target_addr, &loaded_val, sizeof(loaded_val)) != 0) {
++		if (copyin((const void *)target_addr, &loaded_val, sizeof(loaded_val)) != 0) {
 +			/* Lỗi truy cập bộ nhớ userland: trả về false để kernel xử lý */
 +			return false;
 +		}
@@ -299,15 +297,12 @@ index 0000000..f98642a
 +
 +	/* 1. Đọc mã lệnh insn 32-bit từ vị trí PC */
 +	if (is_user) {
-+		if (copyin((user_addr_t)pc, &insn, sizeof(insn)) != 0) {
++		if (copyin((const void *)pc, &insn, sizeof(insn)) != 0) {
 +			return false;
 +		}
-+		task_t task = get_threadtask(current_thread());
-+		if (task && task->map) {
-+			pmap = (void *)task->map->pmap;
-+		}
-+		if (!pmap) return false;
-+		pa = pmap_find_phys(pmap, pc);
++		task_t task = (task_t)current_task();
++		if (!task || !task->map || !task->map->pmap) return false;
++		pa = (uint64_t)pmap_find_phys(task->map->pmap, pc);
 +	} else {
 +		insn = *(volatile uint32_t *)pc;
 +		pa = kvtophys(pc);

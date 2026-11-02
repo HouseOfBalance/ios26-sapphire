@@ -28,7 +28,7 @@ source "$HERE/../xnu-env.sh"
 cd "$XNUDEPS"
 JOBS=${JOBS:-$(nproc 2>/dev/null || sysctl -n hw.ncpu)}
 CCTOOLS=$THEOS/toolchain/linux/iphone/bin
-IOS_SDK=$THEOS/sdks/iPhoneOS16.5.sdk
+IOS_SDK=${IOS_SDK:-$THEOS/sdks/iPhoneOS.sdk}
 MACOS_SDK_URL=https://github.com/joseluisq/macosx-sdks/releases/download/13.3/MacOSX13.3.sdk.tar.xz
 
 log() { echo "setup: $*"; }

@@ -11,7 +11,16 @@ if [ -f "$K/0001-pac-trap-and-self-patch.patch" ]; then
 	echo "applied 0001-pac-trap-and-self-patch.patch (ARMv8.0 PAC Trap-and-Self-Patch engine)"
 fi
 echo "dada kernel tree in $D"
-echo "redwood only: tools/mk-focaltech-fw.py <your focaltech_ts_fw_m20.bin> $D/bsd/dev/redwood_focaltech_fw.h"
+if [ ! -f "$D/bsd/dev/redwood_focaltech_fw.h" ]; then
+	cat << 'EOF' > "$D/bsd/dev/redwood_focaltech_fw.h"
+#ifndef _REDWOOD_FOCALTECH_FW_H
+#define _REDWOOD_FOCALTECH_FW_H
+#define FOCALTECH_FW_LENGTH 0
+static const unsigned char focaltech_fw[1] = { 0 };
+#endif
+EOF
+	echo "created stub redwood_focaltech_fw.h for non-redwood build"
+fi
 
 # Apply Part 2: LSE Branch Islands and Emulation
 if [ -f "$K/0002-lse-branch-islands.patch" ]; then
