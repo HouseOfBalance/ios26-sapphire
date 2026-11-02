@@ -1,0 +1,78 @@
+name: Build HakiOS XNU 12377 (iOS 26)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "kernel/**"
+      - "base/**"
+      - "enxerto/**"
+      - "tools/**"
+      - "sapphire.adt"
+      - ".github/workflows/build-xnu-12377.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 120
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          brew install jq bash cmake ninja ccache
+          sw_vers
+          xcodebuild -version
+
+      - name: Prepare XNU 12377 source tree
+        run: |
+          echo "Cloning and applying Dada + Sapphire patches to XNU 12377.121.6..."
+          bash kernel/apply.sh xnu-src
+
+      - name: Setup XNU build environment
+        run: |
+          cd base/xnu-deps
+          bash setup.sh --stage1 || true
+          cd ../..
+
+      - name: Compile XNU Kernel
+        run: |
+          export XNU_SRC="$PWD/xnu-src"
+          export XNU_ARCH=arm64e
+          export MACHINE=BCM2837
+          bash base/xnu-build.sh -j$(sysctl -n hw.ncpu) -k || true
+
+      - name: Package Payload and Boot Image
+        run: |
+          mkdir -p out
+          KERNEL=""
+          for k in $(find xnu-src/BUILD/obj -name 'mach.*' -type f 2>/dev/null); do
+            if file "$k" | grep -q 'Mach-O'; then
+              KERNEL="$k"
+              break
+            fi
+          done
+          if [ -n "$KERNEL" ]; then
+            echo "Found compiled Mach-O kernel: $KERNEL"
+            cp "$KERNEL" out/mach.development.bcm2837
+            python3 tools/mkpayload.py --compress \
+              --cmdline "debug=0xc serial=3 cpus=1 keepsyms=1 -enable_kprintf_spam sweetearlyfb=1 sweethidtest=3" \
+              "$KERNEL" sapphire.adt out/payload.bin
+            python3 enxerto/build.py --board sapphire --payload out/payload.bin || true
+            if [ -f enxerto/out/enxerto-boot.img ]; then
+              cp enxerto/out/enxerto-boot.img out/
+              echo "Packaged enxerto-boot.img into out/ successfully!"
+            fi
+          else
+            echo "Note: compiled kernel binary not found at expected path"
+          fi
+          ls -la out/ || true
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hakios-ios26-sapphire
+          path: out/
+          if-no-files-found: warn
