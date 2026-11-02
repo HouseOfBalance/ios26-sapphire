@@ -34,8 +34,24 @@ jobs:
       - name: Setup XNU build environment
         run: |
           cd base/xnu-deps
-          bash setup.sh --stage1 || true
+          bash setup.sh --stage1
           cd ../..
+
+          # Install availability.pl and internal headers into host Xcode iPhoneOS SDK
+          SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
+          echo "Xcode iPhoneOS SDK path: $SDK_PATH"
+          sudo mkdir -p "$SDK_PATH/usr/local/libexec" "$SDK_PATH/usr/local/include/kernel/os" "$SDK_PATH/usr/local/lib/kernel"
+
+          if [ -f base/xnu-deps/AvailabilityVersions/availability.pl ]; then
+            sudo cp base/xnu-deps/AvailabilityVersions/availability.pl "$SDK_PATH/usr/local/libexec/"
+            sudo chmod +x "$SDK_PATH/usr/local/libexec/availability.pl"
+            echo "Installed availability.pl to $SDK_PATH/usr/local/libexec/availability.pl"
+          fi
+
+          if [ -d base/xnu-deps/sdk/iPhoneOS.xnu.sdk/usr/local ]; then
+            sudo cp -R base/xnu-deps/sdk/iPhoneOS.xnu.sdk/usr/local/. "$SDK_PATH/usr/local/" 2>/dev/null || true
+            echo "Synced overlay usr/local headers to $SDK_PATH/usr/local"
+          fi
 
       - name: Compile XNU Kernel
         run: |
@@ -45,6 +61,8 @@ jobs:
           export RC_DARWIN_KERNEL_VERSION=26.0.0
           export RC_ProjectSourceVersion=12377.121.6
           export RC_ProjectName=xnu
+          export XNU_SDK_VERSION=26.0
+          export XNU_SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
           bash base/xnu-build.sh -j$(sysctl -n hw.ncpu) -k || true
           ls -la xnu-src/BUILD/obj/*/mach.* 2>/dev/null || true
 

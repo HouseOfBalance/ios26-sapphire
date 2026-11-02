@@ -7,8 +7,8 @@ export THEOS=${THEOS:-$HOME/theos}
 export XNU_SRC=${XNU_SRC:-$DARWIN_REDWOOD/xnu-src/xnu-8796.121.2}
 export XNUDEPS=$DARWIN_REDWOOD/xnu-deps
 export PATH=$XNUDEPS/host/bin:$PATH
-export XNU_SDK_PATH=$XNUDEPS/sdk/iPhoneOS16.5.xnu.sdk
-export XNU_SDK_VERSION=16.5
+export XNU_SDK_PATH=${XNU_SDK_PATH:-$XNUDEPS/sdk/iPhoneOS.xnu.sdk}
+export XNU_SDK_VERSION=${XNU_SDK_VERSION:-26.0}
 export XNU_PLATFORM_PATH=$XNUDEPS/sdk/Platforms/iPhoneOS.platform
 # The architecture of the kernel and of everything linked into it: arm64, or arm64e for the pointer
 # authentication work (docs/ARM64E.md). One board configuration serves both.
