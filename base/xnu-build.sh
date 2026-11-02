@@ -7,6 +7,7 @@ cd "$XNU_SRC" || exit 1
 # (tools/mk-ath12k.sh, peach); each build has at most one.
 LX=$XNUDEPS/build/ath11k/out/ath11k.o
 [ -f "$LX" ] || LX=$XNUDEPS/build/ath12k/out/ath12k.o
+[ -f "$LX" ] || LX=$DARWIN_REDWOOD/../kernel/stubs.o
 # The objects of arm64 and arm64e builds land in the same directory (the machine configuration, not
 # the architecture, names it), and make cannot tell them apart: start over when the architecture
 # changes. The kernel's own static libraries (xnu-deps/setup.sh) need the same architecture; see

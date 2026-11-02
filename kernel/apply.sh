@@ -46,11 +46,6 @@ if [ -f "$D/san/memory/kasan-denylist" ]; then
 	echo "fixed regex in $D/san/memory/kasan-denylist"
 fi
 
-# In xnu-src/makedefs/MakeInc.def, remove -lfirehose_kernel from LD_KERNEL_ARCHIVES
-if [ -f "$D/makedefs/MakeInc.def" ]; then
-	sed -i '' 's/-lfirehose_kernel//g' "$D/makedefs/MakeInc.def" 2>/dev/null || sed -i 's/-lfirehose_kernel//g' "$D/makedefs/MakeInc.def"
-	echo "removed -lfirehose_kernel from MakeInc.def"
-fi
 
 # Fix C23 generic builtins (__builtin_clzg / __builtin_ctzg) for compilers < Clang 19
 if [ -f "$D/osfmk/kern/bits.h" ]; then

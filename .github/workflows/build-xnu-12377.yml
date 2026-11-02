@@ -64,17 +64,13 @@ jobs:
             echo "Synced overlay usr/local headers to $SDK_PATH/usr/local"
           fi
 
-          # Stub static libraries to satisfy XNU 12377 linker requirements cleanly
-          echo "Creating stub static libraries (libfirehose_kernel.a and libpthread_kext.a)..."
-          cat << 'EOF' | xcrun -sdk iphoneos clang -arch arm64e -target arm64e-apple-ios26.0 -c -x c - -o firehose_stub.o
-          int __firehose_buffer_stub(void) { return 0; }
-          EOF
-          sudo xcrun -sdk iphoneos libtool -static -o "$SDK_PATH/usr/local/lib/kernel/libfirehose_kernel.a" firehose_stub.o
+          # Compile architecture and subsystem stubs into kernel/stubs.o
+          echo "Compiling HakiOS Sapphire kernel stubs..."
+          xcrun -sdk iphoneos clang -arch arm64e -target arm64e-apple-ios26.0 -mkernel -c kernel/stubs.c -o kernel/stubs.o
 
-          cat << 'EOF' | xcrun -sdk iphoneos clang -arch arm64e -target arm64e-apple-ios26.0 -c -x c - -o pthread_stub.o
-          int pthread_start(void *ki, void *d) { return 0; }
-          EOF
-          sudo xcrun -sdk iphoneos libtool -static -o "$SDK_PATH/usr/local/lib/kernel/libpthread_kext.a" pthread_stub.o
+          # Create static libraries for SDK with all required symbols
+          sudo xcrun -sdk iphoneos libtool -static -o "$SDK_PATH/usr/local/lib/kernel/libfirehose_kernel.a" kernel/stubs.o
+          sudo xcrun -sdk iphoneos libtool -static -o "$SDK_PATH/usr/local/lib/kernel/libpthread_kext.a" kernel/stubs.o
 
           # Install into overlay SDK and target build obj dir
           mkdir -p base/xnu-deps/sdk/iPhoneOS.xnu.sdk/usr/local/lib/kernel xnu-src/BUILD/obj/DEVELOPMENT_ARM64_BCM2837
