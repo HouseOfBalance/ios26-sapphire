@@ -205,9 +205,11 @@ def find_toolchain(user_toolchain: str = None) -> dict:
                 candidates_dirs.append(p.parent)
                 prefix_override = p.name
 
-    # Common portable toolchain unzip paths on Windows
+    # Common portable toolchain unzip paths on Windows and macOS
     home = Path.home()
     candidates_dirs.extend([
+        Path("/opt/homebrew/bin"),
+        Path("/usr/local/bin"),
         home / "Downloads" / "arm-toolchain" / "arm-gnu-toolchain-13.3.rel1-mingw-w64-i686-aarch64-none-elf" / "bin",
         home / "Downloads" / "arm-toolchain" / "bin",
         Path("C:/aarch64/bin"),

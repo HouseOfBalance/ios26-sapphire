@@ -11,6 +11,8 @@ for a in "$@"; do
     -enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang) ;;
     -fapple-kext-vtable-verify|-Wno-vla-cxx-extension) ;;
     -Werror|-Werror=*|-Weverything|-pedantic-errors) ;;
+    -fsanitize-ignorelist=*|-fsanitize-blacklist=*|-fsanitize-coverage-ignorelist=*|-fsanitize-system-ignorelist=*) ;;
+    -fsanitize=*|-fno-sanitize=*|-fsanitize-trap=*|-fno-sanitize-recover=*|-fsanitize-minimal-runtime) ;;
     *) args+=("$a");;
   esac
 done

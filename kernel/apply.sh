@@ -40,3 +40,15 @@ if [ -f "$K/0004-pmap-4kb-quad-pte.patch" ]; then
 	echo "applied 0004-pmap-4kb-quad-pte.patch (XNU 4KB Quad-PTE Emulation Engine)"
 fi
 
+# Fix kasan-denylist regex for older/host Clang parser
+if [ -f "$D/san/memory/kasan-denylist" ]; then
+	sed -i '' 's/\[\*\]/\[\.\*\]/g' "$D/san/memory/kasan-denylist" 2>/dev/null || sed -i 's/\[\*\]/\[\.\*\]/g' "$D/san/memory/kasan-denylist"
+	echo "fixed regex in $D/san/memory/kasan-denylist"
+fi
+
+# In xnu-src/makedefs/MakeInc.def, remove -lfirehose_kernel from LD_KERNEL_ARCHIVES
+if [ -f "$D/makedefs/MakeInc.def" ]; then
+	sed -i '' 's/-lfirehose_kernel//g' "$D/makedefs/MakeInc.def" 2>/dev/null || sed -i 's/-lfirehose_kernel//g' "$D/makedefs/MakeInc.def"
+	echo "removed -lfirehose_kernel from MakeInc.def"
+fi
+
