@@ -25,6 +25,8 @@ jobs:
           brew install jq bash cmake ninja ccache
           sw_vers
           xcodebuild -version
+          # Ensure all scripts and host tools have executable permissions
+          chmod -R +x base/xnu-deps/host/bin base/*.sh kernel/*.sh tools/*.py enxerto/*.py enxerto/*.sh
 
       - name: Prepare XNU 12377 source tree
         run: |
@@ -36,6 +38,7 @@ jobs:
           cd base/xnu-deps
           bash setup.sh --stage1
           cd ../..
+          chmod -R +x base/xnu-deps/host/bin
 
           # Install availability.pl and internal headers into host Xcode iPhoneOS SDK
           SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
