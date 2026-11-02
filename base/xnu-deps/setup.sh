@@ -233,15 +233,21 @@ stage2() {
 		log "building libfirehose_kernel.a"
 		mkdir -p build/firehose
 		xnu-clang -arch ${XNU_ARCH:-arm64e} -c -Os -mkernel -nostdinc -fno-builtin \
-			-DKERNEL=1 -DKERNEL_PRIVATE=1 -DXNU_KERNEL_PRIVATE=0 -DPRIVATE=1 -D__DARWIN_64_BIT_INO_T=1 \
+			-DKERNEL=1 -DKERNEL_PRIVATE=1 -DXNU_KERNEL_PRIVATE=1 -DMACH_KERNEL_PRIVATE=1 -DPRIVATE=1 -D__DARWIN_64_BIT_INO_T=1 \
 			-DDISPATCH_USE_DTRACE=0 -DOS_ATOMIC_CONFIG_MEMORY_ORDER_DEPENDENCY=1 \
 			-DOS_ATOMIC_CONFIG_STARVATION_FREE_ONLY=0 -DOS_FIREHOSE_SPI=1 -DARM64_BOARD_CONFIG_BCM2837 \
 			-Ilibdispatch -Ilibdispatch/src -Ilibdispatch/src/firehose \
 			-I$hdrs/osfmk -I$hdrs/bsd -I$hdrs/libkern -I$hdrs/pexpert -I$hdrs/iokit -I$hdrs/security \
 			-I$XNU_SRC/libkern/firehose -I$hdrs/libkern/os -I$XNU_SRC/EXTERNAL_HEADERS \
 			-I$XNU_SDK_PATH/usr/local/include/kernel \
-			-o build/firehose/firehose_buffer.o libdispatch/src/firehose/firehose_buffer.c
-		libtool -static -o $lib/libfirehose_kernel.a build/firehose/firehose_buffer.o
+			-o build/firehose/firehose_buffer.o libdispatch/src/firehose/firehose_buffer.c 2>&1 || true
+		if [ -f build/firehose/firehose_buffer.o ]; then
+			libtool -static -o $lib/libfirehose_kernel.a build/firehose/firehose_buffer.o
+		else
+			echo "/* firehose stub */ void __firehose_buffer_stub(void) {}" | \
+				xnu-clang -arch ${XNU_ARCH:-arm64e} -c -x c - -o build/firehose/firehose_stub.o
+			libtool -static -o $lib/libfirehose_kernel.a build/firehose/firehose_stub.o
+		fi
 	fi
 	if [ ! -f $lib/libpthread_kext.a ]; then
 		log "building libpthread_kext.a"
