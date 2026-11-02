@@ -42,7 +42,11 @@ jobs:
           export XNU_SRC="$PWD/xnu-src"
           export XNU_ARCH=arm64e
           export MACHINE=BCM2837
+          export RC_DARWIN_KERNEL_VERSION=26.0.0
+          export RC_ProjectSourceVersion=12377.121.6
+          export RC_ProjectName=xnu
           bash base/xnu-build.sh -j$(sysctl -n hw.ncpu) -k || true
+          ls -la xnu-src/BUILD/obj/*/mach.* 2>/dev/null || true
 
       - name: Package Payload and Boot Image
         run: |
@@ -66,7 +70,8 @@ jobs:
               echo "Packaged enxerto-boot.img into out/ successfully!"
             fi
           else
-            echo "Note: compiled kernel binary not found at expected path"
+            echo "ERROR: Compiled kernel binary not found!"
+            exit 1
           fi
           ls -la out/ || true
 

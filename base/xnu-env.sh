@@ -12,7 +12,10 @@ export XNU_SDK_VERSION=16.5
 export XNU_PLATFORM_PATH=$XNUDEPS/sdk/Platforms/iPhoneOS.platform
 # The architecture of the kernel and of everything linked into it: arm64, or arm64e for the pointer
 # authentication work (docs/ARM64E.md). One board configuration serves both.
-export XNU_ARCH=${XNU_ARCH:-arm64}
+export XNU_ARCH=${XNU_ARCH:-arm64e}
+export RC_DARWIN_KERNEL_VERSION=${RC_DARWIN_KERNEL_VERSION:-26.0.0}
+export RC_ProjectSourceVersion=${RC_ProjectSourceVersion:-12377.121.6}
+export RC_ProjectName=xnu
 # On macOS the cctools, mig, unifdef and csh come from Xcode and the system instead of theos and
 # sources built here; the scripts look at this to choose.
 [ "$(uname -s)" = Darwin ] && export XNU_HOST_DARWIN=1
