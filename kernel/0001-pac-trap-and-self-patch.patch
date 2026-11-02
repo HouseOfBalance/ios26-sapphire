@@ -160,7 +160,7 @@ new file mode 100644
 index 0000000..f98642a
 --- /dev/null
 +++ b/osfmk/arm64/pac_patch.c
-@@ -0,0 +1,199 @@
+@@ -0,0 +1,194 @@
 +/*
 + * pac_patch.c - Runtime Trap-and-Self-Patch Engine for ARMv8.0 (No FEAT_PAuth)
 + * Part 1 Implementation for HakiOS / XNU-12377 on Snapdragon 685 (Cortex-A73/A53)
