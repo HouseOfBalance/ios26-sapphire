@@ -529,6 +529,66 @@ def stage_tweaks(a, root):
 JB_OWNERS = os.path.join(W, 'owners-jb.tsv')
 
 
+def find_root_shell(root):
+    """Find an executable shell inside the root filesystem.
+
+    Returns its root-relative path, or None if no supported shell exists.
+    """
+    candidates = (
+        'bin/sh',
+        'private/var/jb/bin/sh',
+        'private/var/jb/usr/bin/sh',
+        'private/var/jb/bin/dash',
+        'private/var/jb/usr/bin/dash',
+        'private/var/jb/bin/bash',
+        'private/var/jb/usr/bin/bash',
+    )
+
+    for rel in candidates:
+        path = os.path.join(root, rel)
+        if not os.path.isfile(path):
+            continue
+        if not (os.stat(path).st_mode & 0o111):
+            continue
+        return rel
+
+    return None
+
+
+def ensure_root_shell(root):
+    """Expose an existing bootstrap shell as /bin/sh if available.
+
+    Must only be called while the root filesystem is writable.
+    Never installs or fabricates a shell binary.
+    """
+    shell = find_root_shell(root)
+    if not shell:
+        log('shell: no executable shell found; optional feature skipped')
+        return False
+
+    if shell == 'bin/sh':
+        log('shell: /bin/sh already exists')
+        return True
+
+    dst = os.path.join(root, 'bin/sh')
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+
+    target = '/' + shell
+    try:
+        if os.path.islink(dst) and os.readlink(dst) == target:
+            return True
+
+        if os.path.lexists(dst):
+            os.unlink(dst)
+
+        os.symlink(target, dst)
+        log(f'shell: created /bin/sh -> {target}')
+        return True
+    except OSError as e:
+        log(f'shell: note: failed to create symlink {dst} -> {target}: {e}')
+        return False
+
+
 def stage_jb(a, root):
     need_free('jb stage')
     import importlib.util
@@ -537,14 +597,7 @@ def stage_jb(a, root):
     spec.loader.exec_module(rt)
     n = rt.jailbreak_userland(root, JB_OWNERS, force=True)
     log(f'jailbreak userland: {n} paths staged into the image (/private/var/jb), owners in {JB_OWNERS}')
-    sh_bin = os.path.join(root, 'bin/sh')
-    jb_sh = os.path.join(root, 'private/var/jb/bin/sh')
-    if not os.path.exists(sh_bin) and os.path.exists(jb_sh):
-        try:
-            os.symlink('/private/var/jb/bin/sh', sh_bin)
-            log('symlinked /bin/sh -> /private/var/jb/bin/sh')
-        except Exception as e:
-            log('symlink /bin/sh note:', e)
+    ensure_root_shell(root)
 
 
 def patch_mount_phase2(root):
@@ -613,7 +666,20 @@ def stage_verify(a, img, rootmnt):
                   'System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64e',
                   'System/Library/CoreServices/SystemVersion.plist'):
             chk(os.path.exists(os.path.join(R, p)), 'exists /' + p)
-        chk(os.path.exists(os.path.join(R, 'bin/sh')) or os.path.exists(os.path.join(R, 'private/var/jb/bin/sh')), 'exists /bin/sh')
+        # SSH is optional. Only require /bin/sh when the SSH launchd job exists.
+        ssh_job = os.path.join(R, 'System/Library/LaunchDaemons/org.sweet.dropbear.plist')
+        ssh_enabled = os.path.isfile(ssh_job)
+        sh_path = os.path.join(R, 'bin/sh')
+
+        if ssh_enabled:
+            valid_shell = os.path.isfile(sh_path) and bool(os.stat(sh_path).st_mode & 0o111)
+            chk(valid_shell, 'SSH requires executable /bin/sh')
+        else:
+            shell = find_root_shell(R)
+            if shell:
+                log(f'OK   optional shell available: /{shell}')
+            else:
+                log('SKIP optional /bin/sh: SSH is not installed')
         n = len(os.listdir(os.path.join(R, 'Library/Wallpaper/Collections')))
         chk(n > 0, f'Library/Wallpaper/Collections has {n} entries')
         pb = os.path.join(R, 'System/Library/PrivateFrameworks/PosterBoard.framework')

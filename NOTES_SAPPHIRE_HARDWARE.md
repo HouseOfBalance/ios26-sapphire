@@ -3,6 +3,16 @@
 ## Agent handoff / active work (2026-11-03, latest)
 
 ### >>> COMPLETE STATUS HANDOFF FOR SAPPHIRE (HakiOS XNU 12377 / iOS 26 ARM64E) <<<
+* **Current Status (2026-11-03): ROOTFS STAGE VERIFY /bin/sh FIX APPLIED (COMPREHENSIVE SHELL DETECTION & SSH-CONDITIONAL VERIFICATION)**
+  - **Milestone Details:**
+    - **Fix Applied to `tools/renegade/mkroot-full.py`:**
+      * Implemented `find_root_shell(root)` to dynamically probe root-relative paths (`bin/sh`, `private/var/jb/bin/sh`, `private/var/jb/usr/bin/sh`, `.../dash`, `.../bash`) for executable permissions (`0o111`).
+      * Implemented `ensure_root_shell(root)` in `stage_jb` to safely expose existing bootstrap shells as `/bin/sh` while filesystem is read-write.
+      * Updated `stage_verify`: made `/bin/sh` mandatory ONLY if SSH tweak is enabled (`org.sweet.dropbear.plist`). If SSH is not installed, `/bin/sh` is logged as optional (`SKIP optional /bin/sh: SSH is not installed` or `OK optional shell available: ...`), preventing spurious build aborts.
+    - **Verification Results:**
+      * `py_compile mkroot-full.py`: PASS.
+      * `tools/renegade/tests`: 55/55 PASS (1 skipped).
+      * `tools/validate-repo.py -v`: 5 patches, 35 tools validated, 0 errors.
 * **Current Status (2026-11-03): ROOTFS RUN 41595449136 DIAGNOSED (STAGE VERIFY ONLY FAILS ON /bin/sh CHECK)**
   - **Milestone Details:**
     - **Progress in Run 41595449136 (73m run):**
