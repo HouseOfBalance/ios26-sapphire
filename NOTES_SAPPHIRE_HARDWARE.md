@@ -3,6 +3,26 @@
 ## Agent handoff / active work (2026-11-03, latest)
 
 ### >>> COMPLETE STATUS HANDOFF FOR SAPPHIRE (HakiOS XNU 12377 / iOS 26 ARM64E) <<<
+* **Current Status (2026-11-03): ROOTFS RUN 41595449136 DIAGNOSED (STAGE VERIFY ONLY FAILS ON /bin/sh CHECK)**
+  - **Milestone Details:**
+    - **Progress in Run 41595449136 (73m run):**
+      * `stage_copy`, `stage_macho`, `stage_cache`, `stage_tweaks`, and `stage_jb` (6869 paths) ALL PASSED.
+      * `stage_seal` PASSED 100% (`fsck_hfs -fn rc= 0`, `The volume iOSRoot appears to be OK.`).
+      * `stage_verify` executed:
+        - `launchd`, `dyld`, `SpringBoard`, `xpcproxy`, `launchd.plist`, `Wallpaper/Collections (21 entries)`, `dyld cache (45 files)`, `PosterBoard.framework` ALL OK!
+        - Permissions on `/private/var/mobile` and diagnostics OK.
+        - Owner spot check (3000 paths): 0 mismatches OK.
+        - Codesign verify (150 Mach-Os): 0 bad OK.
+        - Identity (2410 Mach-Os): 0 mismatches OK.
+        - Chained fixups (3060 Mach-Os walk inside pages): 0 problems OK! (PermissionError fixed!)
+        - Non-HINT PAC words left: 0 OK!
+        - Cache signatures valid: OK!
+        - **Single remaining failure point:** `FAIL exists /bin/sh` -> causing `verification FAILED`.
+    - **Root Cause:**
+      * Stock iOS does not provide `/bin/sh`. Upstream ios-sweet expects `/bin/sh` (dash) to be installed by the optional `ssh` tweak, which requires prebuilt `berga-tools.zip`.
+      * When built from pure sources/bootstrap without `berga-tools.zip`, the `ssh` tweak is skipped.
+      * In `mkroot-full.py` line 616, `chk(os.path.exists(os.path.join(R, 'bin/sh')) or os.path.exists(os.path.join(R, 'private/var/jb/bin/sh')), 'exists /bin/sh')` failed because `private/var/jb/bin/sh` doesn't exist as a separate binary (in Procursus it is `/var/jb/usr/bin/sh` or symlink).
+      * Treating `/bin/sh` as mandatory in `stage_verify` aborts the build right before `stage_simg`. Making `/bin/sh` optional or checking `/private/var/jb/usr/bin/sh` allows `stage_simg` to complete and produce `userdata.simg`.
 * **Current Status (2026-11-03): ROOTFS RUN 41586647650 DIAGNOSED & FIXED (SEAL STAGE SUCCESS; VERIFY STAGE PERMISSIONERROR & VALIDATION ADJUSTMENTS)**
   - **Milestone Details:**
     - **Progress in Run 41586647650 (71m run):**
