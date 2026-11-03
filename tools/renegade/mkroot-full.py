@@ -84,13 +84,28 @@ def find_dmgs(d):
         if os.path.exists(c):
             mf = c
             break
+    if not mf:
+        # Search recursively for BuildManifest.plist
+        for root, dirs, files in os.walk(d):
+            if 'BuildManifest.plist' in files:
+                mf = os.path.join(root, 'BuildManifest.plist')
+                break
+    assert mf, f"BuildManifest.plist not found in {d}"
     m = plistlib.load(open(mf, 'rb'))['BuildIdentities'][0]['Manifest']
     out = {}
     for key, name in (('OS', 'os'), ('Cryptex1,SystemOS', 'sysos'), ('Cryptex1,AppOS', 'appos')):
         p = m[key]['Info']['Path']
         if p.endswith('.aea'):
             p = p[:-4]
-        out[name] = os.path.join(d, p)
+        candidate = os.path.join(d, p)
+        if not os.path.exists(candidate):
+            # Check subdirectories of d
+            base = os.path.basename(p)
+            for root, dirs, files in os.walk(d):
+                if base in files:
+                    candidate = os.path.join(root, base)
+                    break
+        out[name] = candidate
     return out
 
 

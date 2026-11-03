@@ -41,15 +41,14 @@ jobs:
           mkdir -p research/ios18/ipsw
           if [ -n "${{ github.event.inputs.ipsw_url }}" ]; then
             URL="${{ github.event.inputs.ipsw_url }}"
+            python3 tools/renegade/fetch_root.py --url "$URL" --out-dir research/ios18/ipsw
           else
-            URL=$(ipsw download ipsw --device "${{ github.event.inputs.device }}" --version "${{ github.event.inputs.build_version }}" --urls | tail -1)
+            python3 tools/renegade/fetch_root.py --device "${{ github.event.inputs.device }}" --version "${{ github.event.inputs.build_version }}" --out-dir research/ios18/ipsw
           fi
-          echo "Selected IPSW URL: $URL"
-          python3 tools/remotezip.py "$URL" BuildManifest.plist research/ios18/ipsw/ || true
-          bash tools/renegade/fetch-root.sh
 
       - name: Build Root Image with Renegade & DSC Flattener
         run: |
+          mkdir -p out
           python3 tools/renegade/mkroot-full.py \
             --ipsw-dir research/ios18/ipsw \
             --out out/ios-root.img \
