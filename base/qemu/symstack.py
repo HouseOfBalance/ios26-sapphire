@@ -17,7 +17,7 @@ import sys
 
 root_parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASE = os.path.join(root_parent, 'ios26') if os.path.isdir(os.path.join(root_parent, 'ios26')) else os.path.join(root_parent, 'ios165')
-CACHE = os.path.join(BASE, 'dyld_shared_cache_arm64e') if os.path.isfile(os.path.join(BASE, 'dyld_shared_cache_arm64e')) else os.path.join(BASE, '20F66__iPhone10,3_6/dyld_shared_cache_arm64')
+CACHE = os.path.join(BASE, 'dyld_shared_cache_arm64e') if os.path.isfile(os.path.join(BASE, 'dyld_shared_cache_arm64e')) else os.path.join(BASE, 'dyld_shared_cache_arm64e')
 KNOWN = os.path.join(BASE, 'a2s.json')
 CACHE_LOW, CACHE_HIGH = 0x180000000, 0x280000000        # unslid addresses of the shared cache
 

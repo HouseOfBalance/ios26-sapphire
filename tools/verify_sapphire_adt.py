@@ -79,12 +79,16 @@ model_str = model_bytes.decode('utf-8', errors='ignore').rstrip('\0')
 assert model_str == 'iPhone14,7', f'Unexpected model: {model_str}'
 compat_bytes = root.prop('compatible')
 assert b'xiaomi,sapphire' in compat_bytes, 'xiaomi,sapphire missing in compatible'
+assert b'iPhone14,7' in compat_bytes, 'iPhone14,7 missing in compatible'
+assert b'D27AP' in compat_bytes, 'D27AP missing in compatible'
+assert b'iPhone10,3' not in compat_bytes, 'legacy iPhone10,3 found in compatible'
+assert b'D22AP' not in compat_bytes, 'legacy D22AP found in compatible'
 chosen = find_node(root, 'chosen')
 assert chosen is not None, 'chosen missing'
 bid_bytes = chosen.prop('board-id')
 assert bid_bytes is not None, 'board-id missing in chosen'
 bid, = struct.unpack('<I', bid_bytes)
 assert bid == 24, f'board-id {bid} != 24 (D27AP for iPhone14,7)'
-print(f'CHECK 6: Device identity model={model_str}, board-id={bid} (0x{bid:02x}), compatible matched - OK')
+print(f'CHECK 6: Device identity model={model_str}, board-id={bid} (0x{bid:02x}), compatible matched (no legacy iPhone10,3) - OK')
 
 print('ALL VERIFICATIONS PASSED SUCCESSFULLY!')

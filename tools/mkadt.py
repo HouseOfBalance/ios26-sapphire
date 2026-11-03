@@ -427,11 +427,11 @@ def build(seed=None, qemu=False, highmem=False, board='sweet', display_scale=3, 
     ])] if b.get('uart') and not qemu else []
 
     # Identity of the Apple device whose userland runs here: compatible[0] is
-    # hw.model/hw.target, model is hw.machine/hw.product.
-    # 'xiaomi,sweet' stays for SweetPlatformExpert matching.
+    # hw.model/hw.target (D27AP for iPhone14,7), model is hw.machine/hw.product (iPhone14,7).
+    # 'xiaomi,sweet' and 'xiaomi,sapphire' stay for SweetPlatformExpert matching.
     return node('device-tree', [
         ph(),
-        ('compatible', cstr(dev['target_sub_type']) + cstr(dev['model']) + cstr('D22AP') + cstr('iPhone10,3') + b''.join(cstr(c) for c in b['compat']) + cstr('AppleARM')),
+        ('compatible', cstr(dev['target_sub_type']) + cstr(dev['model']) + b''.join(cstr(c) for c in b['compat']) + cstr('AppleARM')),
         ('model', cstr(dev['model'])),
         ('target-type', cstr(dev['target_type'])),
         ('target-sub-type', cstr(dev['target_sub_type'])),

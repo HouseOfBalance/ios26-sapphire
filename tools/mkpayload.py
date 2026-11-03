@@ -165,7 +165,7 @@ def add_img4_nodes(adt_blob):
                     ('name', 0, b'manifest-properties\0')]
         chosen.children.append(mp)
 
-    default_bid = 24
+    default_bid = 24  # Default: iPhone14,7 (D27AP, A15 Bionic) for iOS 26
     model = root.prop('model')
     if model:
         m = model.decode('utf-8', errors='ignore').rstrip('\0')
@@ -175,8 +175,6 @@ def add_img4_nodes(adt_blob):
             default_bid = 12
         elif 'iPhone18,' in m:
             default_bid = 10
-        elif 'iPhone10,3' in m:
-            default_bid = 6
 
     props = (
         ('board-id', default_bid),

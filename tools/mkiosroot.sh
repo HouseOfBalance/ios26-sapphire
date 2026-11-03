@@ -57,7 +57,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# apfs-fuse splits its options on ',' (e.g. in iPhone10,3 paths): use links.
+# apfs-fuse splits its options on ',' (e.g. in iPhone14,7 paths): use links.
 # Keep the .dmg name: apfs-fuse only parses UDIF images (the OS one is UDIF,
 # the cryptexes are raw APFS) when the file name ends in .dmg.
 apfs_mount() {
