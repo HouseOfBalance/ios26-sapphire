@@ -3,6 +3,27 @@
 ## Agent handoff / active work (2026-11-03, latest)
 
 ### >>> COMPLETE STATUS HANDOFF FOR SAPPHIRE (HakiOS XNU 12377 / iOS 26 ARM64E) <<<
+* **Current Status (2026-11-03): ROOTFS RUN 41571606717 DIAGNOSED & FIXED (SEAL STAGE DISK ARBITRATION TIMEOUT)**
+  - **Milestone Details:**
+    - **Progress in Run 41571606717 (27m run):**
+      * `stage_copy` PASSED completely: `appos`, `sysos`, and `os` (UDIF 4.63GB) attached and copied cleanly!
+      * `stage_macho` PASSED completely: scanned and processed all Mach-O binaries.
+      * `stage_cache` PASSED completely: dyld shared cache slide_info v5 flattened with `dsc_flatten_v2.py` and HMAC resigned with `fips_rehmac.py`.
+      * `stage_tweaks` PASSED completely: launchd, mobilegestalt, and device event timing configured.
+      * `stage_jb` PASSED completely: staged 6869 paths in `/private/var/jb` (Procursus bootstrap, Sileo, TrollStore).
+      * Failure at `stage_seal`: `hdiutil: detach: timeout for DiskArbitration expired; drive not detached`.
+    - **Root Cause:**
+      * After intensive I/O staging thousands of files in `stage_jb`, macOS `diskarbitrationd` locked the mountpoint.
+      * `mkroot-full.py` line 576 called `rplat.detach(rootmnt)` directly without `-force` or retry loops, immediately aborting on the first timeout.
+    - **Fixes Applied:**
+      * `tools/renegade/renegade_platform.py`:
+        - Enhanced `MacOS.detach()`: if default detach fails, automatically retries with `-force`. If DiskArbitration timeout persists, falls back to `diskutil unmount force <target>`.
+        - Enhanced `Backend.detach_retry()`: flushes filesystem buffers via `os.sync()`, retries up to 5 times with progressive delay and forced unmounting.
+      * `tools/renegade/mkroot-full.py`:
+        - Updated both `sysos` trim detach (line 232) and `stage_seal` detach (line 573) to call `rplat.detach_retry(rootmnt)`.
+    - **Verification Results:**
+      * `tools/renegade/tests`: 55/55 PASS.
+
 * **Current Status (2026-11-03): ROOTFS RUN 41569849091 DIAGNOSED & FIXED (UDIF ATTACH & FETCH HARDENING)**
   - **Milestone Details:**
     - **Failure Diagnosis of RootFS Run 41569849091:**

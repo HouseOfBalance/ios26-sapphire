@@ -229,7 +229,7 @@ def stage_copy(a, img, rootmnt, dmgs):
                 os.sync()
             elif shutil.which('sync'):
                 subprocess.run(['sync'])
-            rplat.detach(rootmnt, check=True)
+            rplat.detach_retry(rootmnt)
             run([sys.executable, '-I', os.path.join(HERE, 'hfs_trim.py'), img])
             attach(img, rootmnt, readonly=False)
         if a.delete_sources:
@@ -573,9 +573,7 @@ def stage_seal(a, img, rootmnt):
             os.sync()
         elif shutil.which('sync'):
             subprocess.run(['sync'])
-        r = rplat.detach(rootmnt)
-        if r.returncode:
-            sys.exit('detach failed: ' + r.stderr)
+        rplat.detach_retry(rootmnt)
     run([sys.executable, '-I', os.path.join(HERE, 'hfs_trim.py'), img])        # give freed blocks back to the host
     table = load_map(os.path.join(W, 'owners.tsv'))
     if os.path.exists(OWNER_EXTRA):

@@ -122,11 +122,14 @@ class Backend:
     # -- shared -------------------------------------------------------------------------------------------------------
     def detach_retry(self, target):
         """detach with retries, then force (a mount that is still busy for a moment after the last write)."""
-        for i in range(4):
-            r = self.detach(target)
+        for i in range(5):
+            if hasattr(os, 'sync'):
+                try: os.sync()
+                except Exception: pass
+            r = self.detach(target, force=(i >= 2))
             if r.returncode == 0:
                 return
-            time.sleep(0 if self.dry else 2 + 3 * i)
+            time.sleep(0 if self.dry else 3 + 2 * i)
         r = self.detach(target, force=True)
         if r.returncode:
             sys.exit('detach failed: ' + r.stderr)
@@ -223,7 +226,24 @@ class MacOS(Backend):
 
     def detach(self, target, force=False, check=False):
         cmd = ['hdiutil', 'detach'] + (['-force'] if force else []) + [target]
-        return self.run(cmd, check=check)
+        r = self.run(cmd, check=False)
+        if r.returncode == 0 or self.dry:
+            if check and r.returncode:
+                raise subprocess.CalledProcessError(r.returncode, cmd, r.stdout, r.stderr)
+            return r
+        # If normal detach failed and force wasn't passed, try with -force
+        if not force:
+            r = self.run(['hdiutil', 'detach', '-force', target], check=False)
+            if r.returncode == 0:
+                return r
+        # If DiskArbitration timeout or stuck mount, fallback to diskutil unmount force
+        if shutil.which('diskutil'):
+            r2 = self.run(['diskutil', 'unmount', 'force', target], check=False)
+            if r2.returncode == 0:
+                return r2
+        if check and r.returncode:
+            raise subprocess.CalledProcessError(r.returncode, cmd, r.stdout, r.stderr)
+        return r
 
     def detach_image(self, img):
         """Detach every device that was attached from this image (a killed earlier run leaves them)."""
