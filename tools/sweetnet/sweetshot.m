@@ -81,8 +81,8 @@ int main(int argc, char **argv)
 		if (r <= 0)
 			return r == 0 ? 0 : 1;
 
-		/* no kernel screenshot: the panel as CoreAnimation renders it (1125x2436: iPhone11,8 userland at 3x) */
-		int w = 1125, h = 2436;
+		/* no kernel screenshot: the panel as CoreAnimation renders it (1170x2532: iPhone14,7 userland at 3x) */
+		int w = 1170, h = 2532;
 		NSDictionary *props = @{
 			(id)kIOSurfaceWidth: @(w), (id)kIOSurfaceHeight: @(h), (id)kIOSurfaceBytesPerElement: @4,
 			(id)kIOSurfacePixelFormat: @((uint32_t)'BGRA'), (id)kIOSurfaceBytesPerRow: @(w * 4),

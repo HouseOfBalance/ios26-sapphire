@@ -138,20 +138,22 @@ BOOT_MANIFEST_HASH = hashlib.sha384(b'sweet boot manifest').digest()
 # The iOS userland identity default is iPhone 14 (iPhone14,7 / D27AP) for iOS 26. MobileGestalt
 # derives product type, device class, home-button-less UI, artwork etc. from
 # the root identity and /product of the device tree.
-D22AP_ADT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../research/ipsw-x/d22ap.adt')
 
 
-def d22ap_product(path=D22AP_ADT):
-    """/product properties of the real D22AP tree, without the syscfg
-    placeholders iBoot would fill in (flag bit set) and the node bookkeeping."""
-    if not os.path.exists(path):
-        print(f'warning: {path} missing, no /product node', file=sys.stderr)
-        return None
-    root, _ = adt.parse(open(path, 'rb').read())
-    for c in root.children:
-        if dict((k, v) for k, f, v in c.props).get('name') == b'product\0':
-            return [(k, v) for k, f, v in c.props if not f and k not in ('name', 'AAPL,phandle')]
-    raise SystemExit(f'{path}: no /product node')
+def device_product(sub_type='D27AP'):
+    """/product properties of the real device tree, without syscfg placeholders."""
+    paths = [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), f'../research/ios26/{sub_type.lower()}.adt'),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), f'../research/ios26/{sub_type}.adt'),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), '../research/ipsw-x/d22ap.adt'),
+    ]
+    for p in paths:
+        if os.path.exists(p):
+            root, _ = adt.parse(open(p, 'rb').read())
+            for c in root.children:
+                if dict((k, v) for k, f, v in c.props).get('name') == b'product\0':
+                    return [(k, v) for k, f, v in c.props if not f and k not in ('name', 'AAPL,phandle')]
+    return None
 
 u32 = lambda *v: struct.pack('<%dI' % len(v), *v)
 u64 = lambda *v: struct.pack('<%dQ' % len(v), *v)
@@ -200,10 +202,12 @@ def bluetooth_node(ph):
     ])
 
 
-def build(seed=None, qemu=False, highmem=False, board='sweet', display_scale=3, points=(375, 812), lowpool=None, amp=False, device='iPhone14,7'):
+def build(seed=None, qemu=False, highmem=False, board='sweet', display_scale=None, points=None, lowpool=None, amp=False, device='iPhone14,7'):
     """qemu=True: same tree, but with QEMU virt's GIC addresses and CNTFRQ (tools/qemu-sweet.py)."""
     b = BOARDS[board]
     dev = APPLE_DEVICES.get(device, APPLE_DEVICES['iPhone14,7'])
+    display_scale = display_scale if display_scale is not None else dev.get('default_scale', 3)
+    points = points if points is not None else dev.get('default_points', (390, 844))
     phys_base, mem_size = (HIGH_PHYS_BASE, HIGH_MEM_SIZE) if highmem else (PHYS_BASE, MEM_SIZE)
     if board != 'sweet' and not qemu:
         if not highmem:
@@ -411,11 +415,10 @@ def build(seed=None, qemu=False, highmem=False, board='sweet', display_scale=3, 
         ('region-sku', cstr('syscfg/RSKU/0x40,zeroes/0x40')),
     ])] if b.get('baseband') and not qemu else []
 
-    product_props = d22ap_product()
-    # Our framebuffer is sRGB 8-bit. With the iPhone X's 'P3' MobileGestalt says
+    product_props = device_product(dev['target_sub_type'])
+    # Our framebuffer is sRGB 8-bit. With extended color 'P3' MobileGestalt says
     # HasExtendedColorDisplay and WebKit renders page tiles into 10-bit surfaces
     # ('w30r', 'b3a8') this kernel does not provide: Safari pages stay blank.
-    # (Found by MakrSas/ios-topaz, commit 3eacb48f7.)
     if product_props:
         product_props = [(k, cstr('sRGB') if k == 'artwork-display-gamut' else v) for k, v in product_props]
     product = [node('product', [ph()] + product_props)] if product_props else []
@@ -444,8 +447,8 @@ def build(seed=None, qemu=False, highmem=False, board='sweet', display_scale=3, 
 if __name__ == '__main__':
     board = sys.argv[sys.argv.index('--board') + 1] if '--board' in sys.argv else 'sweet'
     device = sys.argv[sys.argv.index('--device') + 1] if '--device' in sys.argv else 'iPhone14,7'
-    scale = int(sys.argv[sys.argv.index('--display-scale') + 1]) if '--display-scale' in sys.argv else 3
-    points = tuple(int(v) for v in sys.argv[sys.argv.index('--points') + 1].split('x')) if '--points' in sys.argv else (375, 812)
+    scale = int(sys.argv[sys.argv.index('--display-scale') + 1]) if '--display-scale' in sys.argv else None
+    points = tuple(int(v) for v in sys.argv[sys.argv.index('--points') + 1].split('x')) if '--points' in sys.argv else None
     lowpool = parse_lowpool(sys.argv[sys.argv.index('--lowpool') + 1]) if '--lowpool' in sys.argv else None
     amp = '--amp' in sys.argv
 

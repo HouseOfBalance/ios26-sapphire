@@ -1,10 +1,10 @@
 /*
  * sweettouch: synthetic touch and buttons over SSH, for testing without hands on the phone.
- *   sweettouch tap X Y                     one finger, points (375x812 space of the iPhone11,8 userland)
+ *   sweettouch tap X Y                     one finger, points (390x844 space of the iPhone14,7 userland)
  *   sweettouch swipe X1 Y1 X2 Y2 [MS]      drag, default 300 ms
  *   sweettouch home | lock                 Home (menu) / Power (lock) button press
  * Events go into the HID event system (IOHIDEventSystemClientDispatchEvent) like a digitizer's, with the
- * entitlement com.apple.private.hid.client.event-dispatch (touch.entitlements). iOS 18, arm64e + pacstrip.
+ * entitlement com.apple.private.hid.client.event-dispatch (touch.entitlements). iOS 26, arm64e + pacstrip.
  */
 #include <CoreFoundation/CoreFoundation.h>
 #include <mach/mach_time.h>

@@ -389,7 +389,7 @@ class Linux(Backend):
             os.makedirs(fmnt, exist_ok=True)
         if ',' in dmg:
             # apfs-fuse hands the device path to FUSE inside a comma-separated -o list (fsname=...), so a comma in it
-            # ("22H352__iPhone11,8") splits the option: give it a comma-free symlink next to the mount point
+            # ("26A5000__iPhone14,7") splits the option: give it a comma-free symlink next to the mount point
             link = os.path.join(os.path.dirname(os.path.abspath(mnt)), 'dmg-' + os.path.basename(dmg).replace(',', '_'))
             if not self.dry:
                 if os.path.islink(link) or os.path.exists(link):

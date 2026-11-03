@@ -8,10 +8,10 @@
     - **Device Model ("Mã máy") & ADT Alignment:**
       * Solved upstream open item (formerly stuck on `iPhone10,3` / `D22AP` / `board-id 6` from iOS 16).
       * Fully aligned the Apple Device Tree (`sapphire.adt`), kernel payload generator (`tools/mkpayload.py`), and RootFS pipeline (`.github/workflows/build-rootfs.yml`, `tools/trigger_rootfs.py`, `fetch_root.py`) to target **`iPhone14,7`** (iPhone 14 / `D27AP`, Apple A15 Bionic `0x8110`, board ID 24 / `0x18`).
-      * Upgraded `tools/mkadt.py`: added `APPLE_DEVICES` profiles dictionary, `--device` CLI argument support (default `iPhone14,7`), dynamic `/chosen` `chip-id` (`0x8110`), and `board-id` (24). In the root node, `compatible` preserves `D27AP`, `iPhone14,7`, `xiaomi,sapphire`, `xiaomi,sweet`, `qcom,sm6225`, `qcom,khaje`, and `AppleARM`.
+      * Upgraded `tools/mkadt.py`: added `APPLE_DEVICES` profiles dictionary, `--device` CLI argument support (default `iPhone14,7`), dynamic `/chosen` `chip-id` (`0x8110`), and `board-id` (24). Pure iPhone 14 canvas (`1170x2532` @ 3x points `390x844`). In the root node, `compatible` is strictly `D27AP\0iPhone14,7\0xiaomi,sapphire\0xiaomi,sweet\0qcom,sm6225\0qcom,khaje\0AppleARM\0` (purged legacy `D22AP`/`iPhone10,3`).
       * Upgraded `tools/mkpayload.py`: `add_img4_nodes` dynamically detects device identity and derives matching `board-id` (24 for `iPhone14,7`), ensuring `libimage4` and `cryptexd` manifest signature checks succeed.
       * Regenerated `sapphire.adt` and repackaged `out/payload.bin` and `out/enxerto-boot.img` with matching identity.
-      * Added Check 6 to `tools/verify_sapphire_adt.py` validating `model=iPhone14,7`, `board-id=24`, and `xiaomi,sapphire` compatibility.
+      * Added Check 6 to `tools/verify_sapphire_adt.py` validating `model=iPhone14,7`, `board-id=24`, `chip-id=0x8110`, `canvas=1170x2532 @ 3x`, and asserting zero legacy `D22AP`/`iPhone10,3` in `compatible`.
     - **Tooling and Pipeline Purge of Legacy iOS Traces:**
       * Upgraded `tools/sweetnet/build.sh` to target iOS 26 (`-mios-version-min=26.0`), producing binaries in `research/sweetnet/ios26` (with compatibility copies in `ios18`).
       * Fixed `tools/berga-tools/package.py`: eliminated file descriptor resource leaks with context managers, added safe handling for `ios26/` binaries.

@@ -72,23 +72,46 @@ assert gold_mpidrs == ['0x100', '0x101', '0x102', '0x103'], f'Gold MPIDRs unexpe
 assert silver_mpidrs == ['0x0', '0x1', '0x2', '0x3'], f'Silver MPIDRs unexpected: {silver_mpidrs}'
 print(f'CHECK 5: 4 Gold cores ({gold_mpidrs}) + 4 Silver cores ({silver_mpidrs}) - OK')
 
-# 6. Device Identity & Model Alignment (iOS 26 / HakiOS)
+# 6. Device Identity & Model Alignment (iOS 26 / HakiOS - iPhone 14 / iPhone14,7 / D27AP)
 model_bytes = root.prop('model')
 assert model_bytes is not None, 'model property missing in root'
 model_str = model_bytes.decode('utf-8', errors='ignore').rstrip('\0')
 assert model_str == 'iPhone14,7', f'Unexpected model: {model_str}'
+target_type = root.prop('target-type').decode('utf-8', errors='ignore').rstrip('\0')
+target_sub_type = root.prop('target-sub-type').decode('utf-8', errors='ignore').rstrip('\0')
+assert target_type == 'D27', f'target-type {target_type} != D27'
+assert target_sub_type == 'D27AP', f'target-sub-type {target_sub_type} != D27AP'
+
 compat_bytes = root.prop('compatible')
 assert b'xiaomi,sapphire' in compat_bytes, 'xiaomi,sapphire missing in compatible'
 assert b'iPhone14,7' in compat_bytes, 'iPhone14,7 missing in compatible'
 assert b'D27AP' in compat_bytes, 'D27AP missing in compatible'
 assert b'iPhone10,3' not in compat_bytes, 'legacy iPhone10,3 found in compatible'
 assert b'D22AP' not in compat_bytes, 'legacy D22AP found in compatible'
+
 chosen = find_node(root, 'chosen')
 assert chosen is not None, 'chosen missing'
 bid_bytes = chosen.prop('board-id')
 assert bid_bytes is not None, 'board-id missing in chosen'
 bid, = struct.unpack('<I', bid_bytes)
 assert bid == 24, f'board-id {bid} != 24 (D27AP for iPhone14,7)'
-print(f'CHECK 6: Device identity model={model_str}, board-id={bid} (0x{bid:02x}), compatible matched (no legacy iPhone10,3) - OK')
+
+cid_bytes = chosen.prop('chip-id')
+assert cid_bytes is not None, 'chip-id missing in chosen'
+cid, = struct.unpack('<I', cid_bytes)
+assert cid == 0x8110, f'chip-id {hex(cid)} != 0x8110 (Apple A15 Bionic)'
+
+scale_bytes = chosen.prop('display-scale')
+assert scale_bytes is not None, 'display-scale missing in chosen'
+scale, = struct.unpack('<I', scale_bytes)
+assert scale == 3, f'display-scale {scale} != 3'
+
+disp0 = find_node(arm_io, 'disp0')
+assert disp0 is not None, 'disp0 missing'
+cw, = struct.unpack('<I', disp0.prop('canvas-width'))
+ch, = struct.unpack('<I', disp0.prop('canvas-height'))
+assert cw == 1170 and ch == 2532, f'disp0 canvas {cw}x{ch} != 1170x2532 (iPhone 14 @ 3x points)'
+
+print(f'CHECK 6: Device identity model={model_str} ({target_sub_type}), board-id={bid} (0x{bid:02x}), chip-id=0x{cid:04x}, canvas={cw}x{ch} @ {scale}x - OK')
 
 print('ALL VERIFICATIONS PASSED SUCCESSFULLY!')
