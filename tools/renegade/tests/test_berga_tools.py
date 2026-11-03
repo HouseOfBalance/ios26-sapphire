@@ -137,8 +137,10 @@ class TestInstall(Base):
         self.assertEqual(d, os.path.join(self.cache, 'berga-tools-v7'))
         for p, (data, mode) in FILES.items():
             full = os.path.join(d, *p.split('/'))
-            self.assertEqual(open(full, 'rb').read(), data)
-            self.assertEqual(bool(os.stat(full).st_mode & stat.S_IXUSR), bool(mode & 0o111), p)
+            with open(full, 'rb') as f:
+                self.assertEqual(f.read(), data)
+            if sys.platform != 'win32':
+                self.assertEqual(bool(os.stat(full).st_mode & stat.S_IXUSR), bool(mode & 0o111), p)
         self.assertTrue(os.path.isfile(os.path.join(d, bt.MANIFEST)))
         self.assertEqual(bt.current_dir(self.cache), d)
         sn, gl = bt.search_dirs(self.cache)

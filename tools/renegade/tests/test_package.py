@@ -68,8 +68,9 @@ class TestPackage(unittest.TestCase):
                                        ['bergamota-gl/' + r for r, _ in pk.BGL] + ['LICENSES/' + l for l in pk.LICENSES]))
         cache = os.path.join(self.tmp, 'cache')
         d = bt.install_zip(z, cache, digest, log=lambda *_: None)
-        self.assertTrue(os.access(os.path.join(d, 'sweetnet', 'sweetreboot'), os.X_OK))
-        self.assertFalse(os.access(os.path.join(d, 'sweetnet', 'ios18', 'SweetRun.app', 'Info.plist'), os.X_OK))
+        if sys.platform != 'win32':
+            self.assertTrue(os.access(os.path.join(d, 'sweetnet', 'sweetreboot'), os.X_OK))
+            self.assertFalse(os.access(os.path.join(d, 'sweetnet', 'ios18', 'SweetRun.app', 'Info.plist'), os.X_OK))
 
     def test_manifest_has_a_sha256_per_file(self):
         a = pk.build(self.args)[2]

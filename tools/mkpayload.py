@@ -142,7 +142,7 @@ def add_ramdisk_to_adt(adt_blob, phys, size):
 # manifest properties" (cryptexd[N] crash loop, libimage4+0xe70, caller libimage4+0x654c).  Real iBoot ADTs have the
 # node (an empty child of /chosen whose properties iBoot fills in) and the identifiers the chip instance asks for;
 # only the node is fatal, the properties below are read on demand and fail with ENOENT instead.
-IMG4_CHOSEN_PROPS = (('board-id', 6),       # D22AP BDID, what the iPhone10,3 userland expects
+IMG4_CHOSEN_PROPS = (('board-id', 24),      # Default BDID matching iPhone14,7 (24) or device in ADT
                      ('chip-epoch', 1),
                      ('security-domain', 1))
 
@@ -164,7 +164,26 @@ def add_img4_nodes(adt_blob):
         mp.props = [('AAPL,phandle', 0, struct.pack('<I', max(phandles(root), default=0) + 1)),
                     ('name', 0, b'manifest-properties\0')]
         chosen.children.append(mp)
-    for k, v in IMG4_CHOSEN_PROPS:
+
+    default_bid = 24
+    model = root.prop('model')
+    if model:
+        m = model.decode('utf-8', errors='ignore').rstrip('\0')
+        if 'iPhone14,7' in m:
+            default_bid = 24
+        elif 'iPhone11,8' in m:
+            default_bid = 12
+        elif 'iPhone18,' in m:
+            default_bid = 10
+        elif 'iPhone10,3' in m:
+            default_bid = 6
+
+    props = (
+        ('board-id', default_bid),
+        ('chip-epoch', 1),
+        ('security-domain', 1),
+    )
+    for k, v in props:
         if chosen.prop(k) is None:
             chosen.props.append((k, 0, struct.pack('<I', v)))
     return adt.serialize(root)

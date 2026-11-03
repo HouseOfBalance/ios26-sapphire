@@ -3,6 +3,26 @@
 ## Agent handoff / active work (2026-11-03, latest)
 
 ### >>> COMPLETE STATUS HANDOFF FOR SAPPHIRE (HakiOS XNU 12377 / iOS 26 ARM64E) <<<
+* **Current Status (2026-11-03): DEVICE MODEL ALIGNMENT & FULL iOS 26 REPOSITORY PURGE COMPLETED**
+  - **Milestone Details:**
+    - **Device Model ("Mã máy") & ADT Alignment:**
+      * Solved upstream open item (formerly stuck on `iPhone10,3` / `D22AP` / `board-id 6` from iOS 16).
+      * Fully aligned the Apple Device Tree (`sapphire.adt`), kernel payload generator (`tools/mkpayload.py`), and RootFS pipeline (`.github/workflows/build-rootfs.yml`, `tools/trigger_rootfs.py`, `fetch_root.py`) to target **`iPhone14,7`** (iPhone 14 / `D27AP`, Apple A15 Bionic `0x8110`, board ID 24 / `0x18`).
+      * Upgraded `tools/mkadt.py`: added `APPLE_DEVICES` profiles dictionary, `--device` CLI argument support (default `iPhone14,7`), dynamic `/chosen` `chip-id` (`0x8110`), and `board-id` (24). In the root node, `compatible` preserves `D27AP`, `iPhone14,7`, `xiaomi,sapphire`, `xiaomi,sweet`, `qcom,sm6225`, `qcom,khaje`, and `AppleARM`.
+      * Upgraded `tools/mkpayload.py`: `add_img4_nodes` dynamically detects device identity and derives matching `board-id` (24 for `iPhone14,7`), ensuring `libimage4` and `cryptexd` manifest signature checks succeed.
+      * Regenerated `sapphire.adt` and repackaged `out/payload.bin` and `out/enxerto-boot.img` with matching identity.
+      * Added Check 6 to `tools/verify_sapphire_adt.py` validating `model=iPhone14,7`, `board-id=24`, and `xiaomi,sapphire` compatibility.
+    - **Tooling and Pipeline Purge of Legacy iOS Traces:**
+      * Upgraded `tools/sweetnet/build.sh` to target iOS 26 (`-mios-version-min=26.0`), producing binaries in `research/sweetnet/ios26` (with compatibility copies in `ios18`).
+      * Fixed `tools/berga-tools/package.py`: eliminated file descriptor resource leaks with context managers, added safe handling for `ios26/` binaries.
+      * Updated `userland/userland/build.sh`: defaulted `ARCH` to `arm64e`, defaulted `IOS` to `../ios26`.
+      * Updated `userland/userland/jobinfo.py` and `base/qemu/symstack.py` to prioritize `ios26/` rootfs and dyld shared cache.
+      * Fixed Windows-specific unit test assertions for POSIX executable permissions in `tools/renegade/tests/test_package.py` and `test_berga_tools.py`.
+    - **Validation:**
+      * `tools/verify_sapphire_adt.py`: 6/6 checks PASS (FB, GICv3, UFS 2.2, UART, 8 CPUs, and Device Model iPhone14,7 / board-id 24).
+      * `tools/dsc_flatten_v2.py --test`: 9/9 test suites PASS (100% SUCCESS).
+      * `tools/validate-repo.py -v`: 5 patches, 35 tools validated, 0 errors.
+      * `test_package.py` and `test_berga_tools.py`: 31/31 unit tests PASS.
 * **Current Status (2026-11-03): FULL REPOSITORY PURGE OF LEGACY iOS 18/18.7.8 REFERENCES TO iOS 26 COMPLETED**
   - **Milestone Details:**
     - Audited the entire repository for legacy upstream traces of iOS 18 / 18.7.8 (`22H352`, `iPhone11,8`).

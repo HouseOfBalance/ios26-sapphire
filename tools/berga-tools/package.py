@@ -118,7 +118,8 @@ def collect(sweetnet, bgl, ssh=None):
             src = os.path.join(base, *rel.split('/'))
             if not os.path.isfile(src) or os.path.islink(src):
                 die('missing (or a symlink): %s' % src)
-            data = open(src, 'rb').read()
+            with open(src, 'rb') as f:
+                data = f.read()
             if kind == 'macho':
                 try:
                     archs, libs = macho_info(data, zp)
@@ -186,7 +187,9 @@ def build(args):
             add(berga_tools.MANIFEST, (json.dumps(manifest, indent=1) + '\n').encode(), 0o644)
             for zp, src, role, arch, libs in sorted(items):
                 st = os.stat(src)
-                add(zp, open(src, 'rb').read(), 0o755 if (st.st_mode & 0o111) else 0o644)
+                with open(src, 'rb') as f:
+                    content = f.read()
+                add(zp, content, 0o755 if (st.st_mode & 0o111) else 0o644)
         verify(tmp, items)
         os.replace(tmp, zpath)
     except BaseException:

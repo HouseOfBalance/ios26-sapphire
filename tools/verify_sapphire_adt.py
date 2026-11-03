@@ -71,4 +71,20 @@ for cpu in cpus.children:
 assert gold_mpidrs == ['0x100', '0x101', '0x102', '0x103'], f'Gold MPIDRs unexpected: {gold_mpidrs}'
 assert silver_mpidrs == ['0x0', '0x1', '0x2', '0x3'], f'Silver MPIDRs unexpected: {silver_mpidrs}'
 print(f'CHECK 5: 4 Gold cores ({gold_mpidrs}) + 4 Silver cores ({silver_mpidrs}) - OK')
+
+# 6. Device Identity & Model Alignment (iOS 26 / HakiOS)
+model_bytes = root.prop('model')
+assert model_bytes is not None, 'model property missing in root'
+model_str = model_bytes.decode('utf-8', errors='ignore').rstrip('\0')
+assert model_str == 'iPhone14,7', f'Unexpected model: {model_str}'
+compat_bytes = root.prop('compatible')
+assert b'xiaomi,sapphire' in compat_bytes, 'xiaomi,sapphire missing in compatible'
+chosen = find_node(root, 'chosen')
+assert chosen is not None, 'chosen missing'
+bid_bytes = chosen.prop('board-id')
+assert bid_bytes is not None, 'board-id missing in chosen'
+bid, = struct.unpack('<I', bid_bytes)
+assert bid == 24, f'board-id {bid} != 24 (D27AP for iPhone14,7)'
+print(f'CHECK 6: Device identity model={model_str}, board-id={bid} (0x{bid:02x}), compatible matched - OK')
+
 print('ALL VERIFICATIONS PASSED SUCCESSFULLY!')

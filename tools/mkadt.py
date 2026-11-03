@@ -93,14 +93,51 @@ BOARDS = {
         bluetooth=False),
 }
 
+# Apple device profiles for iOS userland matching
+APPLE_DEVICES = {
+    'iPhone14,7': {
+        'model': 'iPhone14,7',
+        'target_type': 'D27',
+        'target_sub_type': 'D27AP',
+        'chip_id': 0x8110,   # Apple A15 Bionic (T8110)
+        'board_id': 24,      # 0x18
+        'default_points': (390, 844),
+        'default_scale': 3,
+    },
+    'iPhone11,8': {
+        'model': 'iPhone11,8',
+        'target_type': 'N104',
+        'target_sub_type': 'N104AP',
+        'chip_id': 0x8020,   # Apple A12 Bionic (T8020)
+        'board_id': 12,      # 0x0C
+        'default_points': (414, 896),
+        'default_scale': 2,
+    },
+    'iPhone18,1': {
+        'model': 'iPhone18,1',
+        'target_type': 'V53',
+        'target_sub_type': 'V53AP',
+        'chip_id': 0x8150,   # Apple A19 Pro
+        'board_id': 10,
+        'default_points': (402, 874),
+        'default_scale': 3,
+    },
+    'iPhone10,3': {
+        'model': 'iPhone10,3',
+        'target_type': 'D22',
+        'target_sub_type': 'D22AP',
+        'chip_id': 0x8015,   # Apple A11 Bionic (T8015)
+        'board_id': 6,
+        'default_points': (375, 812),
+        'default_scale': 3,
+    },
+}
+
 BOOT_MANIFEST_HASH = hashlib.sha384(b'sweet boot manifest').digest()
 
-# The iOS userland is the iPhone X (iPhone10,3 / D22AP) IPSW. MobileGestalt
+# The iOS userland identity default is iPhone 14 (iPhone14,7 / D27AP) for iOS 26. MobileGestalt
 # derives product type, device class, home-button-less UI, artwork etc. from
-# the root identity and /product of the real D22AP device tree. That tree is
-# an Apple artifact (kept out of git): extract it from the IPSW with
-#   tools/remotezip.py URL DeviceTree.d22ap.im4p DIR
-#   ipsw img4 im4p extract DIR/Firmware/all_flash/DeviceTree.d22ap.im4p -o d22ap.adt
+# the root identity and /product of the device tree.
 D22AP_ADT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../research/ipsw-x/d22ap.adt')
 
 
@@ -163,9 +200,10 @@ def bluetooth_node(ph):
     ])
 
 
-def build(seed=None, qemu=False, highmem=False, board='sweet', display_scale=3, points=(375, 812), lowpool=None, amp=False):
+def build(seed=None, qemu=False, highmem=False, board='sweet', display_scale=3, points=(375, 812), lowpool=None, amp=False, device='iPhone14,7'):
     """qemu=True: same tree, but with QEMU virt's GIC addresses and CNTFRQ (tools/qemu-sweet.py)."""
     b = BOARDS[board]
+    dev = APPLE_DEVICES.get(device, APPLE_DEVICES['iPhone14,7'])
     phys_base, mem_size = (HIGH_PHYS_BASE, HIGH_MEM_SIZE) if highmem else (PHYS_BASE, MEM_SIZE)
     if board != 'sweet' and not qemu:
         if not highmem:
@@ -217,9 +255,10 @@ def build(seed=None, qemu=False, highmem=False, board='sweet', display_scale=3, 
         # them CFPreferences cannot use kCFPreferencesCurrentHost (no ByHost
         # files), so e.g. DataMigration never records LastSystemVersion and
         # migrates on every boot. Synthetic ECID (not the phone's); chip-id
-        # of the A11 that the iPhone X userland expects.
+        # and board-id matching the target iOS userland device identity.
         ('unique-chip-id', struct.pack('<Q', ecid)),
-        ('chip-id', u32(0x8015)),
+        ('chip-id', u32(dev['chip_id'])),
+        ('board-id', u32(dev['board_id'])),
         # Security status as on a dev-fused, undemoted board (tuple 0,0,1,1):
         # MobileGestalt reads these from /chosen, and mobileactivationd's
         # DeviceType then takes its native "Hactivation" branch (state
@@ -387,15 +426,15 @@ def build(seed=None, qemu=False, highmem=False, board='sweet', display_scale=3, 
         ('reg', u64(b['uart'][0], b['uart'][1])),
     ])] if b.get('uart') and not qemu else []
 
-    # Identity of the iPhone X whose userland runs here: compatible[0] is
-    # hw.model/hw.target (D22AP), model is hw.machine/hw.product
-    # (iPhone10,3). 'xiaomi,sweet' stays for SweetPlatformExpert matching.
+    # Identity of the Apple device whose userland runs here: compatible[0] is
+    # hw.model/hw.target, model is hw.machine/hw.product.
+    # 'xiaomi,sweet' stays for SweetPlatformExpert matching.
     return node('device-tree', [
         ph(),
-        ('compatible', cstr('D22AP') + cstr('iPhone10,3') + b''.join(cstr(c) for c in b['compat']) + cstr('AppleARM')),
-        ('model', cstr('iPhone10,3')),
-        ('target-type', cstr('D22')),
-        ('target-sub-type', cstr('D22AP')),
+        ('compatible', cstr(dev['target_sub_type']) + cstr(dev['model']) + cstr('D22AP') + cstr('iPhone10,3') + b''.join(cstr(c) for c in b['compat']) + cstr('AppleARM')),
+        ('model', cstr(dev['model'])),
+        ('target-type', cstr(dev['target_type'])),
+        ('target-sub-type', cstr(dev['target_sub_type'])),
         ('manufacturer', cstr('Apple Inc.')),
         ('#address-cells', u32(2)),
         ('#size-cells', u32(2)),
@@ -404,6 +443,7 @@ def build(seed=None, qemu=False, highmem=False, board='sweet', display_scale=3, 
 
 if __name__ == '__main__':
     board = sys.argv[sys.argv.index('--board') + 1] if '--board' in sys.argv else 'sweet'
+    device = sys.argv[sys.argv.index('--device') + 1] if '--device' in sys.argv else 'iPhone14,7'
     scale = int(sys.argv[sys.argv.index('--display-scale') + 1]) if '--display-scale' in sys.argv else 3
     points = tuple(int(v) for v in sys.argv[sys.argv.index('--points') + 1].split('x')) if '--points' in sys.argv else (375, 812)
     lowpool = parse_lowpool(sys.argv[sys.argv.index('--lowpool') + 1]) if '--lowpool' in sys.argv else None
@@ -415,7 +455,7 @@ if __name__ == '__main__':
         if skip:
             skip = False
             continue
-        if a in ('--board', '--display-scale', '--points', '--lowpool'):
+        if a in ('--board', '--device', '--display-scale', '--points', '--lowpool'):
             skip = True
             continue
         if not a.startswith('-'):
@@ -424,7 +464,7 @@ if __name__ == '__main__':
     if not out_path:
         out_path = sys.argv[1] if len(sys.argv) > 1 else 'out.adt'
 
-    root = build(qemu='--qemu' in sys.argv, highmem='--highmem' in sys.argv, board=board, display_scale=scale, points=points, lowpool=lowpool, amp=amp)
+    root = build(qemu='--qemu' in sys.argv, highmem='--highmem' in sys.argv, board=board, display_scale=scale, points=points, lowpool=lowpool, amp=amp, device=device)
     blob = adt.serialize(root)
     open(out_path, 'wb').write(blob)
     if '--dump' in sys.argv:
