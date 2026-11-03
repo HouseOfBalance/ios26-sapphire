@@ -1399,6 +1399,9 @@ def auto(root):
 
 
 def main():
+    if any(a in ('-h', '--help') for a in sys.argv[1:]):
+        print(__doc__.strip())
+        return
     if len(sys.argv) == 4 and sys.argv[1] == '--bt-plist':
         plist = load(sys.argv[2])
         if bluetoothd_env(plist) == 0:

@@ -10,6 +10,10 @@ the ring follows. Byte n of the console stream is at ring offset n % size.
 """
 import struct, sys
 
+if len(sys.argv) < 2 or sys.argv[1] in ('-h', '--help'):
+    print(__doc__.strip())
+    sys.exit(0 if sys.argv[1:] and sys.argv[1] in ('-h', '--help') else 1)
+
 data = open(sys.argv[1], 'rb').read()
 magic, version, size, total, seq = struct.unpack_from('<8sIIQQ', data, 0)
 if magic != b'SWEETLOG':

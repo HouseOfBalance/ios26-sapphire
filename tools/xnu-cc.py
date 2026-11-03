@@ -47,7 +47,10 @@ def _default_clang():
     local = os.path.expanduser('~/swift/usr/bin/clang')
     if os.path.exists(local):
         return local
-    return subprocess.run(['xcrun', '-f', 'clang'], capture_output=True, text=True).stdout.strip() or 'clang'
+    try:
+        return subprocess.run(['xcrun', '-f', 'clang'], capture_output=True, text=True).stdout.strip() or 'clang'
+    except (FileNotFoundError, OSError):
+        return 'clang'
 
 
 CLANG = os.environ.get('XNU_CLANG') or _default_clang()
@@ -149,6 +152,9 @@ def run(item, bt, cdirs):
 
 
 def main():
+    if len(sys.argv) < 3 or sys.argv[1] in ('-h', '--help'):
+        print(__doc__.strip())
+        return 0 if len(sys.argv) > 1 and sys.argv[1] in ('-h', '--help') else 1
     log, bt = sys.argv[1], os.path.abspath(sys.argv[2])
     per_file = '--per-file' in sys.argv
     filters = [a for a in sys.argv[3:] if a != '--per-file']

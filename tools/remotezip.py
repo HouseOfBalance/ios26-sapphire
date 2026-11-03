@@ -105,6 +105,9 @@ def extract(url, entry, outdir):
 
 
 if __name__ == '__main__':
+    if len(sys.argv) < 2 or sys.argv[1] in ('-h', '--help'):
+        print("Usage: remotezip.py URL [PATTERN OUTDIR]")
+        sys.exit(0 if sys.argv[1:] and sys.argv[1] in ('-h', '--help') else 1)
     url = sys.argv[1]
     entries = central_dir(url)
     if len(sys.argv) == 2:

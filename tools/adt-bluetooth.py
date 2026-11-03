@@ -24,6 +24,9 @@ def walk(n):
 
 
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] in ('-h', '--help'):
+        print(__doc__.strip())
+        sys.exit(0)
     if len(sys.argv) != 3:
         raise SystemExit(__doc__)
     root, _ = adt.parse(adt.load(sys.argv[1]))

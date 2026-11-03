@@ -5,7 +5,8 @@
 import sys
 
 if len(sys.argv) < 3 or sys.argv[1] in ('-h', '--help'):
-    sys.exit('Usage: mk-focaltech-fw.py focaltech_ts_fw_m20.bin XNU_TREE/bsd/dev/redwood_focaltech_fw.h')
+    print('Usage: mk-focaltech-fw.py focaltech_ts_fw_m20.bin XNU_TREE/bsd/dev/redwood_focaltech_fw.h')
+    sys.exit(0 if len(sys.argv) > 1 and sys.argv[1] in ('-h', '--help') else 1)
 
 data = open(sys.argv[1], 'rb').read()
 rows = [', '.join('0x%02x' % b for b in data[i:i + 16]) + ',' for i in range(0, len(data), 16)]

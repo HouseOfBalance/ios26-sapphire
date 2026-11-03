@@ -51,6 +51,9 @@ def job(label, *args):
 
 
 def main():
+    if any(x in ('-h', '--help') for x in sys.argv[1:]):
+        print(__doc__.strip())
+        sys.exit(0)
     a = [x for x in sys.argv[1:] if not x.startswith('--')]
     flags = {x for x in sys.argv[1:] if x.startswith('--')}
     if len(a) != 2:

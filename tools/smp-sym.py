@@ -3,7 +3,8 @@
 #   tools/smp-sym.py CLEAN_LOG PROCESS SAMPLE_NO   (needs research/dsc/dyld_shared_cache_arm64 and ipsw)
 import os, re, subprocess, sys
 if len(sys.argv) < 4 or sys.argv[1] in ('-h', '--help'):
-    sys.exit('Usage: tools/smp-sym.py CLEAN_LOG PROCESS SAMPLE_NO')
+    print('Usage: tools/smp-sym.py CLEAN_LOG PROCESS SAMPLE_NO')
+    sys.exit(0 if len(sys.argv) > 1 and sys.argv[1] in ('-h', '--help') else 1)
 L, want, sample = sys.argv[1], sys.argv[2], sys.argv[3]
 text = open(L).read()
 blk = text.split('SMP --- sample %s' % sample, 1)[1].split('SMP --- sample', 1)[0]

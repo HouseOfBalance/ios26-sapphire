@@ -142,6 +142,9 @@ def walk_simg(path, prefix):
 
 
 def main():
+    if any(a in ('-h', '--help') for a in sys.argv[1:]):
+        print(__doc__.strip())
+        return 0
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
     quiet = '--quiet' in sys.argv
     prefix = '/'
