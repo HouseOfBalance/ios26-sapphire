@@ -63,18 +63,9 @@ jobs:
             echo "Successfully generated userdata.simg"
             # Split if larger than 2GB for GitHub artifact upload limits
             split -b 1900M out/userdata.simg out/parts/userdata.simg.part_
-            cat << 'EOF' > out/parts/HOW_TO_JOIN.txt
-  To join the split sparse image pieces back into a single userdata.simg:
-
-  Windows (Command Prompt):
-    copy /b userdata.simg.part_* userdata.simg
-
-  macOS / Linux:
-    cat userdata.simg.part_* > userdata.simg
-
-  Then flash to your Redmi Note 13 4G (sapphire):
-    fastboot -S 512M flash userdata userdata.simg
-  EOF
+            echo "To join split parts on Windows: copy /b userdata.simg.part_* userdata.simg" > out/parts/HOW_TO_JOIN.txt
+            echo "To join split parts on macOS/Linux: cat userdata.simg.part_* > userdata.simg" >> out/parts/HOW_TO_JOIN.txt
+            echo "Then flash: fastboot -S 512M flash userdata userdata.simg" >> out/parts/HOW_TO_JOIN.txt
           fi
 
       - name: Upload RootFS Artifact
