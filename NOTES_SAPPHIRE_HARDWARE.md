@@ -3,6 +3,20 @@
 ## Agent handoff / active work (2026-11-03, latest)
 
 ### >>> COMPLETE STATUS HANDOFF FOR SAPPHIRE (HakiOS XNU 12377 / iOS 26 ARM64E) <<<
+* **Current Status (2026-11-03): ARTIFACTS BUILD TRIGGERED & KERNEL RUN 41568757351 DOWNLOADED**
+  - **Milestone Details:**
+    - **Kernel Artifact Built & Downloaded (Run 41568757351, Commit `12bc0ed`):**
+      * Workflow `build-xnu-12377.yml` finished with conclusion `success`.
+      * Downloaded artifact `hakios-ios26-sapphire` (34.3 MB zip) containing:
+        - `mach.development.bcm2837` (28,244,368 bytes, compiled XNU 12377 Mach-O kernel)
+        - `enxerto-boot.img` (10,997,760 bytes, Android GKI v4 boot image with embedded SWEETXNU payload)
+        - `payload.bin` (10,328,032 bytes, verified payload with iPhone14,7 / D27AP ADT)
+        - `bergamota-fastboot.img` (10,997,760 bytes)
+      * Staged directly into local `artifacts/hakios-ios26-sapphire/` and `out/`.
+    - **RootFS Artifact Build Triggered (Run 41569849091):**
+      * Triggered `build-rootfs.yml` on `macos-15` runner via `tools/trigger_rootfs.py run --device iPhone14,7 --version 26.0`.
+      * Workflow in progress: executes `fetch_root.py`, extracts DMGs, runs `tools/dsc_flatten_v2.py` to flatten PAC pointers in dyld shared cache slide_info v5, executes `tools/renegade/mkroot-full.py` to generate `userdata.simg`.
+  - **Previous Hardening Milestones:**
 * **Current Status (2026-11-03, Commit `12bc0ed`): EXHAUSTIVE DEEP AUDIT, 100% CLI HARDENING (35/35 TOOLS PASS) & WORKFLOW INTEGRITY VERIFIED**
   - **Milestone Details:**
     - **100% CLI Help & Exception Robustness:**
