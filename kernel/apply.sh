@@ -41,9 +41,8 @@ if [ -f "$K/0004-pmap-4kb-quad-pte.patch" ]; then
 fi
 
 # Apply Part 5: Cortex-A73 PAC sysreg stub and early FB markers
-if [ -f "$K/0005-cortex-a73-pac-stub.patch" ]; then
-	git -C "$D" apply --whitespace=nowarn "$K/0005-cortex-a73-pac-stub.patch"
-	echo "applied 0005-cortex-a73-pac-stub.patch (Cortex-A73 PAC sysreg stub and early FB markers)"
+if [ -f "$K/patch_cortex_a73.py" ]; then
+	python3 "$K/patch_cortex_a73.py" "$D"
 fi
 
 # Fix kasan-denylist regex for older/host Clang parser
