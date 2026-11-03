@@ -72,9 +72,12 @@ def main():
     out_dir = os.path.abspath(args.out_dir)
     os.makedirs(out_dir, exist_ok=True)
 
-    url = args.url or os.environ.get("IPSW_URL")
+    url = (args.url or os.environ.get("IPSW_URL") or "").strip()
+    device = (args.device or "").strip() or "iPhone11,8"
+    version = (args.version or "").strip() or "18.7.8"
+
     if not url:
-        url = get_ipsw_url(device=args.device, version=args.version)
+        url = get_ipsw_url(device=device, version=version)
 
     # 1. Fetch BuildManifest.plist via remotezip
     remotezip_py = os.path.join(ROOT, "tools", "remotezip.py")
@@ -87,8 +90,10 @@ def main():
     targets = parse_dmgs_from_manifest(manifest_path)
 
     # Sub-directory for DMGs
-    build_dir = os.path.join(out_dir, f"{args.device}_{args.version}".replace(",", "_"))
+    build_dir = os.path.join(out_dir, f"{device}_{version}".replace(",", "_"))
     os.makedirs(build_dir, exist_ok=True)
+    import shutil
+    shutil.copyfile(manifest_path, os.path.join(build_dir, "BuildManifest.plist"))
 
     # 3. Stream-download each required DMG using remotezip.py
     for role, dmg_name in targets.items():

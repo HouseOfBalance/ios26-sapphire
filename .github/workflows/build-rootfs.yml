@@ -30,7 +30,7 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          brew install blacktop/tap/ipsw
+          brew install blacktop/tap/ipsw zstd
 
       - name: Verify Dyld Shared Cache Flattener
         run: |
@@ -58,11 +58,23 @@ jobs:
       - name: Verify Generated Sparse Image
         run: |
           ls -lh out/ || true
+          mkdir -p out/parts
           if [ -f out/userdata.simg ]; then
             echo "Successfully generated userdata.simg"
             # Split if larger than 2GB for GitHub artifact upload limits
-            mkdir -p out/parts
             split -b 1900M out/userdata.simg out/parts/userdata.simg.part_
+            cat << 'EOF' > out/parts/HOW_TO_JOIN.txt
+  To join the split sparse image pieces back into a single userdata.simg:
+
+  Windows (Command Prompt):
+    copy /b userdata.simg.part_* userdata.simg
+
+  macOS / Linux:
+    cat userdata.simg.part_* > userdata.simg
+
+  Then flash to your Redmi Note 13 4G (sapphire):
+    fastboot -S 512M flash userdata userdata.simg
+  EOF
           fi
 
       - name: Upload RootFS Artifact
@@ -70,4 +82,4 @@ jobs:
         with:
           name: hakios-ios-rootfs
           path: out/parts/
-          if-no-files-found: warn
+          if-no-files-found: error
