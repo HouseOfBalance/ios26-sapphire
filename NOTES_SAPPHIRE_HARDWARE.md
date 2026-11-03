@@ -21,6 +21,9 @@
       * Updated bring-up console test job from `org.sweet.ios18.hello` to `org.sweet.ios26.hello`.
       * Set work directory `W` to `research/ios26/full`.
     - Modernized `tools/renegade/fetch-root.sh`, `fetch-ramdisk.sh`, `mkroot-full.sh`, `mkramdisk-root.sh`, `mkboot-full.sh`, `mkroot.py`, `mkbundle.py`, `dsctools/symb.py`, `run-poc.sh`, and `renegade_platform.py` to target iOS 26 and `BOARD=sapphire`.
+    - Hardened `tools/renegade/mkroot-full.py`: Added checks for optional BuildManifest keys and missing shared cache directories to prevent unhandled KeyErrors.
+    - Added CLI argument parsing (`--url`, `--device`, `--version`) to `tools/trigger_rootfs.py`.
+    - Expanded `tools/validate-repo.py` coverage to validate scripts across `tools/renegade/`, `base/`, and `kernel/`.
     - Verified all 150 Python tools via `py_compile` (0 syntax errors), repository integrity via `tools/validate-repo.py`, and Dyld Shared Cache Flattener via `dsc_flatten_v2.py --test` (9/9 suites pass).
 * **Current Status (2026-11-03): USERLAND & ROOTFS PIPELINE READY (DYLD SHARED CACHE FLATTENER INTEGRATED)**
   - **Milestone Details:**

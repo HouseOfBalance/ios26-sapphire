@@ -1349,6 +1349,7 @@ def base(root):
     update` runs before auto(), so an image built before a tweak existed (event_timing was only in main()) gets it.
     Skipped on purpose: patch_mount_phase2 (opt-in), the console bring-up job (informational), the quiet() set
     (opt-in: SWEET_QUIET=1 is honoured here too)."""
+    detect_system_version(root)
     configure_paths()
     launchd(root)
     if os.environ.get('SWEET_QUIET') == '1':

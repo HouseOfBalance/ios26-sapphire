@@ -76,6 +76,13 @@ def trigger_rootfs(device="iPhone14,7", version="26.0", ipsw_url=""):
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "run":
-        trigger_rootfs()
+        import argparse
+        parser = argparse.ArgumentParser(description="Trigger HakiOS 26 RootFS Workflow")
+        parser.add_argument("cmd", choices=["run"])
+        parser.add_argument("--device", default="iPhone14,7")
+        parser.add_argument("--version", default="26.0")
+        parser.add_argument("--url", default="", help="Direct IPSW URL")
+        args, _ = parser.parse_known_args()
+        trigger_rootfs(device=args.device, version=args.version, ipsw_url=args.url)
     else:
         list_workflows()

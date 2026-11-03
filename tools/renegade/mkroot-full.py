@@ -94,6 +94,9 @@ def find_dmgs(d):
     m = plistlib.load(open(mf, 'rb'))['BuildIdentities'][0]['Manifest']
     out = {}
     for key, name in (('OS', 'os'), ('Cryptex1,SystemOS', 'sysos'), ('Cryptex1,AppOS', 'appos')):
+        if key not in m:
+            log(f"warning: key '{key}' not in BuildManifest")
+            continue
         p = m[key]['Info']['Path']
         if p.endswith('.aea'):
             p = p[:-4]
@@ -195,7 +198,7 @@ def stage_copy(a, img, rootmnt, dmgs):
         attach(img, rootmnt, readonly=False)
     log('image mounted at', rootmnt)
     for name in ('appos', 'sysos', 'os'):
-        if name in skip:
+        if name not in dmgs or name in skip:
             continue
         mnt = os.path.join(W, 'src-' + name)
         dev = rplat.attach_ipsw(dmgs[name], mnt, owners=True)
@@ -384,6 +387,9 @@ def stage_macho(a, root):
 def stage_cache(a, root):
     need_free('cache stage')
     d = os.path.join(root, 'System/Library/Caches/com.apple.dyld')
+    if not os.path.isdir(d):
+        log(f"warning: shared cache directory {d} not found; skipping cache stage")
+        return
     run([sys.executable, '-I', os.path.join(HERE, 'pacstrip_cache.py'), d, '--jobs', str(a.jobs)])
     dsc_flatten = os.path.join(ROOT, 'tools', 'dsc_flatten_v2.py')
     if os.path.isfile(dsc_flatten):

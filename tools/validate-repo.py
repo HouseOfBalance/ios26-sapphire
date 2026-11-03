@@ -130,9 +130,11 @@ def validate_shell_scripts(verbose=False):
 
     sh_files = sorted(
         glob.glob(os.path.join(REPO_ROOT, 'tools/*.sh')) +
+        glob.glob(os.path.join(REPO_ROOT, 'tools/renegade/*.sh')) +
         glob.glob(os.path.join(REPO_ROOT, 'enxerto/*.sh')) +
-        glob.glob(os.path.join(REPO_ROOT, 'xnu/patches/*.sh')) +
-        glob.glob(os.path.join(REPO_ROOT, 'xnu/patches-11215/*.sh'))
+        glob.glob(os.path.join(REPO_ROOT, 'base/*.sh')) +
+        glob.glob(os.path.join(REPO_ROOT, 'kernel/*.sh')) +
+        glob.glob(os.path.join(REPO_ROOT, 'xnu/patches/*.sh'))
     )
     errors = []
 
