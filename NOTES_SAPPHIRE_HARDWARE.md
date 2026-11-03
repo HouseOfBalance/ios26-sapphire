@@ -3,6 +3,17 @@
 ## Agent handoff / active work (2026-11-03, latest)
 
 ### >>> COMPLETE STATUS HANDOFF FOR SAPPHIRE (HakiOS XNU 12377 / iOS 26 ARM64E) <<<
+* **Current Status (2026-11-03 22:57): LIVE HARDWARE FLASHED & BOOT TRIGGERED ON SAPPHIRE (REDMI NOTE 13 4G)**
+  - **Flash Execution Details:**
+    - Device: `92d1151e` (`sapphire`, fastboot mode, `is-userspace: no`, buffer: 736MB).
+    - Image: `userdata.simg` (10,889,142,752 bytes, unsparse 16.00 GiB, block size 4096, 4194304 blocks).
+    - Command executed: `fastboot -S 512M flash userdata userdata.simg`.
+    - Result: ALL 21/21 chunks sent and written cleanly with status `OKAY`! (`Total time: 1530.412s`).
+  - **Boot Execution Details:**
+    - Image: `enxerto-boot.img` (10,997,760 bytes, Android boot v4, embedded `SWEETXNU` payload with XNU 12377 + `sapphire.adt` at offset `0xA2000`).
+    - Command executed: `fastboot boot enxerto-boot.img`.
+    - Status: `Sending 'boot.img' (10740 KB) OKAY [0.364s] -> Booting...`.
+    - Active State: Phone is booting XNU from RAM with physical UFS userdata root.
 * **Current Status (2026-11-03): ROOTFS STAGE VERIFY /bin/sh FIX APPLIED (COMPREHENSIVE SHELL DETECTION & SSH-CONDITIONAL VERIFICATION)**
   - **Milestone Details:**
     - **Fix Applied to `tools/renegade/mkroot-full.py`:**
