@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Renegade jailbreak userland (`renegade jb`): optional Procursus rootless bootstrap + Sileo + TrollStore for the iOS 18.7.8 root.
+"""Renegade jailbreak userland (`renegade jb`): optional Procursus rootless bootstrap + Sileo + TrollStore for the HakiOS / iOS 26 root.
 
   jailbreak.py fetch                      download the pinned components into research/jb/ and verify their SHA-256
   jailbreak.py stage                      unpack them into research/jb/stage/ (+ manifest.tsv with owners/modes)

@@ -26,7 +26,7 @@ def run_cmd(cmd, **kwargs):
     return subprocess.run(cmd, check=True, text=True, **kwargs)
 
 
-def get_ipsw_url(device="iPhone11,8", version="18.7.8"):
+def get_ipsw_url(device="iPhone14,7", version="26.0"):
     log(f"Querying Apple CDN for {device} iOS {version} IPSW URL...")
     res = subprocess.run(
         ["ipsw", "download", "ipsw", "--device", device, "--version", version, "--urls"],
@@ -63,9 +63,9 @@ def parse_dmgs_from_manifest(manifest_path):
 def main():
     parser = argparse.ArgumentParser(description="Fetch and decrypt iOS root and cryptex DMGs.")
     parser.add_argument("--url", help="Direct IPSW URL (optional)")
-    parser.add_argument("--device", default="iPhone11,8", help="Apple Device Identifier (default: iPhone11,8)")
-    parser.add_argument("--version", default="18.7.8", help="iOS Version (default: 18.7.8)")
-    parser.add_argument("--out-dir", default=os.path.join(ROOT, "research/ios18/ipsw"), help="Output directory")
+    parser.add_argument("--device", default="iPhone14,7", help="Apple Device Identifier (default: iPhone14,7)")
+    parser.add_argument("--version", default="26.0", help="iOS Version (default: 26.0)")
+    parser.add_argument("--out-dir", default=os.path.join(ROOT, "research/rootfs/ipsw"), help="Output directory")
 
     args = parser.parse_args()
 
@@ -73,8 +73,8 @@ def main():
     os.makedirs(out_dir, exist_ok=True)
 
     url = (args.url or os.environ.get("IPSW_URL") or "").strip()
-    device = (args.device or "").strip() or "iPhone11,8"
-    version = (args.version or "").strip() or "18.7.8"
+    device = (args.device or "").strip() or "iPhone14,7"
+    version = (args.version or "").strip() or "26.0"
 
     if not url:
         url = get_ipsw_url(device=device, version=version)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Renegade root build (`renegade root`): build the FULL iOS 18.7.8 (iPhone11,8, 22H352) root as a flashable HFS+ image for the userdata partition.
+"""Renegade root build (`renegade root`): build the FULL HakiOS / iOS 26 root as a flashable HFS+ image for the userdata partition.
 
   mkroot-full.py [--ipsw-dir DIR] [--out IMG] [--size 20g] [--stages copy,macho,cache,tweaks,seal] [--simg OUT.simg]
 
@@ -44,7 +44,7 @@ import renegade_platform as rplat  # noqa: E402
 
 MAGICS = {b'\xcf\xfa\xed\xfe', b'\xca\xfe\xba\xbe', b'\xca\xfe\xba\xbf'}
 MIN_FREE = 5 << 30
-W = os.path.join(ROOT, 'research/ios18/full')              # work dir (mount points, map)
+W = os.path.join(ROOT, 'research/ios26/full')              # work dir (mount points, map)
 
 
 def log(*a):
@@ -377,7 +377,7 @@ def stage_macho(a, root):
     log(f'{len(idents)} re-signed Mach-Os, identities recorded ({sum(1 for i in idents.values() if not i)} were unsigned)')
     if failed:
         open(os.path.join(W, 'macho-failed.txt'), 'w').write('\n'.join(f'{p}\t{s}' for p, s in failed))
-        sys.exit(f'{len(failed)} Mach-O files failed (research/ios18/full/macho-failed.txt): the build must not continue')
+        sys.exit(f'{len(failed)} Mach-O files failed ({os.path.join(W, "macho-failed.txt")}): the build must not continue')
 
 
 # --- stage: cache ---------------------------------------------------------------------------------------------------
@@ -426,6 +426,8 @@ def stage_tweaks(a, root):
     rec = rt.OwnerRecorder()                       # no sudo on macOS: owners are written into the HFS catalog at seal time
     chowned = rec.owners
     rec.install()                                  # rt.os is the os module: only this process is affected
+    if hasattr(rt, 'detect_system_version'):
+        rt.detect_system_version(root)
     try:
         log('--- launchd.plist (PanicOnCrash, CommCenter), containers, usbnet, netcfg, sweetreboot, ssh, bluetooth')
         rt.launchd(root)
@@ -463,10 +465,10 @@ def stage_tweaks(a, root):
         lpath = os.path.join(root, 'System/Library/xpc/launchd.plist')
         st = os.stat(lpath)
         plist = rt.load(lpath)
-        label = 'org.sweet.ios18.hello'
+        label = 'org.sweet.ios26.hello'
         jpath = f'/System/Library/LaunchDaemons/{label}.plist'
         if os.path.exists(os.path.join(root, 'bin/sh')):
-            args = ('/bin/sh', '-c', 'echo "SWEET iOS18 full root: launchd runs jobs, 6*7=$((6*7))"; '
+            args = ('/bin/sh', '-c', 'echo "SWEET HakiOS 26 full root: launchd runs jobs, 6*7=$((6*7))"; '
                     '/usr/local/bin/toybox uname -a; /usr/local/bin/toybox cat /etc/master.passwd')
             xml = JOB.format(label=label, args=''.join(f'<string>{x}</string>' for x in args))
             open(os.path.join(root, jpath.lstrip('/')), 'w').write(xml)
@@ -778,11 +780,11 @@ def dry_plan(a, img, rootmnt, dmgs, stages):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
-    ap.add_argument('--ipsw-dir', default=os.path.join(ROOT, 'research/ios18/ipsw/22H352__iPhone11,8'))
-    ap.add_argument('--out', default=os.path.join(ROOT, 'research/ios18/ios18-root-full.img'))
-    ap.add_argument('--size', default='20g')
+    ap.add_argument('--ipsw-dir', default=os.path.join(ROOT, 'research/ios26/ipsw'))
+    ap.add_argument('--out', default=os.path.join(ROOT, 'out/ios-root.img'))
+    ap.add_argument('--size', default='16g')
     ap.add_argument('--stages', default='copy,macho,cache,tweaks,seal,verify,simg')
-    ap.add_argument('--simg', default=None)
+    ap.add_argument('--simg', default=os.path.join(ROOT, 'out/userdata.simg'))
     ap.add_argument('--delete-sources', action='store_true', help='delete each IPSW dmg after it was copied (tight disk)')
     ap.add_argument('--skip-sources', default='', help='copy stage resume: sources already in the image (appos,sysos)')
     ap.add_argument('--patch-mount-phase2', action='store_true', help='tweaks: make mount -P 2 skip apfs_boot_util (not needed, see docs)')

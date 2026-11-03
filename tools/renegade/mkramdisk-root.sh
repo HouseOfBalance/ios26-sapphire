@@ -1,15 +1,15 @@
 #!/bin/bash
-# Build the iOS 18 RAM-disk root (case-sensitive HFS+, uncompressed, all root:wheel) from the iOS 18.7.8
+# Build the HakiOS / iOS 26 RAM-disk root (case-sensitive HFS+, uncompressed, all root:wheel)
 # restore ramdisk, every Mach-O rewritten by pacstrip and ad-hoc signed. No sudo needed.
 #
-#   tools/renegade/fetch-ramdisk.sh                       # mounts research/ios18/ramdisk/mnt (once)
+#   tools/renegade/fetch-ramdisk.sh                       # mounts research/ios26/ramdisk/mnt (once)
 #   tools/renegade/mkramdisk-root.sh [--stock-daemons] [--keep-stage]
-#   -> research/ios18/ios18-root.hfs   then see docs/IOS18_PORT.md section 9 for the boot image.
+#   -> research/ios26/ios-root.hfs
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-SRC=${SRC:-research/ios18/ramdisk/mnt}
-STAGE=research/ios18/rootstage
-OUT=${OUT:-research/ios18/ios18-root.hfs}
+SRC=${SRC:-research/ios26/ramdisk/mnt}
+STAGE=research/ios26/rootstage
+OUT=${OUT:-research/ios26/ios-root.hfs}
 KEEP=0; EXTRA=()
 for a in "$@"; do case $a in --keep-stage) KEEP=1;; *) EXTRA+=("$a");; esac; done
 [ -d "$SRC/usr/lib" ] || { echo "$SRC is not mounted: run tools/renegade/fetch-ramdisk.sh" >&2; exit 1; }

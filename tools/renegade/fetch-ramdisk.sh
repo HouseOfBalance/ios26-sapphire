@@ -1,16 +1,12 @@
 #!/bin/bash
-# Fetch the iOS 18 restore ramdisk of an IPSW (176 MB, plain IMG4 -> APFS, NOT encrypted) and mount it read-only.
-# Only this one member is downloaded (HTTP range requests, tools/remotezip.py); the 6.5 GB root dmg is AEA-encrypted
-# and not needed: the ramdisk is a complete on-disk userland (dyld, libSystem dylibs, no shared cache, /bin tools).
+# Fetch the HakiOS / iOS 26 restore ramdisk of an IPSW and mount it read-only.
 #
-#   tools/renegade/fetch-ramdisk.sh [-u IPSW_URL] [-d WORKDIR]      (default WORKDIR research/ios18/ramdisk)
-#   -> prints the mountpoint; then: python3 -I tools/renegade/mkbundle.py <mountpoint> research/ios18poc
-#   hdiutil detach <mountpoint> when done (the script leaves it mounted).
+#   tools/renegade/fetch-ramdisk.sh [-u IPSW_URL] [-d WORKDIR]      (default WORKDIR research/ios26/ramdisk)
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-URL=; WORK=research/ios18/ramdisk
+URL=; WORK=research/ios26/ramdisk
 while getopts u:d: o; do case $o in u) URL=$OPTARG;; d) WORK=$OPTARG;; *) exit 2;; esac; done
-[ -n "$URL" ] || URL=$(ipsw download ipsw --device iPhone11,8 --version 18.7.8 --urls | tail -1)
+[ -n "$URL" ] || URL=$(ipsw download ipsw --device iPhone14,7 --version 26.0 --urls | tail -1)
 mkdir -p "$WORK"
 python3 tools/remotezip.py "$URL" BuildManifest.plist "$WORK" >/dev/null
 RD=$(python3 -I - "$WORK/BuildManifest.plist" <<'P'

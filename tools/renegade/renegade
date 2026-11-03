@@ -5,7 +5,7 @@
 #   renegade scan FILE...                     count the PAC instructions, write nothing
 #   renegade cache CACHE_DIR [--scan] ...     the same over the dyld shared cache (main + sub-caches)
 #   renegade fips CACHE_DIR [--patch]         recompute corecrypto's FIPS HMAC after the cache rewrite
-#   renegade fetch                            download + decrypt the iOS 18.7.8 iPhone11,8 root dmgs
+#   renegade fetch                            download + decrypt the HakiOS / iOS 26 root dmgs
 #   renegade fetch-tools [--tag T] [--zip F]  download berga-tools.zip (prebuilt on-device binaries) from the GitHub release, verify, cache
 #   renegade root [--stages ...] ...          build the full root image (copy, macho, cache, tweaks, seal)
 #   renegade boot [KERNEL] [ADT] [OUT.img]    Enxerto boot image for the full root on userdata

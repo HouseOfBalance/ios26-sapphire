@@ -81,7 +81,29 @@ def skip_summary():
     for f, r in rows:
         print('  - %s: %s' % (f, r))
 
-BUILD, VERSION = '22H352', '18.7.8'
+BUILD, VERSION = '26A5000', '26.0'
+
+
+def detect_system_version(root):
+    """Auto-detect BUILD and VERSION from the root filesystem's SystemVersion.plist."""
+    global BUILD, VERSION
+    for rel in (
+        'System/Library/CoreServices/SystemVersion.plist',
+        'System/Library/CoreServices/SystemVersion.compat.plist',
+    ):
+        p = os.path.join(root, rel)
+        if os.path.exists(p):
+            try:
+                with open(p, 'rb') as f:
+                    data = plistlib.load(f)
+                b = data.get('ProductBuildVersion')
+                v = data.get('ProductVersion')
+                if b and v:
+                    BUILD, VERSION = str(b), str(v)
+                    print(f'system version auto-detected: {VERSION} ({BUILD}) from {rel}')
+                    return
+            except Exception as e:
+                print(f'warning: failed reading {rel}: {e}')
 MOBILE = 501
 
 
@@ -1340,6 +1362,7 @@ def base(root):
 def auto(root):
     """The Renegade auto-fixes, in build order (the jb payload is copied by jailbreak_userland, it needs a staging
     step with downloads and an owner map)."""
+    detect_system_version(root)
     staged_apps(root)
     if enabled('bluetooth'):
         bluetooth(root)

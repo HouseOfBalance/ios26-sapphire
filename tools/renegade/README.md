@@ -7,7 +7,7 @@ The Bergamota Project's patcher. iOS 18 ships every system binary as **arm64e** 
 | `renegade strip IN [OUT]` / `scan` | `pacstrip.py` | Rewrites one Mach-O 4 bytes for 4 bytes (RETAA→RET, BRAA→BR, LDRAA→LDR, PAC/AUT/XPAC→NOP, PACGA→EOR ROR #13). `--sign` re-signs ad hoc, keeping the identifier, flags and entitlements |
 | `renegade cache DIR` | `pacstrip_cache.py` | Does the same over the dyld shared cache (main + sub-caches) and refreshes the CodeDirectory page hashes |
 | `renegade fips DIR --patch` | `fips_rehmac.py` | Recomputes corecrypto's FIPS POST HMAC over the rewritten `__text` |
-| `renegade fetch` | `fetch-root.sh` | Downloads and decrypts the 22H352 iPhone11,8 root and cryptex dmgs |
+| `renegade fetch` | `fetch-root.sh` | Downloads and decrypts the HakiOS / iOS 26 root and cryptex dmgs |
 | `renegade fetch-tools` | `berga_tools.py` | Downloads `berga-tools.zip` (the prebuilt on-device binaries) from the newest `berga-tools-vN` GitHub release (`--tag`, `--zip FILE`, `--status`), verifies SHA-256 and the manifest, unpacks it into `~/.cache/bergamota/berga-tools`. Python stdlib only |
 | `renegade root` | `mkroot-full.py` | Full root image: stages `copy, macho, cache, tweaks, seal`. macOS: no sudo (owners are set in the HFS+ catalog by `hfsroot_owners.py`); Linux: root, see Platforms |
 | `renegade boot` | `mkboot-full.sh` | Enxerto boot image for the root on `userdata` |

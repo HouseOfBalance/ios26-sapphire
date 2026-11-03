@@ -45,7 +45,7 @@ def list_workflows():
         print("Error listing workflows:", e)
 
 
-def trigger_rootfs(device="iPhone11,8", version="18.7.8", ipsw_url=""):
+def trigger_rootfs(device="iPhone14,7", version="26.0", ipsw_url=""):
     token = get_token()
     if not token:
         print("Error: No GitHub token found in git credentials or environment.")

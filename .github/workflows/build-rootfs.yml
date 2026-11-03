@@ -1,20 +1,20 @@
-name: Build iOS RootFS (Userdata Sparse Image)
+name: Build HakiOS 26 RootFS (Userdata Sparse Image)
 
 on:
   workflow_dispatch:
     inputs:
       ipsw_url:
-        description: 'Direct Apple IPSW URL (Leave empty to use default iPhone11,8 iOS 18.7.8)'
+        description: 'Direct Apple IPSW URL for iOS 26 / HakiOS (Leave empty to use default)'
         required: false
         default: ''
       device:
-        description: 'Apple Device Identifier'
+        description: 'Apple Device Identifier (e.g. iPhone14,7)'
         required: false
-        default: 'iPhone11,8'
+        default: 'iPhone14,7'
       build_version:
-        description: 'iOS Version'
+        description: 'Target OS Version (e.g. 26.0)'
         required: false
-        default: '18.7.8'
+        default: '26.0'
 
 jobs:
   build-rootfs:
@@ -38,19 +38,19 @@ jobs:
 
       - name: Fetch Root DMGs
         run: |
-          mkdir -p research/ios18/ipsw
+          mkdir -p research/ios26/ipsw
           if [ -n "${{ github.event.inputs.ipsw_url }}" ]; then
             URL="${{ github.event.inputs.ipsw_url }}"
-            python3 tools/renegade/fetch_root.py --url "$URL" --out-dir research/ios18/ipsw
+            python3 tools/renegade/fetch_root.py --url "$URL" --out-dir research/ios26/ipsw
           else
-            python3 tools/renegade/fetch_root.py --device "${{ github.event.inputs.device }}" --version "${{ github.event.inputs.build_version }}" --out-dir research/ios18/ipsw
+            python3 tools/renegade/fetch_root.py --device "${{ github.event.inputs.device }}" --version "${{ github.event.inputs.build_version }}" --out-dir research/ios26/ipsw
           fi
 
       - name: Build Root Image with Renegade & DSC Flattener
         run: |
           mkdir -p out
           python3 tools/renegade/mkroot-full.py \
-            --ipsw-dir research/ios18/ipsw \
+            --ipsw-dir research/ios26/ipsw \
             --out out/ios-root.img \
             --simg out/userdata.simg \
             --size 16g
