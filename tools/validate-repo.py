@@ -40,6 +40,14 @@ def validate_patches_dir(patch_dir, name):
 
     for path in patch_files:
         fname = os.path.basename(path)
+        # Check if monolithic base patch (e.g. xnu-12377.121.6-dada.patch)
+        if fname.startswith('xnu-') or fname.startswith('base-'):
+            with open(path, 'r', errors='ignore') as f:
+                head = f.read(2048)
+                if not ('--- ' in head or 'diff ' in head or 'Index:' in head):
+                    errors.append(f"Monolithic patch missing standard diff header: {fname}")
+            continue
+
         m = re.match(r'^(\d{4}[a-z]?)-(.+)\.patch$', fname)
         if not m:
             errors.append(f"Invalid patch filename format: {fname}")
@@ -71,9 +79,24 @@ def validate_patches_dir(patch_dir, name):
 
 
 def validate_patches(verbose=False):
-    ok1 = validate_patches_dir(os.path.join(REPO_ROOT, 'xnu/patches'), 'xnu/patches')
-    ok2 = validate_patches_dir(os.path.join(REPO_ROOT, 'xnu/patches-11215'), 'xnu/patches-11215')
-    return ok1 and ok2
+    target_dirs = []
+    kernel_dir = os.path.join(REPO_ROOT, 'kernel')
+    if os.path.isdir(kernel_dir) and glob.glob(os.path.join(kernel_dir, '*.patch')):
+        target_dirs.append((kernel_dir, 'kernel'))
+    for d in ['xnu/patches', 'xnu/patches-11215']:
+        p = os.path.join(REPO_ROOT, d)
+        if os.path.isdir(p):
+            target_dirs.append((p, d))
+
+    if not target_dirs:
+        print(red("[-] Error: No patch directories found in repository"))
+        return False
+
+    all_ok = True
+    for p, name in target_dirs:
+        if not validate_patches_dir(p, name):
+            all_ok = False
+    return all_ok
 
 
 def validate_python_scripts(verbose=False):
