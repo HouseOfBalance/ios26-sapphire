@@ -122,17 +122,22 @@ class Backend:
     # -- shared -------------------------------------------------------------------------------------------------------
     def detach_retry(self, target):
         """detach with retries, then force (a mount that is still busy for a moment after the last write)."""
+        if not self.dry and os.path.isdir(target) and not os.path.ismount(target):
+            return
         for i in range(5):
             if hasattr(os, 'sync'):
                 try: os.sync()
                 except Exception: pass
             r = self.detach(target, force=(i >= 2))
-            if r.returncode == 0:
+            if r.returncode == 0 or (os.path.isdir(target) and not os.path.ismount(target)):
                 return
             time.sleep(0 if self.dry else 3 + 2 * i)
         r = self.detach(target, force=True)
-        if r.returncode:
-            sys.exit('detach failed: ' + r.stderr)
+        if r.returncode == 0 or (os.path.isdir(target) and not os.path.ismount(target)):
+            return
+        if 'No such file or directory' in getattr(r, 'stderr', '') or 'not mounted' in getattr(r, 'stderr', '').lower():
+            return
+        sys.exit('detach failed: ' + getattr(r, 'stderr', ''))
 
     @staticmethod
     def cs_options(flags):
@@ -231,16 +236,25 @@ class MacOS(Backend):
             if check and r.returncode:
                 raise subprocess.CalledProcessError(r.returncode, cmd, r.stdout, r.stderr)
             return r
+        # If the mountpoint is already unmounted or reported "No such file or directory" / "not mounted"
+        if not self.dry and os.path.isdir(target) and not os.path.ismount(target):
+            return subprocess.CompletedProcess(cmd, 0, stdout=r.stdout, stderr=r.stderr)
+        if 'No such file or directory' in getattr(r, 'stderr', '') or 'not mounted' in getattr(r, 'stderr', '').lower():
+            return subprocess.CompletedProcess(cmd, 0, stdout=r.stdout, stderr=r.stderr)
         # If normal detach failed and force wasn't passed, try with -force
         if not force:
             r = self.run(['hdiutil', 'detach', '-force', target], check=False)
             if r.returncode == 0:
                 return r
+            if not self.dry and os.path.isdir(target) and not os.path.ismount(target):
+                return subprocess.CompletedProcess(cmd, 0, stdout=r.stdout, stderr=r.stderr)
+            if 'No such file or directory' in getattr(r, 'stderr', '') or 'not mounted' in getattr(r, 'stderr', '').lower():
+                return subprocess.CompletedProcess(cmd, 0, stdout=r.stdout, stderr=r.stderr)
         # If DiskArbitration timeout or stuck mount, fallback to diskutil unmount force
         if shutil.which('diskutil'):
             r2 = self.run(['diskutil', 'unmount', 'force', target], check=False)
-            if r2.returncode == 0:
-                return r2
+            if r2.returncode == 0 or (not self.dry and os.path.isdir(target) and not os.path.ismount(target)):
+                return subprocess.CompletedProcess(cmd, 0, stdout=r2.stdout, stderr=r2.stderr)
         if check and r.returncode:
             raise subprocess.CalledProcessError(r.returncode, cmd, r.stdout, r.stderr)
         return r

@@ -3,6 +3,28 @@
 ## Agent handoff / active work (2026-11-03, latest)
 
 ### >>> COMPLETE STATUS HANDOFF FOR SAPPHIRE (HakiOS XNU 12377 / iOS 26 ARM64E) <<<
+* **Current Status (2026-11-03): ROOTFS RUN 41578878350 DIAGNOSED & FIXED (SEAL STAGE DETACH "NO SUCH FILE OR DIRECTORY")**
+  - **Milestone Details:**
+    - **Progress in Run 41578878350 (73m run):**
+      * `stage_copy` PASSED completely.
+      * `stage_macho` PASSED completely.
+      * `stage_cache` PASSED completely: flattened dyld cache with `dsc_flatten_v2.py`.
+      * `stage_tweaks` PASSED completely.
+      * `stage_jb` PASSED completely: staged 6869 paths in `/private/var/jb`.
+      * Failure at `stage_seal`: `detach failed: hdiutil: detach failed - No such file or directory`.
+    - **Root Cause:**
+      * When `diskutil unmount force` or an early detach attempt successfully unmounts the mountpoint directory, the volume is already unmounted (`not os.path.ismount(target)`).
+      * Subsequent calls to `hdiutil detach <mountpoint_dir>` fail with exit code 1 and stderr `hdiutil: detach failed - No such file or directory` because the mountpoint is no longer mounted.
+      * Treating this returncode as fatal caused the script to abort when the unmount had already succeeded.
+    - **Fixes Applied:**
+      * `tools/renegade/renegade_platform.py`:
+        - `Backend.detach_retry(target)`: checks `if not self.dry and os.path.isdir(target) and not os.path.ismount(target): return`. Treats `No such file or directory` and `not mounted` in stderr as success.
+        - `MacOS.detach(target)`: checks `os.path.ismount(target)` and catches `No such file or directory` / `not mounted` in stderr as success.
+      * `tools/renegade/mkroot-full.py`:
+        - Added `rplat.detach_image(img)` in `stage_seal` after `rplat.detach_retry(rootmnt)` to cleanly release all attached device nodes before trimming and fsck.
+    - **Verification Results:**
+      * `tools/renegade/tests`: 55/55 PASS (1 skipped).
+      * `tools/validate-repo.py -v`: 5 patches, 35 tools validated, 0 errors.
 * **Current Status (2026-11-03): ROOTFS RUN 41571606717 DIAGNOSED & FIXED (SEAL STAGE DISK ARBITRATION TIMEOUT)**
   - **Milestone Details:**
     - **Progress in Run 41571606717 (27m run):**

@@ -574,6 +574,7 @@ def stage_seal(a, img, rootmnt):
         elif shutil.which('sync'):
             subprocess.run(['sync'])
         rplat.detach_retry(rootmnt)
+    rplat.detach_image(img)
     run([sys.executable, '-I', os.path.join(HERE, 'hfs_trim.py'), img])        # give freed blocks back to the host
     table = load_map(os.path.join(W, 'owners.tsv'))
     if os.path.exists(OWNER_EXTRA):
