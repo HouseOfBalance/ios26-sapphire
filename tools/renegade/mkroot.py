@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage the iOS 18 restore ramdisk as a bootable root (stage 1b, docs/IOS18_PORT.md section 9).
+"""Stage the HakiOS / iOS 26 restore ramdisk as a bootable root (stage 1b).
 
   mkroot.py RAMDISK_MOUNT STAGEDIR [--stock-daemons] [--keep-standalone] [--keep-all] [--no-strip]
 
@@ -72,8 +72,8 @@ def main():
             os.unlink(os.path.join(ld, f))
     os.chmod(ld, 0o755)
     for name, args in (('expr', ('/bin/expr', '6', '*', '7')), ('passwd', ('/bin/cat', '/etc/master.passwd'))):
-        p = os.path.join(ld, f'org.sweet.ios18.{name}.plist')
-        open(p, 'w').write(job(f'org.sweet.ios18.{name}', *args))
+        p = os.path.join(ld, f'org.sweet.ios26.{name}.plist')
+        open(p, 'w').write(job(f'org.sweet.ios26.{name}', *args))
         os.chmod(p, 0o644)
 
     machos = []

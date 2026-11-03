@@ -13,7 +13,7 @@ renegade_platform.py. Stages (each one can be re-run on the same image; the imag
           -> merged view), owner/mode map of everything (lstat of the mounted IPSW volumes, owners on)
   macho   pacstrip + ad-hoc codesign / ldid (entitlements kept) of every Mach-O, in parallel, hard links kept
   cache   tools/renegade/pacstrip_cache.py over the dyld shared cache (code sections, signature page hashes)
-  tweaks  the iOS 16 first-boot tweaks (root_tweaks18.py = sweet-root-tweaks.py) + iOS 18 launchd bring-up jobs +
+  tweaks  the HakiOS / iOS 26 first-boot tweaks (root_tweaks18.py) + launchd bring-up jobs +
           the Renegade auto-fixes (all ON, opt-outs --no-appreg --no-posterboard --no-bluetooth --no-jb): staged apps
           moved to /Applications, first-boot job that registers them (sweetuicache), PosterBoard + sweetfp.dylib,
           bluetooth (bluetoothd env, BlueTool stub, hcitest). Build the tools first: tools/sweetnet/build.sh
@@ -417,7 +417,7 @@ def stage_tweaks(a, root):
     rt.SSH_OUT = rt.ssh_out()          # this checkout, the main checkout, then the berga-tools cache
     rt.NETCFG = rt.find_sweetnet('sweetnetcfg') or os.path.join(MAIN_CHECKOUT, 'research/sweetnet/sweetnetcfg')
     rt.REBOOT_TOOL = rt.find_sweetnet('sweetreboot') or os.path.join(MAIN_CHECKOUT, 'research/sweetnet/sweetreboot')
-    # BlueTool stub, hcitest, ios18/sweetuicache and ios18/sweetfp.dylib: rt.find_sweetnet() (this checkout's
+    # BlueTool stub, hcitest, sweetuicache and sweetfp.dylib: rt.find_sweetnet() (this checkout's
     # research/sweetnet first, then the main checkout's; tools/sweetnet/build.sh)
     gaps = rt.tool_gaps({f: rt.enabled(f) for f in rt.FEATURES})      # prebuilt binaries missing: skip, do not fail
     for f_, why in gaps.items():

@@ -93,7 +93,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--src", default=os.path.join(HERE, "assets", "bergamota-logo.png"))
     ap.add_argument("--size", type=int, default=320)
-    ap.add_argument("--out", default=os.path.join(HERE, "..", "..", "ios-beryllium-ios18", "enxerto", "bootlogo.h"))
+    ap.add_argument("--out", default=os.path.join(HERE, "..", "enxerto", "bootlogo.h"))
     ap.add_argument("--preview")
     ap.add_argument("--bg", help="background RRGGBB instead of BG_BOOT (the kernel console logo uses 000000)")
     ap.add_argument("--dim", type=float, default=1.0, help="scale the logo's colours (console logo: dimmed under text)")

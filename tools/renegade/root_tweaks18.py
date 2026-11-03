@@ -732,9 +732,17 @@ def enabled(feature):
 def find_sweetnet(rel):
     """First existing research/sweetnet/REL (tools/sweetnet/build.sh output) of: $RENEGADE_SWEETNET, this
     checkout, the main checkout."""
-    for d in SWEETNET_DIRS:
-        if d and os.path.exists(os.path.join(d, rel)):
-            return os.path.abspath(os.path.join(d, rel))
+    variants = [rel]
+    if rel.startswith('ios18/'):
+        variants.insert(0, rel.replace('ios18/', 'ios26/'))
+        variants.append(rel.replace('ios18/', ''))
+    elif rel.startswith('ios26/'):
+        variants.append(rel.replace('ios26/', 'ios18/'))
+        variants.append(rel.replace('ios26/', ''))
+    for v in variants:
+        for d in SWEETNET_DIRS:
+            if d and os.path.exists(os.path.join(d, v)):
+                return os.path.abspath(os.path.join(d, v))
     return None
 
 

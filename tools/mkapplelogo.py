@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build enxerto/applelogo.h: the Apple logo for Enxerto's hand-off screen, from YOUR iOS root.
 
-  python3 tools/mkapplelogo.py [--root research/ios18/ios18-root-full.simg | --png logo.png] [--size 390]
+  python3 tools/mkapplelogo.py [--root out/userdata.simg | --png logo.png] [--size 390]
                                [--out enxerto/applelogo.h] [--preview png]
 
 iOS shows the Apple logo (white on black) from iBoot until SpringBoard's first frame, but that

@@ -1,7 +1,7 @@
-"""Symbolicate / disassemble the iOS 18 (PAC-stripped) dyld shared cache without dyld_shared_cache_util.
+"""Symbolicate / disassemble the HakiOS / iOS 26 (PAC-stripped) dyld shared cache without dyld_shared_cache_util.
 
-Setup (once; ~4 GB, deleted again with `rm -r research/ios18/dsc`):
-    python3 tools/renegade/hfsx.py research/ios18/ios18-root-full.simg dsc research/ios18/dsc
+Setup (once; ~4 GB, deleted again with `rm -r research/ios26/dsc`):
+    python3 tools/renegade/hfsx.py out/userdata.simg dsc research/ios26/dsc
     python3 -m venv /tmp/v && /tmp/v/bin/pip install capstone      # disassembler (the system python has none)
 Tools (run with the venv python, from anywhere; DSC_DIR overrides the cache directory):
     symb.py SLIDE ADDR...          ADDR - SLIDE -> image+off nearest-export (slide = 'slide 0x...' of the CRASH line)
@@ -19,7 +19,7 @@ import sys, struct, bisect, os
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 import pacstrip_cache as pc
-C = pc.Cache(os.environ.get('DSC_DIR') or os.path.join(HERE, '..', '..', '..', 'research', 'ios18', 'dsc'))
+C = pc.Cache(os.environ.get('DSC_DIR') or os.path.join(HERE, '..', '..', '..', 'research', 'ios26', 'dsc'))
 BASE = 0x180000000
 IMGS = sorted(C.images())
 ADDRS = [a for a, p in IMGS]

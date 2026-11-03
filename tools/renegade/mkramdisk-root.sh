@@ -23,7 +23,7 @@ DEV=$(hdiutil attach -nomount -imagekey diskimage-class=CRawDiskImage "$OUT" 2>/
 trap 'hdiutil detach -force "$DEV" >/dev/null 2>&1 || true' EXIT
 newfs_hfs -s -v iOSRoot "${DEV/disk/rdisk}" >/dev/null           # case-sensitive, NOT journaled
 hdiutil detach "$DEV" >/dev/null
-MNT=$PWD/research/ios18/rootmnt; mkdir -p "$MNT"
+MNT=$PWD/research/ios26/rootmnt; mkdir -p "$MNT"
 DEV=$(hdiutil attach -imagekey diskimage-class=CRawDiskImage -mountpoint "$MNT" "$OUT" 2>/dev/null | awk 'NR==1{print $1}')
 ditto --nohfsCompression --nopreserveHFSCompression --noextattr --noqtn --norsrc --noacl "$STAGE" "$MNT"
 rm -rf "$MNT"/.{Spotlight-V100,fseventsd,Trashes} 2>/dev/null || true

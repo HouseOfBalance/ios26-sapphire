@@ -1,20 +1,19 @@
 #!/bin/bash
-# Push the iOS 18 proof-of-concept bundle to the phone and run an iOS 18 arm64e tool with iOS 18's dyld.
-# Needs: kernel patch 0131 booted with boot-arg sweetarm64e=1, SSH over USB (tools/sweet-mac-nat.sh not required
-# for the phone link itself: 192.168.7.2, root, key auth). Nothing here touches the phone's own system files:
-# everything lives under /var/root/ios18poc.
+# Push the HakiOS / iOS 26 proof-of-concept bundle to the phone and run an iOS 26 arm64e tool with dyld.
+# Needs: SSH over USB (192.168.7.2, root, key auth). Nothing here touches the phone's own system files:
+# everything lives under /var/root/ios26poc.
 #
 #   tools/renegade/run-poc.sh                  push (if changed) + run `expr 6 * 7` with dyld diagnostics
 #   tools/renegade/run-poc.sh --quiet          same without the DYLD_PRINT_* diagnostics
 #   tools/renegade/run-poc.sh --no-push        do not copy the bundle
 #   tools/renegade/run-poc.sh -- CMD ARGS...   run another tool of the bundle, e.g. -- cat /etc/hosts
-#   env: SWEET_HOST (default root@192.168.7.2), BUNDLE (default research/ios18poc)
+#   env: SWEET_HOST (default root@192.168.7.2), BUNDLE (default research/ios26poc)
 set -uo pipefail
 cd "$(dirname "$0")/../.."
 HOST=${SWEET_HOST:-root@192.168.7.2}
-BUNDLE=${BUNDLE:-research/ios18poc}
-DIR=/var/root/ios18poc
-mkdir -p research/ios18
+BUNDLE=${BUNDLE:-research/ios26poc}
+DIR=/var/root/ios26poc
+mkdir -p research/ios26
 PUSH=1; DIAG=1
 while [ $# -gt 0 ]; do
 	case $1 in

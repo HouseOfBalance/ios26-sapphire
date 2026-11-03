@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Build the iOS 18 proof-of-concept bundle from an iOS 18 restore-ramdisk root.
+"""Build the HakiOS / iOS 26 proof-of-concept bundle from an iOS 26 restore-ramdisk root.
 
-  mkbundle.py RAMDISK_ROOT OUTDIR [--bin NAME ...] [--install-dir /var/root/ios18poc]
+  mkbundle.py RAMDISK_ROOT OUTDIR [--bin NAME ...] [--install-dir /var/root/ios26poc]
 
-The restore ramdisk of an iOS 18 IPSW (IMG4 -> APFS) is a complete on-disk userland: /usr/lib/dyld, a flat
+The restore ramdisk of an iOS 26 IPSW (IMG4 -> APFS) is a complete on-disk userland: /usr/lib/dyld, a flat
 set of libSystem dylibs WITHOUT a shared cache, and a few command-line tools (/bin/cat, /bin/expr, ...), all
 arm64e. This script copies the dependency closure of the chosen tools into
 
-  OUTDIR/dyld               the iOS 18 dyld (kernel-loaded dynamic linker)
+  OUTDIR/dyld               the iOS 26 dyld (kernel-loaded dynamic linker)
   OUTDIR/lib/*.dylib        flat directory of the dylibs (DYLD_LIBRARY_PATH; leaf names are unique)
   OUTDIR/Frameworks/X.framework/...  the frameworks (DYLD_FRAMEWORK_PATH)
   OUTDIR/bin/NAME           the tools; LC_LOAD_DYLINKER rewritten to <install-dir>/dyld

@@ -7,17 +7,21 @@
   - **Milestone Details:**
     - Audited the entire repository for legacy upstream traces of iOS 18 / 18.7.8 (`22H352`, `iPhone11,8`).
     - Fixed default parameters in `tools/trigger_rootfs.py`: Changed defaults from `device="iPhone11,8", version="18.7.8"` to `device="iPhone14,7", version="26.0"`.
-    - Fixed `.github/workflows/build-rootfs.yml`: Changed staging path from `research/ios18/ipsw` to `research/ios26/ipsw`, set default device to `iPhone14,7` and OS version to `26.0`.
+    - Fixed `.github/workflows/build-rootfs.yml`: Changed staging path from `research/ios18/ipsw` to `research/ios26/ipsw`, set default device to `iPhone14,7` and OS version to `26.0`, and added `--delete-sources` to conserve runner disk space.
     - Upgraded `tools/renegade/root_tweaks18.py`:
       * Updated fallback constant `BUILD, VERSION = '26A5000', '26.0'`.
       * Implemented dynamic version detection via `detect_system_version(root)` reading `ProductBuildVersion` and `ProductVersion` directly from the mounted rootfs's `System/Library/CoreServices/SystemVersion.plist`.
       * Prevents `DataMigration` from running indefinitely or activation records mismatch on first boot.
+      * Upgraded `find_sweetnet()` to transparently check both `ios26/...` and fallback `ios18/...` binary variants.
+    - Fixed bug in `tools/berga-tools/package.py`: Solved `AttributeError: 'Namespace' object has no attribute 'ssh'` by making SSH directory optional in `collect()` and `build()`.
+    - Fixed external path bugs in `tools/mkbootlogo.py` and `tools/mkfbart.py` which hardcoded external `../../ios-beryllium-ios18/enxerto/...` destinations.
+    - Upgraded `tools/renegade/fetch_root.py` with intelligent CDN querying: Queries target version or falls back to latest available ARM64E IPSW for the target device if "26.0" is not explicitly named on Apple's CDN.
     - Updated `tools/renegade/mkroot-full.py`:
       * Fixed default `--ipsw-dir` to `research/ios26/ipsw`, `--out` to `out/ios-root.img`, and `--simg` to `out/userdata.simg`.
       * Updated bring-up console test job from `org.sweet.ios18.hello` to `org.sweet.ios26.hello`.
       * Set work directory `W` to `research/ios26/full`.
-    - Modernized `tools/renegade/fetch-root.sh`, `fetch-ramdisk.sh`, `mkroot-full.sh`, `mkramdisk-root.sh`, and `mkboot-full.sh` to target iOS 26 and `BOARD=sapphire`.
-    - Verified all 35 Python tools via `py_compile`, repository integrity via `tools/validate-repo.py`, and Dyld Shared Cache Flattener via `dsc_flatten_v2.py --test` (9/9 suites pass).
+    - Modernized `tools/renegade/fetch-root.sh`, `fetch-ramdisk.sh`, `mkroot-full.sh`, `mkramdisk-root.sh`, `mkboot-full.sh`, `mkroot.py`, `mkbundle.py`, `dsctools/symb.py`, `run-poc.sh`, and `renegade_platform.py` to target iOS 26 and `BOARD=sapphire`.
+    - Verified all 150 Python tools via `py_compile` (0 syntax errors), repository integrity via `tools/validate-repo.py`, and Dyld Shared Cache Flattener via `dsc_flatten_v2.py --test` (9/9 suites pass).
 * **Current Status (2026-11-03): USERLAND & ROOTFS PIPELINE READY (DYLD SHARED CACHE FLATTENER INTEGRATED)**
   - **Milestone Details:**
     - Upgraded `tools/dsc_flatten_v2.py`:

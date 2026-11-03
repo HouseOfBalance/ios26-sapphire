@@ -28,17 +28,33 @@ def run_cmd(cmd, **kwargs):
 
 def get_ipsw_url(device="iPhone14,7", version="26.0"):
     log(f"Querying Apple CDN for {device} iOS {version} IPSW URL...")
+    cmd = ["ipsw", "download", "ipsw", "--device", device]
+    if version and version != "26.0":
+        cmd.extend(["--version", version])
+    cmd.append("--urls")
+    try:
+        res = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        urls = [line.strip() for line in res.stdout.splitlines() if line.strip().startswith("http")]
+        if urls:
+            url = urls[-1]
+            log(f"Found IPSW URL: {url}")
+            return url
+    except Exception as e:
+        log(f"Query for specific version failed ({e}), attempting latest available for {device}...")
+
+    # Fallback: query latest available IPSW for device
+    log(f"Querying Apple CDN for latest available {device} IPSW URL...")
     res = subprocess.run(
-        ["ipsw", "download", "ipsw", "--device", device, "--version", version, "--urls"],
+        ["ipsw", "download", "ipsw", "--device", device, "--urls"],
         check=True,
         capture_output=True,
         text=True,
     )
     urls = [line.strip() for line in res.stdout.splitlines() if line.strip().startswith("http")]
     if not urls:
-        raise RuntimeError(f"Could not find IPSW URL for {device} {version}")
+        raise RuntimeError(f"Could not find any IPSW URL for {device}")
     url = urls[-1]
-    log(f"Found IPSW URL: {url}")
+    log(f"Found latest IPSW URL: {url}")
     return url
 
 

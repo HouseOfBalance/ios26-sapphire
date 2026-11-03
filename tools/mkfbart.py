@@ -66,7 +66,7 @@ def emit(f, name, W, H, pal, rle):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default=os.path.join(HERE, "..", "..", "ios-beryllium-ios18", "enxerto", "fbart.h"))
+    ap.add_argument("--out", default=os.path.join(HERE, "..", "enxerto", "fbart.h"))
     ap.add_argument("--logo", type=int, default=176)
     ap.add_argument("--scene", default="640x800")
     ap.add_argument("--preview")

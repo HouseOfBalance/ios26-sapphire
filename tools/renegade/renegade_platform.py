@@ -682,7 +682,7 @@ def plan(which):
     """Print the commands of an image build for one backend (dry run), without touching anything."""
     r = Runner(dry=True)
     b = {'macos': MacOS, 'linux': Linux}[which](r)
-    img, mnt, dmg, sm = '/work/ios18-root-full.img', '/work/root', '/work/ipsw/os.dmg', '/work/src-os'
+    img, mnt, dmg, sm = '/work/ios26-root-full.img', '/work/root', '/work/ipsw/os.dmg', '/work/src-os'
     print(f'# backend: {which}')
     b.make_image(img, '20g')
     b.format_hfsx(img)

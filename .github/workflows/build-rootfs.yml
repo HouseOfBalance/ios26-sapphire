@@ -53,6 +53,7 @@ jobs:
             --ipsw-dir research/ios26/ipsw \
             --out out/ios-root.img \
             --simg out/userdata.simg \
+            --delete-sources \
             --size 16g
 
       - name: Verify Generated Sparse Image

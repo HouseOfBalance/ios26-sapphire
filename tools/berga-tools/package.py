@@ -103,10 +103,13 @@ def check_name(rel):
     berga_tools.safe_rel(rel)
 
 
-def collect(sweetnet, bgl, ssh):
+def collect(sweetnet, bgl, ssh=None):
     """[(zip path, source path, role, arch(s) or 'data', [libs])] for every allowlisted file; dies on anything unexpected."""
     out = []
-    for prefix, base, items in (('sweetnet', sweetnet, SWEETNET), ('bergamota-gl', bgl, BGL), ('ssh', ssh, SSH)):
+    groups = [('sweetnet', sweetnet, SWEETNET), ('bergamota-gl', bgl, BGL)]
+    if ssh:
+        groups.append(('ssh', ssh, SSH))
+    for prefix, base, items in groups:
         if not base or not os.path.isdir(base):
             die('%s directory not found: %s' % (prefix, base))
         for rel, kind in items:
@@ -149,7 +152,7 @@ def sha256(data):
 
 
 def build(args):
-    items = collect(args.sweetnet, args.bgl, args.ssh)
+    items = collect(args.sweetnet, args.bgl, getattr(args, 'ssh', None))
     commit = git('rev-parse', 'HEAD')
     dirty = bool(git('status', '--porcelain', '--untracked-files=no'))
     bgl_commit = args.bgl_commit or git('rev-parse', 'HEAD', cwd=os.path.abspath(os.path.join(args.bgl, '..', '..')))
