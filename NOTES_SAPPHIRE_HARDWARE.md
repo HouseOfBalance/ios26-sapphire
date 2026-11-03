@@ -1130,3 +1130,6 @@ What it took today (in order): 0058 HID services (Apple IOHIDFamily-1915 user cl
   * Live Photo Observation (`media_1793727192654_0048007d.jpg`): The AMOLED screen shows a solid, bright **YELLOW band** across the top of the display (`0x5c000000`)!
   * **Historic Landmark:** `start_first_cpu` in XNU is confirmed running on physical Cortex-A73 hardware! PAC sysreg traps eradicated!
   * Next instrumentation: Multi-checkpoint visual ladder (CP1 Yellow rows 0-9, CP2 Cyan rows 10-19, CP3 Magenta rows 20-29, CP7 White rows 30-39, CP11 Blue rows 40-49, Exception Red rows 50-59).
+  * Commit `1d3fab5` built cleanly in CI run `41689028318` (conclusion=success).
+  * Latest `enxerto-boot.img` downloaded and copied to `C:\Users\hungtv\Downloads\platform-tools\enxerto-boot.img` (10,997,760 bytes).
+  * When resuming: boot phone with `fastboot boot enxerto-boot.img` to observe which color ladder stripes appear.
