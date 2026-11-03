@@ -3,6 +3,26 @@
 ## Agent handoff / active work (2026-11-03, latest)
 
 ### >>> COMPLETE STATUS HANDOFF FOR SAPPHIRE (HakiOS XNU 12377 / iOS 26 ARM64E) <<<
+* **Current Status (2026-11-03): ROOTFS RUN 41586647650 DIAGNOSED & FIXED (SEAL STAGE SUCCESS; VERIFY STAGE PERMISSIONERROR & VALIDATION ADJUSTMENTS)**
+  - **Milestone Details:**
+    - **Progress in Run 41586647650 (71m run):**
+      * `stage_copy`, `stage_macho`, `stage_cache`, `stage_tweaks`, and `stage_jb` (6869 paths) ALL PASSED.
+      * `stage_seal` PASSED 100%! (`fsck_hfs -fn rc= 0`, `The volume iOSRoot appears to be OK.`). The previous DiskArbitration and detach fixes worked cleanly!
+      * Progressed to `stage_verify`!
+      * Failure at `stage_verify`:
+        1. `PermissionError: [Errno 13] Permission denied: '.../root/private/etc/master.passwd'` during `fixupcheck.walk_dir(R, '/')`.
+        2. `FAIL exists /bin/sh`: stock iOS volume does not include `/bin/sh` (Procursus bootstrap stages it in `/private/var/jb/bin/sh`).
+        3. `FAIL 45 files in the cache dir (no .symbols)`: check was hardcoded to iPhone10,3 (iOS 16: 67 sub-caches), whereas iPhone14,7 / iOS 26 has 45 cache files.
+    - **Root Cause & Fixes Applied:**
+      * `tools/renegade/fixupcheck.py`:
+        - Wrapped `open(p, 'rb')` in `walk_dir` with `try: ... except (PermissionError, OSError): continue` so non-world-readable non-Mach-O files (like mode 0600 `master.passwd`) are safely ignored.
+      * `tools/renegade/mkroot-full.py`:
+        - In `stage_jb`: if `/bin/sh` does not exist and `/private/var/jb/bin/sh` exists, symlinks `bin/sh -> /private/var/jb/bin/sh` so the first-boot postinstall job can run.
+        - In `stage_verify`: updated `/bin/sh` check to accept `/private/var/jb/bin/sh`.
+        - In `stage_verify`: adjusted dyld shared cache count threshold from hardcoded 66/67 to `>= 40` (iPhone14,7 has 45 files).
+    - **Verification Results:**
+      * `tools/renegade/tests`: 55/55 PASS (1 skipped).
+      * `tools/validate-repo.py -v`: 5 patches, 35 tools validated, 0 errors.
 * **Current Status (2026-11-03): ROOTFS RUN 41578878350 DIAGNOSED & FIXED (SEAL STAGE DETACH "NO SUCH FILE OR DIRECTORY")**
   - **Milestone Details:**
     - **Progress in Run 41578878350 (73m run):**

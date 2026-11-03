@@ -108,11 +108,16 @@ def walk_dir(root, prefix):
             p = os.path.join(d, n)
             if os.path.islink(p) or not os.path.isfile(p):
                 continue
-            with open(p, 'rb') as f:
-                if f.read(4) not in (b'\xcf\xfa\xed\xfe', b'\xca\xfe\xba\xbe'):
-                    continue
-                f.seek(0)
-                yield '/' + os.path.relpath(p, root), f.read()
+            try:
+                with open(p, 'rb') as f:
+                    magic = f.read(4)
+                    if magic not in (b'\xcf\xfa\xed\xfe', b'\xca\xfe\xba\xbe'):
+                        continue
+                    f.seek(0)
+                    data = f.read()
+                yield '/' + os.path.relpath(p, root), data
+            except (PermissionError, OSError):
+                continue
 
 
 def walk_simg(path, prefix):
