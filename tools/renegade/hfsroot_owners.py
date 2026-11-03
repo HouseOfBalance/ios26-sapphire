@@ -81,8 +81,9 @@ class Volume:
 
 def main():
     args = sys.argv[1:]
-    if not args:
-        sys.exit(__doc__)
+    if not args or args[0] in ('-h', '--help'):
+        print(__doc__.strip())
+        sys.exit(0 if args and args[0] in ('-h', '--help') else 1)
     img = args[0]
     mapfile = args[args.index('--map') + 1] if '--map' in args else None
     default_root = '--default-root' in args

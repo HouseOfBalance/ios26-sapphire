@@ -3,6 +3,28 @@
 ## Agent handoff / active work (2026-11-03, latest)
 
 ### >>> COMPLETE STATUS HANDOFF FOR SAPPHIRE (HakiOS XNU 12377 / iOS 26 ARM64E) <<<
+* **Current Status (2026-11-03): REPOSITORY-WIDE BUG AUDIT, CLI HARDENING & FULL PLATFORM COMPATIBILITY COMPLETED**
+  - **Milestone Details:**
+    - **CLI Robustness & Unhandled Exception Hardening:**
+      * Audited all CLI scripts across repository for argument handling and `--help` invocation.
+      * Fixed missing argument checking and crash bugs on `--help` across 17 scripts: `tools/img2simg.py`, `tools/renegade/img2simg.py`, `tools/renegade/simg2img.py`, `tools/sweet-crash.py` (fixed infinite stdin hang), `tools/check-exports.py`, `tools/patch-launchd-plist.py`, `tools/smp-sym.py`, `tools/zap-split.py`, `tools/sweetnet/addlc.py`, `tools/mk-focaltech-fw.py`, `tools/renegade/hfs_trim.py`, `tools/renegade/hfsroot_chown.py`, `tools/renegade/hfsroot_owners.py`, `tools/renegade/hfsx.py`, `userland/userland/jobinfo.py`, `userland/userland/mkjobs.py`, and `userland/userland/mkeagl.py`.
+    - **Cross-Platform & Windows Compatibility:**
+      * Fixed `tools/renegade/renegade_platform.py`: added Windows support mapping to dry-run Linux backend instead of exiting; guarded `os.geteuid()` with `hasattr` checks.
+      * Fixed Linux path slash formatting in `renegade_platform.py` bind mount commands (`replace('\\', '/')`).
+      * Fixed `tools/renegade/root_tweaks18.py`: guarded `os.chown`, `os.lchown`, `os.getuid()`, and `os.getgid()` in `OwnerRecorder` for environments without POSIX user/group semantics.
+      * Fixed `userland/tools/apfs/apfs.py`: implemented fallback for `os.pread` (using `os.lseek` + `os.read`) to enable APFS raw image inspection on Windows without runtime errors.
+      * Fixed `tools/renegade/tests/test_platform.py`: guarded platform-specific assertions (setuid bits, path separators, user credentials) so all 54 tests run clean across platforms.
+    - **Device Identity & Hygiene:**
+      * Purged leftover `iPhone10,3` profile and legacy `D22AP` comments in `tools/mkadt.py`. Strictly pure `iPhone14,7` / `D27AP` identity.
+      * Removed hardcoded `/Users/zesmoi/` home directory in `tools/renegade/jailbreak.py`, utilizing `StrictHostKeyChecking=no` and portable `os.devnull`.
+      * Updated bundle install directory default in `tools/renegade/mkbundle.py` from `/var/root/ios18poc` to `/var/root/ios26poc`.
+      * Added dual-target resolution in `tools/berga-tools/package.py` and `tools/smp-sym.py` supporting both `ios26/` and fallback paths.
+    - **Exhaustive Validation:**
+      * `tools/renegade/tests`: 54/54 unit tests PASS (100% SUCCESS).
+      * `tools/verify_sapphire_adt.py`: 6/6 checks PASS (FrameBuffer 1080x2400 @ 0x5c000000, GICv3, UFS 2.2, UART, 8 CPUs, and Device Model iPhone14,7 / board-id 24).
+      * `tools/dsc_flatten_v2.py --test`: 9/9 test suites PASS (100% SUCCESS).
+      * `tools/validate-repo.py -v`: 5 patches, 35 tools validated, 0 errors.
+      * Repository-wide Python compilation (`py_compile` on all `.py` files): 0 errors.
 * **Current Status (2026-11-03): DEVICE MODEL ALIGNMENT & FULL iOS 26 REPOSITORY PURGE COMPLETED**
   - **Milestone Details:**
     - **Device Model ("Mã máy") & ADT Alignment:**

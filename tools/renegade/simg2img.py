@@ -22,8 +22,14 @@ def punch(fd, off, length):
 
 
 def main():
+    if '-h' in sys.argv or '--help' in sys.argv or len(sys.argv) < 3:
+        print(__doc__.strip())
+        sys.exit(0 if ('-h' in sys.argv or '--help' in sys.argv) else 1)
     a = [x for x in sys.argv[1:] if not x.startswith('--')]
     consume = '--consume' in sys.argv
+    if len(a) < 2:
+        print(__doc__.strip())
+        sys.exit(1)
     f = open(a[0], 'r+b' if consume else 'rb')
     m, mj, mn, hs, cs, bs, tb, nc, crc = struct.unpack('<IHHHHIIII', f.read(28))
     assert m == 0xED26FF3A and bs % 4096 == 0

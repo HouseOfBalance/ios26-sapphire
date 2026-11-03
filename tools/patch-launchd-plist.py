@@ -20,6 +20,9 @@ LOG_ENV = {'OS_ACTIVITY_DT_MODE': 'YES', 'CFLOG_FORCE_STDERR': '1'}
 
 
 def main():
+    if len(sys.argv) < 3 or sys.argv[1] in ('-h', '--help'):
+        print(__doc__.strip())
+        sys.exit(0 if sys.argv[1:] and sys.argv[1] in ('-h', '--help') else 1)
     src, dst, labels = sys.argv[1], sys.argv[2], set(sys.argv[3:])
     with open(src, 'rb') as f:
         plist = plistlib.load(f)

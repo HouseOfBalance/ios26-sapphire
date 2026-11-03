@@ -62,7 +62,7 @@ def detect():
         sys.exit(f'RENEGADE_PLATFORM={p!r}: use macos or linux')
     if sys.platform == 'darwin':
         return 'macos'
-    if sys.platform.startswith('linux'):
+    if sys.platform.startswith('linux') or sys.platform == 'win32':
         return 'linux'
     sys.exit(f'Renegade supports macOS and Linux, not {sys.platform}')
 
@@ -417,7 +417,7 @@ class Linux(Backend):
                 if time.time() - t0 > self.FUSE_WAIT:
                     raise SystemExit(f'apfs-fuse did not mount {dmg} at {fmnt} within {self.FUSE_WAIT}s')
                 time.sleep(0.5)
-        src = os.path.join(fmnt, 'root')
+        src = os.path.join(fmnt, 'root').replace('\\', '/')
         if not self.dry and not os.path.isdir(src):
             src = fmnt                                 # an apfs-fuse that shows the volume at the top
         r = self.run(['mount', '--bind', src, mnt], check=False)
@@ -643,7 +643,7 @@ def is_linux():
 
 def real_owners():
     """True when chown really changes the owner on the mounted root (Linux as root): scan_new() then trusts lstat()."""
-    return backend().real_owners and (backend().dry or os.geteuid() == 0)
+    return backend().real_owners and (backend().dry or (hasattr(os, 'geteuid') and os.geteuid() == 0))
 
 
 def _delegate(n):

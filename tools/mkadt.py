@@ -122,15 +122,6 @@ APPLE_DEVICES = {
         'default_points': (402, 874),
         'default_scale': 3,
     },
-    'iPhone10,3': {
-        'model': 'iPhone10,3',
-        'target_type': 'D22',
-        'target_sub_type': 'D22AP',
-        'chip_id': 0x8015,   # Apple A11 Bionic (T8015)
-        'board_id': 6,
-        'default_points': (375, 812),
-        'default_scale': 3,
-    },
 }
 
 BOOT_MANIFEST_HASH = hashlib.sha384(b'sweet boot manifest').digest()
@@ -181,11 +172,11 @@ def parse_lowpool(text):
 
 
 def bluetooth_node(ph):
-    """Stock D22AP: /arm-io/uart1/bluetooth (compatible bluetooth,n88). bluetoothd finds it by
+    """Stock iPhone (D27AP): /arm-io/uart1/bluetooth (compatible bluetooth,wcn3990). bluetoothd finds it by
     IOServiceNameMatching("bluetooth") and reads local-mac-address, transport-encoding and
     transport-speed from the registry entry; BlueTool does the same. Our transport is the
     kernel control socket com.apple.uart.bluetooth (bsd/dev/beryllium_bt_hci.c).
-    transport-encoding 3 = H4BC, the stock iPhone X value and the path the BT_HCI_TRANSPORT
+    transport-encoding 3 = H4BC, the stock value and the path the BT_HCI_TRANSPORT
     override (H4BC:POSIX:com.apple.uart.bluetooth,3000000) selects anyway; 1 = plain H4.
     No function-* properties: they are consumed by the AppleBluetooth BTReset kext, which this
     kernel does not have (the kernel owns power and reset); without function-power_enable no
@@ -397,7 +388,7 @@ def build(seed=None, qemu=False, highmem=False, board='sweet', display_scale=Non
     defaults = node('defaults', [ph(), ('no-effaceable-storage', u32(1))])
 
     # MobileGestalt HomeButtonType = IODeviceTree:/buttons home-button-type
-    # (D22AP: 2, no Home button; absent = 0 = Home-button device).
+    # (D27AP / iPhone 14: 2, no Home button; absent = 0 = Home-button device).
     buttons = node('buttons', [
         ph(),
         ('button-names', cstr('volup') + cstr('voldown') + cstr('hold')),

@@ -55,7 +55,7 @@ def main():
     ap.add_argument('root')
     ap.add_argument('out')
     ap.add_argument('--bin', action='append', default=None)
-    ap.add_argument('--install-dir', default='/var/root/ios18poc')
+    ap.add_argument('--install-dir', default='/var/root/ios26poc')
     ap.add_argument('--no-sign', action='store_true')
     a = ap.parse_args()
     bins = a.bin or ['expr', 'cat', 'mkdir', 'ln']

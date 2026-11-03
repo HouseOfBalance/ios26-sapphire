@@ -12,6 +12,9 @@ import sys
 
 
 def main():
+    if len(sys.argv) < 3 or sys.argv[1] in ('-h', '--help'):
+        print(__doc__.strip())
+        sys.exit(0 if sys.argv[1:] and sys.argv[1] in ('-h', '--help') else 1)
     src, out = sys.argv[1], sys.argv[2]
     d = open(src, 'rb').read()
     if d[:5] != b'\x7fELF\x01':

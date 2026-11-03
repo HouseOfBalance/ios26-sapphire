@@ -17,6 +17,9 @@ import renegade_platform as rplat  # noqa: E402
 
 
 def main():
+    if len(sys.argv) < 2 or sys.argv[1] in ('-h', '--help'):
+        print(__doc__.strip())
+        sys.exit(0 if sys.argv[1:] and sys.argv[1] in ('-h', '--help') else 1)
     path = sys.argv[1]
     f = open(path, 'r+b')
     f.seek(1024)

@@ -14,6 +14,9 @@ SETS = ['BSDKernel', 'IOKit', 'Libkern', 'Mach', 'MACFramework', 'Unsupported', 
 
 
 def main():
+    if len(sys.argv) < 3 or sys.argv[1] in ('-h', '--help'):
+        print(__doc__.strip())
+        sys.exit(0 if sys.argv[1:] and sys.argv[1] in ('-h', '--help') else 1)
     src, allsyms = sys.argv[1], sys.argv[2]
     platform = sys.argv[3] if len(sys.argv) > 3 else 'MacOSX'
     have = set(l.strip() for l in open(allsyms) if l.strip())

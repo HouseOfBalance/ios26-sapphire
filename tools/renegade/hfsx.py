@@ -190,6 +190,9 @@ class VFile:
         return bytes(out)
 
 def main():
+    if len(sys.argv) < 3 or sys.argv[1] in ('-h', '--help'):
+        print(__doc__.strip())
+        sys.exit(0 if sys.argv[1:] and sys.argv[1] in ('-h', '--help') else 1)
     img = Simg(sys.argv[1]); v = Vol(img)
     cmd = sys.argv[2]
     if cmd == 'ls':

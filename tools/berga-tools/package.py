@@ -116,6 +116,14 @@ def collect(sweetnet, bgl, ssh=None):
             zp = prefix + '/' + rel
             check_name(zp)
             src = os.path.join(base, *rel.split('/'))
+            if not os.path.isfile(src) and rel.startswith('ios18/'):
+                alt = os.path.join(base, *rel.replace('ios18/', 'ios26/').split('/'))
+                if os.path.isfile(alt):
+                    src = alt
+            elif not os.path.isfile(src) and rel.startswith('ios26/'):
+                alt = os.path.join(base, *rel.replace('ios26/', 'ios18/').split('/'))
+                if os.path.isfile(alt):
+                    src = alt
             if not os.path.isfile(src) or os.path.islink(src):
                 die('missing (or a symlink): %s' % src)
             with open(src, 'rb') as f:

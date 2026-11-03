@@ -28,11 +28,17 @@ def punch(fd, off, length):
 
 
 def main():
+    if '-h' in sys.argv or '--help' in sys.argv or len(sys.argv) < 3:
+        print(__doc__.strip())
+        sys.exit(0 if ('-h' in sys.argv or '--help' in sys.argv) else 1)
     a = [x for x in sys.argv[1:] if not x.startswith('--')]
     consume = '--consume' in sys.argv
     bs = int(sys.argv[sys.argv.index('--block') + 1]) if '--block' in sys.argv else 4096
     if '--block' in sys.argv:
         a.remove(sys.argv[sys.argv.index('--block') + 1])
+    if len(a) < 2:
+        print(__doc__.strip())
+        sys.exit(1)
     src, dst = a[0], a[1]
     size = os.path.getsize(src)
     assert size % bs == 0 and PIECE % bs == 0, 'image size must be a multiple of the block size'

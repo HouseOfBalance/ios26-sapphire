@@ -108,7 +108,7 @@ HOST_LDID_URL = 'https://github.com/ProcursusTeam/ldid/releases/download/%s/%s'
 APT_SUITE = '2000'                                  # Procursus CF suite for iOS 17/18 (dists/2000, rootless iphoneos-arm64)
 
 SSH = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10',
-       '-o', 'UserKnownHostsFile=/Users/zesmoi/.ssh/known_hosts_ios18']
+       '-o', 'StrictHostKeyChecking=no', '-o', 'UserKnownHostsFile=' + os.environ.get('SSH_KNOWN_HOSTS', os.devnull)]
 HOST = os.environ.get('SWEET_HOST', 'root@192.168.7.2')
 PHONE_PATH = 'PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin; export PATH; '
 

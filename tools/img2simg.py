@@ -16,6 +16,9 @@ CHUNK_MAX = 4096          # blocks per RAW chunk (16 MiB at 4K)
 
 
 def main():
+    if len(sys.argv) < 3 or sys.argv[1] in ('-h', '--help'):
+        print(__doc__.strip())
+        sys.exit(0 if sys.argv[1:] and sys.argv[1] in ('-h', '--help') else 1)
     src, dst = sys.argv[1], sys.argv[2]
     bs = int(sys.argv[3]) if len(sys.argv) > 3 else 4096
     size = os.path.getsize(src)

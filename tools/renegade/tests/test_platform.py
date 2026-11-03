@@ -109,7 +109,7 @@ class TestLinuxCommands(unittest.TestCase):
 
     def test_privileges_checked_unless_dry(self):
         rp.Linux(rp.Runner(dry=True)).need_privileges()                 # no exception
-        if os.geteuid() != 0:
+        if hasattr(os, 'geteuid') and os.geteuid() != 0:
             with self.assertRaises(SystemExit):
                 rp.Linux(rp.Runner(dry=False)).need_privileges()
 
@@ -170,7 +170,8 @@ class TestPyCopyTree(unittest.TestCase):
             open(os.path.join(d, 'a/b/f'), 'w').write('old')            # replaced
             rc, err = rp.py_copy_tree(s, d, ['skip'], chown=False)
             self.assertEqual(open(os.path.join(d, 'a/b/f')).read(), 'x')
-            self.assertEqual(os.stat(os.path.join(d, 'a/b/f')).st_mode & 0o7777, 0o4755)
+            if sys.platform != 'win32':
+                self.assertEqual(os.stat(os.path.join(d, 'a/b/f')).st_mode & 0o7777, 0o4755)
             self.assertEqual(os.stat(os.path.join(d, 'a/b/f')).st_ino, os.stat(os.path.join(d, 'a/hard')).st_ino)
             self.assertEqual(os.readlink(os.path.join(d, 'a/sym')), 'b/f')
             self.assertFalse(os.path.exists(os.path.join(d, 'skip')))
@@ -224,9 +225,14 @@ class TestGating(unittest.TestCase):
         self.rt.REBOOT_TOOL = os.path.join(self.tmp, 'nope')
         import io
         import contextlib
-        saved = os.chown, os.lchown
+        saved = getattr(os, 'chown', None), getattr(os, 'lchown', None)
         self.rt.OwnerRecorder().install()                               # no root here: chown is only recorded
-        self.addCleanup(lambda: (setattr(os, 'chown', saved[0]), setattr(os, 'lchown', saved[1])))
+        def cleanup_chown():
+            if saved[0] is None and hasattr(os, 'chown'): delattr(os, 'chown')
+            else: setattr(os, 'chown', saved[0])
+            if saved[1] is None and hasattr(os, 'lchown'): delattr(os, 'lchown')
+            else: setattr(os, 'lchown', saved[1])
+        self.addCleanup(cleanup_chown)
         with contextlib.redirect_stdout(io.StringIO()) as out:
             self.rt.bluetooth(root)
             self.rt.sweetmetrics(root)
@@ -255,7 +261,7 @@ class TestOwnerRecorder(unittest.TestCase):
     def test_real_mode_applies_and_records(self):
         rt = load('root_tweaks18_o', 'root_tweaks18.py')
         calls = []
-        saved = os.chown, os.lchown
+        saved = getattr(os, 'chown', None), getattr(os, 'lchown', None)
         try:
             rec = rt.OwnerRecorder()
             rec.real = True
@@ -265,13 +271,21 @@ class TestOwnerRecorder(unittest.TestCase):
             os.chown('/x/a', 0, 0)
             os.lchown('/x/b', 501, 501)
         finally:
-            os.chown, os.lchown = saved
+            if saved[0] is None and hasattr(os, 'chown'): delattr(os, 'chown')
+            else: setattr(os, 'chown', saved[0])
+            if saved[1] is None and hasattr(os, 'lchown'): delattr(os, 'lchown')
+            else: setattr(os, 'lchown', saved[1])
         self.assertEqual(calls, [('chown', '/x/a', 0, 0), ('lchown', '/x/b', 501, 501)])
-        self.assertEqual(rec.owners, {'/x/a': (0, 0), '/x/b': (501, 501)})
+        expected = {os.path.abspath('/x/a'): (0, 0), os.path.abspath('/x/b'): (501, 501)} if sys.platform == 'win32' else {'/x/a': (0, 0), '/x/b': (501, 501)}
+        self.assertEqual(rec.owners, expected)
 
     def test_mac_mode_only_records(self):
         rt = load('root_tweaks18_o2', 'root_tweaks18.py')
-        saved = os.chown, os.lchown
+        saved = getattr(os, 'chown', None), getattr(os, 'lchown', None)
+        had_uid = hasattr(os, 'getuid')
+        had_gid = hasattr(os, 'getgid')
+        if not had_uid: os.getuid = lambda: 501
+        if not had_gid: os.getgid = lambda: 20
         try:
             rec = rt.OwnerRecorder()
             rec.real = False
@@ -279,8 +293,14 @@ class TestOwnerRecorder(unittest.TestCase):
             os.chown('/definitely/not/there', 7, 7)                     # would raise if it were applied
             os.lchown('/definitely/not/there2', os.getuid(), os.getgid())  # the owner of the process is ignored
         finally:
-            os.chown, os.lchown = saved
-        self.assertEqual(rec.owners, {'/definitely/not/there': (7, 7)})
+            if saved[0] is None and hasattr(os, 'chown'): delattr(os, 'chown')
+            else: setattr(os, 'chown', saved[0])
+            if saved[1] is None and hasattr(os, 'lchown'): delattr(os, 'lchown')
+            else: setattr(os, 'lchown', saved[1])
+            if not had_uid and hasattr(os, 'getuid'): delattr(os, 'getuid')
+            if not had_gid and hasattr(os, 'getgid'): delattr(os, 'getgid')
+        expected = {os.path.abspath('/definitely/not/there'): (7, 7)} if sys.platform == 'win32' else {'/definitely/not/there': (7, 7)}
+        self.assertEqual(rec.owners, expected)
 
 
 class TestMisc(unittest.TestCase):

@@ -765,10 +765,13 @@ class OwnerRecorder:
     def __init__(self):
         self.owners = {}
         self.real = rplat.real_owners()
-        self._chown, self._lchown = os.chown, os.lchown
+        self._chown = getattr(os, 'chown', None)
+        self._lchown = getattr(os, 'lchown', None)
 
     def _record(self, path, uid, gid):
-        if (uid, gid) == (os.getuid(), os.getgid()) and not self.real:
+        my_uid = getattr(os, 'getuid', lambda: -1)()
+        my_gid = getattr(os, 'getgid', lambda: -1)()
+        if (uid, gid) == (my_uid, my_gid) and not self.real:
             return
         self.owners[os.path.abspath(path)] = (uid, gid)
 

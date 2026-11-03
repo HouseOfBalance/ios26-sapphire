@@ -2,6 +2,9 @@
 """addlc.py BIN DYLIB_PATH [OUT]: append an LC_LOAD_DYLIB to a thin Mach-O (uses the slack before __text).
 Re-sign afterwards: codesign -f -s - --entitlements ents.plist OUT"""
 import struct, sys
+if len(sys.argv) < 3 or sys.argv[1] in ('-h', '--help'):
+    print(__doc__.strip())
+    sys.exit(0 if sys.argv[1:] and sys.argv[1] in ('-h', '--help') else 1)
 src, path = sys.argv[1], sys.argv[2]
 out = sys.argv[3] if len(sys.argv) > 3 else src
 d = bytearray(open(src, 'rb').read())
