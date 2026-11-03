@@ -1124,3 +1124,6 @@ What it took today (in order): 0058 HID services (Apple IOHIDFamily-1915 user cl
   1. Stubbed `PAC_STD_LOAD_KEYS`, `PAC_STD_LOAD_A_KEYS`, and `PAC_STD_LOAD_B_KEYS` in `osfmk/arm64/pac_std_asm.h`.
   2. Replaced `mrs APIBKeyLo_EL1` in `osfmk/arm/arm_init.c` (`hk_ib_probe`) and `mrs APIAKeyLo_EL1` in `osfmk/arm64/sleh.c` with zeroed reads.
   3. Added early physical-mode framebuffer marker band in `start.s` (`0x5c000000` yellow band for `start_first_cpu`, red band for `Lloader_early_exception`).
+
+- Executed `fastboot boot enxerto-boot.img` (build commit `f34594a`, CI run `41684265805`).
+  Sent and booted OK in 0.666s. Waiting for live display observation.
