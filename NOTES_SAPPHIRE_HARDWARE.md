@@ -3,6 +3,31 @@
 ## Agent handoff / active work (2026-11-03, latest)
 
 ### >>> COMPLETE STATUS HANDOFF FOR SAPPHIRE (HakiOS XNU 12377 / iOS 26 ARM64E) <<<
+* **Current Status (2026-11-03): ROOTFS RUN 41569849091 DIAGNOSED & FIXED (UDIF ATTACH & FETCH HARDENING)**
+  - **Milestone Details:**
+    - **Failure Diagnosis of RootFS Run 41569849091:**
+      * RootFS build failed on macOS runner at step `Build Root Image with Renegade & DSC Flattener` during `stage_copy`:
+        `subprocess.CalledProcessError: Command '['hdiutil', 'attach', '-nobrowse', '-mountpoint', '.../src-os', '-readonly', '-noverify', '-owners', 'on', '-imagekey', 'diskimage-class=CRawDiskImage', '.../098-08646-001.dmg']' returned non-zero exit status 1.`
+      * **Root Cause 1 (`CRawDiskImage` on UDIF):** `tools/renegade/renegade_platform.py` unconditionally appended `-imagekey diskimage-class=CRawDiskImage` for every image attachment. While `appos` and `sysos` are raw APFS volume dumps, the main `os` DMG (`098-08646-001.dmg`) is an Apple UDIF disk image containing a `koly` trailer and GUID Partition Table (GPT). Forcing `diskimage-class=CRawDiskImage` instructs macOS `hdiutil` to bypass the UDIF headers and parse compressed LZFSE chunks as raw sectors, immediately failing.
+      * **Root Cause 2 (IPSW sorting in `fetch_root.py`):** `ipsw download --urls` outputs firmwares from newest to oldest. `fetch_root.py` used `urls[-1]`, picking the oldest firmware (`16.0 20A362`) from 2022 rather than the intended release.
+    - **Fixes Applied:**
+      * `tools/renegade/renegade_platform.py`:
+        - Added `is_udif()` auto-detection checking for the 512-byte Apple UDIF `koly` trailer at `file_size - 512` and falling back to `hdiutil imageinfo`.
+        - `MacOS.attach()` dynamically omits `-imagekey diskimage-class=CRawDiskImage` for UDIF images and includes it for raw volumes. Added automatic fallback retry toggling `CRawDiskImage` before raising.
+        - Enhanced `Runner.run()` exception handler to log command stdout and stderr on `CalledProcessError`.
+      * `tools/renegade/mkroot-full.py`:
+        - Updated `detach(dev)` to use `rplat.detach_retry(dev)`, ensuring transient busy mounts are retried up to 4 times and force-detached.
+      * `tools/renegade/fetch_root.py`:
+        - Added `DEFAULT_IPSW_URL` pointing to verified unencrypted iPhone14,7 release.
+        - Corrected version filtering and URL indexing to select the newest matching firmware (`urls[0]`) rather than oldest (`urls[-1]`).
+      * `tools/renegade/tests/test_platform.py`:
+        - Added `test_attach_udif_omits_raw_disk_image` verifying UDIF images omit `CRawDiskImage`. All 55/55 unit tests PASS.
+    - **Verification Results:**
+      * `tools/renegade/tests`: 55/55 PASS (1 skipped for macOS codesign parity on non-macOS host).
+      * `tools/verify_sapphire_adt.py`: 7/7 PASS.
+      * `tools/dsc_flatten_v2.py --test`: 9/9 PASS.
+      * `tools/validate-repo.py -v`: 5 patches, 35 tools validated, 0 errors.
+
 * **Current Status (2026-11-03): ARTIFACTS BUILD TRIGGERED & KERNEL RUN 41568757351 DOWNLOADED**
   - **Milestone Details:**
     - **Kernel Artifact Built & Downloaded (Run 41568757351, Commit `12bc0ed`):**

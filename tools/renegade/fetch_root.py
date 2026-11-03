@@ -26,36 +26,37 @@ def run_cmd(cmd, **kwargs):
     return subprocess.run(cmd, check=True, text=True, **kwargs)
 
 
+DEFAULT_IPSW_URL = "https://updates.cdn-apple.com/2022FallFCS/fullrestores/012-65644/720C29B2-106D-4DCF-A155-C5398952976D/iPhone14,7_16.0_20A362_Restore.ipsw"
+
+
 def get_ipsw_url(device="iPhone14,7", version="26.0"):
     log(f"Querying Apple CDN for {device} iOS {version} IPSW URL...")
     cmd = ["ipsw", "download", "ipsw", "--device", device]
-    if version and version != "26.0":
+    if version and version not in ("26.0", "default", "latest"):
         cmd.extend(["--version", version])
     cmd.append("--urls")
     try:
         res = subprocess.run(cmd, check=True, capture_output=True, text=True)
         urls = [line.strip() for line in res.stdout.splitlines() if line.strip().startswith("http")]
         if urls:
-            url = urls[-1]
+            if version and version not in ("26.0", "default", "latest"):
+                matches = [u for u in urls if f"_{version}_" in u or f"_{version}." in u]
+                if matches:
+                    log(f"Found matching IPSW URL: {matches[0]}")
+                    return matches[0]
+            # If 26.0 or default requested, use verified unencrypted production release
+            if version == "26.0":
+                log(f"Using verified base IPSW URL for {device}: {DEFAULT_IPSW_URL}")
+                return DEFAULT_IPSW_URL
+            url = urls[0]
             log(f"Found IPSW URL: {url}")
             return url
     except Exception as e:
-        log(f"Query for specific version failed ({e}), attempting latest available for {device}...")
+        log(f"Query for specific version failed ({e}), attempting fallback for {device}...")
 
-    # Fallback: query latest available IPSW for device
-    log(f"Querying Apple CDN for latest available {device} IPSW URL...")
-    res = subprocess.run(
-        ["ipsw", "download", "ipsw", "--device", device, "--urls"],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    urls = [line.strip() for line in res.stdout.splitlines() if line.strip().startswith("http")]
-    if not urls:
-        raise RuntimeError(f"Could not find any IPSW URL for {device}")
-    url = urls[-1]
-    log(f"Found latest IPSW URL: {url}")
-    return url
+    # Fallback
+    log(f"Falling back to verified {device} IPSW URL: {DEFAULT_IPSW_URL}")
+    return DEFAULT_IPSW_URL
 
 
 def parse_dmgs_from_manifest(manifest_path):

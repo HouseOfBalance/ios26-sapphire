@@ -93,7 +93,15 @@ class Runner:
             print('+ ' + shlex.join(cmd), flush=True)
         kw.setdefault('capture_output', True)
         kw.setdefault('text', True)
-        return subprocess.run(cmd, check=check, **kw)
+        try:
+            return subprocess.run(cmd, check=check, **kw)
+        except subprocess.CalledProcessError as e:
+            if self.echo or check:
+                if e.stdout:
+                    print(f"[{cmd[0]} stdout]\n{e.stdout}", file=sys.stderr, flush=True)
+                if e.stderr:
+                    print(f"[{cmd[0]} stderr]\n{e.stderr}", file=sys.stderr, flush=True)
+            raise
 
 
 class Backend:
@@ -155,17 +163,60 @@ class MacOS(Backend):
         finally:
             self.detach(d)
 
+    def is_udif(self, img):
+        if not os.path.exists(img):
+            return False
+        try:
+            sz = os.path.getsize(img)
+            if sz >= 512:
+                with open(img, 'rb') as f:
+                    f.seek(-512, os.SEEK_END)
+                    if f.read(4) == b'koly':
+                        return True
+        except Exception:
+            pass
+        if not self.dry and shutil.which('hdiutil'):
+            r = self.run(['hdiutil', 'imageinfo', img], check=False)
+            if r.returncode == 0:
+                return True
+        return False
+
     def attach(self, img, mnt, readonly=True, owners=False):
         if not self.dry:
             os.makedirs(mnt, exist_ok=True)
-        cmd = ['hdiutil', 'attach', '-nobrowse', '-mountpoint', mnt]
+        base_cmd = ['hdiutil', 'attach', '-nobrowse', '-mountpoint', mnt]
         if readonly:
-            cmd += ['-readonly', '-noverify']
+            base_cmd += ['-readonly', '-noverify']
         if owners:
-            cmd += ['-owners', 'on']
-        # the decrypted IPSW dmgs and the HFS image are raw volumes: CRawDiskImage
-        cmd += ['-imagekey', 'diskimage-class=CRawDiskImage']
-        return self.run(cmd + [img], fake='/dev/disk99 Dry_Run\n').stdout.split()[0]
+            base_cmd += ['-owners', 'on']
+
+        udif = self.is_udif(img)
+        cmd = list(base_cmd)
+        if not udif:
+            cmd += ['-imagekey', 'diskimage-class=CRawDiskImage']
+
+        if self.dry:
+            return self.run(cmd + [img], fake='/dev/disk99 Dry_Run\n').stdout.split()[0]
+
+        # Primary attempt with detected diskimage class
+        res = self.run(cmd + [img], check=False)
+        if res.returncode == 0 and res.stdout.strip():
+            return res.stdout.split()[0]
+
+        # Fallback: toggle CRawDiskImage flag
+        alt_cmd = list(base_cmd)
+        if udif:
+            alt_cmd += ['-imagekey', 'diskimage-class=CRawDiskImage']
+        res2 = self.run(alt_cmd + [img], check=False)
+        if res2.returncode == 0 and res2.stdout.strip():
+            return res2.stdout.split()[0]
+
+        # Both attempts failed; print error details and raise
+        if res.stderr:
+            print(f"hdiutil primary attach error:\n{res.stderr}", file=sys.stderr, flush=True)
+        if res2.stderr:
+            print(f"hdiutil fallback attach error:\n{res2.stderr}", file=sys.stderr, flush=True)
+        raise subprocess.CalledProcessError(res.returncode, cmd + [img], res.stdout, res.stderr)
 
     def attach_ipsw(self, dmg, mnt, owners=False):
         return self.attach(dmg, mnt, readonly=True, owners=owners)

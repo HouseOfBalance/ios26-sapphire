@@ -129,6 +129,20 @@ class TestMacCommands(unittest.TestCase):
         self.assertEqual(self.r.history[1], ['hdiutil', 'attach', '-nobrowse', '-mountpoint', '/m2', '-readonly', '-noverify',
                                              '-owners', 'on', '-imagekey', 'diskimage-class=CRawDiskImage', '/os.dmg'])
 
+    def test_attach_udif_omits_raw_disk_image(self):
+        with tempfile.NamedTemporaryFile(suffix='.dmg', delete=False) as tf:
+            tf.write(b'koly' + b'\x00' * 508)
+            temp_path = tf.name
+        try:
+            self.assertTrue(self.b.is_udif(temp_path))
+            self.r.history.clear()
+            self.b.attach(temp_path, '/m_udif', readonly=True, owners=True)
+            self.assertEqual(self.r.history[0], ['hdiutil', 'attach', '-nobrowse', '-mountpoint', '/m_udif',
+                                                 '-readonly', '-noverify', '-owners', 'on', temp_path])
+        finally:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+
     def test_format_and_fsck(self):
         self.b.format_hfsx('/i.img')
         self.assertEqual(self.r.history[0], ['hdiutil', 'attach', '-nomount', '-imagekey', 'diskimage-class=CRawDiskImage', '/i.img'])

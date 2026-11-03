@@ -72,7 +72,7 @@ def attach(img, mnt, readonly=True, owners=False):
 
 
 def detach(dev):
-    rplat.detach(dev)
+    rplat.detach_retry(dev)
 
 
 def find_dmgs(d):

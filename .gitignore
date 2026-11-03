@@ -11,5 +11,6 @@ __pycache__/
 *.metallib
 tools/export.local
 out/
+artifacts/
 enxerto/out/
 *.img
