@@ -118,19 +118,20 @@ def main():
             c = f.read()
         c_norm = c.replace("\r\n", "\n")
 
+        # CP1: start_first_cpu entry - Yellow band (rows 0-9, 0x5c000000)
         start_old = """\tmov\t\tx20, x0
 \tmov\t\tx21, #0
 \tLOADER_CHECKPOINT 1"""
 
         start_new = """\tmov\t\tx20, x0
 \tmov\t\tx21, #0
-\t// hakios visual marker: yellow bar at top of screen (0x5c000000, 40 rows)
+\t// hakios visual marker CP1: Yellow band at rows 0-9 (0x5c000000)
 \tmovz\tx9, #0x5c00, lsl #16
 \tmovz\tx10, #0xff00
 \tmovk\tx10, #0x00ff, lsl #16
 \tmovk\tx10, #0xff00, lsl #32
 \tmovk\tx10, #0x00ff, lsl #48
-\tmov\t\tw11, #10800
+\tmov\t\tw11, #2700
 1:
 \tstp\tx10, x10, [x9], #16
 \tsubs\tw11, w11, #1
@@ -140,6 +141,119 @@ def main():
         assert start_old in c_norm, "start_first_cpu checkpoint 1 not found in start.s"
         c_norm = c_norm.replace(start_old, start_new)
 
+        # CP2: after OSLAR_EL1 - Cyan band (rows 10-19, 0x5c00a8c0)
+        cp2_old = """\t// Unlock the core for debugging
+\tmsr\t\tOSLAR_EL1, xzr
+\tLOADER_CHECKPOINT 2"""
+
+        cp2_new = """\t// Unlock the core for debugging
+\tmsr\t\tOSLAR_EL1, xzr
+\t// hakios visual marker CP2: Cyan band at rows 10-19 (0x5c00a8c0)
+\tmovz\tx9, #0xa8c0
+\tmovk\tx9, #0x5c00, lsl #16
+\tmovz\tx10, #0xffff
+\tmovk\tx10, #0x0000, lsl #16
+\tmovk\tx10, #0xffff, lsl #32
+\tmovk\tx10, #0x0000, lsl #48
+\tmov\t\tw11, #2700
+1:
+\tstp\tx10, x10, [x9], #16
+\tsubs\tw11, w11, #1
+\tb.ne\t1b
+\tLOADER_CHECKPOINT 2"""
+
+        assert cp2_old in c_norm, "checkpoint 2 not found in start.s"
+        c_norm = c_norm.replace(cp2_old, cp2_new)
+
+        # CP3: after page tables built - Magenta band (rows 20-29, 0x5c015180)
+        cp3_old = """\t/* Ensure TTEs are visible */
+\tdsb\t\tish
+
+\tLOADER_CHECKPOINT 3
+
+\tb\t\tcommon_start"""
+
+        cp3_new = """\t/* Ensure TTEs are visible */
+\tdsb\t\tish
+\t// hakios visual marker CP3: Magenta band at rows 20-29 (0x5c015180)
+\tmovz\tx9, #0x5180
+\tmovk\tx9, #0x5c01, lsl #16
+\tmovz\tx10, #0x00ff
+\tmovk\tx10, #0x00ff, lsl #16
+\tmovk\tx10, #0x00ff, lsl #32
+\tmovk\tx10, #0x00ff, lsl #48
+\tmov\t\tw11, #2700
+1:
+\tstp\tx10, x10, [x9], #16
+\tsubs\tw11, w11, #1
+\tb.ne\t1b
+
+\tLOADER_CHECKPOINT 3
+
+\tb\t\tcommon_start"""
+
+        assert cp3_old in c_norm, "checkpoint 3 not found in start.s"
+        c_norm = c_norm.replace(cp3_old, cp3_new)
+
+        # CP7: in common_start right before MMU enable - White band (rows 30-39, 0x5c01fa40)
+        cp7_old = """\tLOADER_CHECKPOINT 7\t\t// hakios: reached common_start, about to enable the MMU
+\t// Enable caches, MMU, ROP and JOP
+\tMOV64   x0, SCTLR_EL1_DEFAULT"""
+
+        cp7_new = """\t// hakios visual marker CP7: White band at rows 30-39 (0x5c01fa40)
+\tmovz\tx9, #0xfa40
+\tmovk\tx9, #0x5c01, lsl #16
+\tmovz\tx10, #0xffff
+\tmovk\tx10, #0x00ff, lsl #16
+\tmovk\tx10, #0xffff, lsl #32
+\tmovk\tx10, #0x00ff, lsl #48
+\tmov\t\tw11, #2700
+1:
+\tstp\tx10, x10, [x9], #16
+\tsubs\tw11, w11, #1
+\tb.ne\t1b
+
+\tLOADER_CHECKPOINT 7\t\t// hakios: reached common_start, about to enable the MMU
+\t// Enable caches, MMU, ROP and JOP
+\tMOV64   x0, SCTLR_EL1_DEFAULT"""
+
+        assert cp7_old in c_norm, "checkpoint 7 not found in start.s"
+        c_norm = c_norm.replace(cp7_old, cp7_new)
+
+        # CP11: in common_start right before ret into arm_init - Blue band (rows 40-49, 0x5c02a300)
+        cp11_old = """\tLOADER_CHECKPOINT 11\t\t// hakios: about to ret into arm_init()
+\t// Return to arm_init()
+\tret"""
+
+        cp11_new = """\t// hakios visual marker CP11: Blue band at rows 40-49 (0x5c02a300)
+\tmrs\t\tx9, SCTLR_EL1
+\tbic\t\tx9, x9, #1
+\tmsr\t\tSCTLR_EL1, x9
+\tisb
+\tmovz\tx9, #0xa300
+\tmovk\tx9, #0x5c02, lsl #16
+\tmovz\tx10, #0x00ff
+\tmovk\tx10, #0x0000, lsl #16
+\tmovk\tx10, #0x00ff, lsl #32
+\tmovk\tx10, #0x0000, lsl #48
+\tmov\t\tw11, #2700
+1:
+\tstp\tx10, x10, [x9], #16
+\tsubs\tw11, w11, #1
+\tb.ne\t1b
+\tmrs\t\tx9, SCTLR_EL1
+\torr\t\tx9, x9, #1
+\tmsr\t\tSCTLR_EL1, x9
+\tisb
+
+\tLOADER_CHECKPOINT 11\t\t// hakios: about to ret into arm_init()
+\t// Return to arm_init()
+\tret"""
+
+        assert cp11_old in c_norm, "checkpoint 11 not found in start.s"
+        c_norm = c_norm.replace(cp11_old, cp11_new)
+
+        # Early Exception: Red band (rows 50-59, 0x5c034bc0)
         exc_old = """\tadr\t\tx9, Lloader_stub_slot
 \tldr\t\tx9, [x9, #8]
 \tcbz\t\tx9, .
@@ -148,13 +262,14 @@ def main():
         exc_new = """\tadr\t\tx9, Lloader_stub_slot
 \tldr\t\tx9, [x9, #8]
 \tcbnz\tx9, 1f
-\tmovz\tx9, #0xa300
-\tmovk\tx9, #0x5c02, lsl #16
+\t// hakios visual marker: Red band at rows 50-59 (0x5c034bc0)
+\tmovz\tx9, #0x4bc0
+\tmovk\tx9, #0x5c03, lsl #16
 \tmovz\tx10, #0x0000
 \tmovk\tx10, #0x00ff, lsl #16
 \tmovk\tx10, #0x0000, lsl #32
 \tmovk\tx10, #0x00ff, lsl #48
-\tmov\t\tw11, #10800
+\tmov\t\tw11, #2700
 2:
 \tstp\tx10, x10, [x9], #16
 \tsubs\tw11, w11, #1

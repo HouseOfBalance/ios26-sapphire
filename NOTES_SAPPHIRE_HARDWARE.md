@@ -1126,4 +1126,7 @@ What it took today (in order): 0058 HID services (Apple IOHIDFamily-1915 user cl
   3. Added early physical-mode framebuffer marker band in `start.s` (`0x5c000000` yellow band for `start_first_cpu`, red band for `Lloader_early_exception`).
 
 - Executed `fastboot boot enxerto-boot.img` (build commit `f34594a`, CI run `41684265805`).
-  Sent and booted OK in 0.666s. Waiting for live display observation.
+  Sent and booted OK in 0.666s.
+  * Live Photo Observation (`media_1793727192654_0048007d.jpg`): The AMOLED screen shows a solid, bright **YELLOW band** across the top of the display (`0x5c000000`)!
+  * **Historic Landmark:** `start_first_cpu` in XNU is confirmed running on physical Cortex-A73 hardware! PAC sysreg traps eradicated!
+  * Next instrumentation: Multi-checkpoint visual ladder (CP1 Yellow rows 0-9, CP2 Cyan rows 10-19, CP3 Magenta rows 20-29, CP7 White rows 30-39, CP11 Blue rows 40-49, Exception Red rows 50-59).
