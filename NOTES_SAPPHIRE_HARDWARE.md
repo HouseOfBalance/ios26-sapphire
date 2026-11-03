@@ -3,8 +3,12 @@
 ## Agent handoff / active work (2026-11-03, latest)
 
 ### >>> COMPLETE STATUS HANDOFF FOR SAPPHIRE (HakiOS XNU 12377 / iOS 26 ARM64E) <<<
-* **Current Status (2026-11-03, Commit `4b525e0`): COMPREHENSIVE HARDENING, MOBILEGESTALT /PRODUCT SYNTHESIS & FULL AUDIT PASSED**
+* **Current Status (2026-11-03, Commit `12bc0ed`): EXHAUSTIVE DEEP AUDIT, 100% CLI HARDENING (35/35 TOOLS PASS) & WORKFLOW INTEGRITY VERIFIED**
   - **Milestone Details:**
+    - **100% CLI Help & Exception Robustness:**
+      * Successfully audited and patched remaining scripts to return exit code 0 and usage on `--help`: `tools/adt-bluetooth.py`, `tools/mk-focaltech-fw.py`, `tools/remotezip.py`, `tools/renegade/fixupcheck.py`, `tools/renegade/mkroot.py`, `tools/renegade/root_tweaks18.py`, `tools/smp-sym.py`, `tools/sweet-log.py`, `tools/sweet-root-tweaks.py`, and `tools/xnu-cc.py`.
+      * Fixed Windows host failure in `tools/xnu-cc.py`: guarded `_default_clang()` against missing `xcrun` command, preventing `FileNotFoundError: [WinError 2]`.
+      * Verified that **35/35 tools** in `tools/` and **19/19 tools** in `tools/renegade/` now exit cleanly with code 0 on `--help`.
     - **Device Identity & MobileGestalt Synthesis:**
       * Upgraded `tools/mkadt.py`: Added synthetic `/product` node for `iPhone14,7` / `D27AP` when external `.adt` files are not present. MobileGestalt now receives complete identity: `product-type='iPhone14,7'`, `product-description='iPhone 14'`, `artwork-device-subtype=2532`, `artwork-scale-factor=3`, `artwork-display-gamut='sRGB'`, `thin-bezel=1`, avoiding fallback to iPod touch or blank Safari rendering. Purged legacy `d22ap.adt` fallback path.
       * Upgraded `tools/verify_sapphire_adt.py`: Added Check 7 validating `/product` node structure, subtype 2532, scale 3x, and sRGB gamut (7/7 checks PASS).
@@ -17,12 +21,12 @@
     - **Cross-Platform CLI & Portability Hardening:**
       * Replaced POSIX `os.statvfs` with portable `shutil.disk_usage().free` in `tools/renegade/mkroot-full.py`, `tools/renegade/update.py`, and `tools/renegade/jailbreak.py`.
       * Guarded external `sync` subprocess execution with `os.sync()` and `shutil.which('sync')`.
-      * Added argument validation and `--help` support across `tools/adt.py`, `tools/check_job.py`, `tools/download_artifact.py`, `tools/mkinit.py`, and `tools/unpack_bootv2.py`.
     - **Verification Results:**
       * `tools/renegade/tests`: 54/54 PASS.
       * `tools/verify_sapphire_adt.py`: 7/7 PASS (FB, GICv3, UFS 2.2, UART, 8 CPUs, Device Model iPhone14,7 / board-id 24, and /product node).
       * `tools/dsc_flatten_v2.py --test`: 9/9 PASS.
       * `tools/validate-repo.py -v`: 5 patches, 35 tools validated, 0 errors.
+      * All 35/35 tools and 19/19 renegade tools: `--help` exit code 0.
       * Repository-wide Python compilation (`python -m compileall -q .`): 0 errors.
 
 * **Current Status (2026-11-03): REPOSITORY-WIDE BUG AUDIT, CLI HARDENING & FULL PLATFORM COMPATIBILITY COMPLETED**
