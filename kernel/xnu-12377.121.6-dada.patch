@@ -88801,8 +88801,10 @@ index 6aa6fe4..07d3ff7 100644
  	MOV64   x0, SCTLR_EL1_DEFAULT
  	MSR_SCTLR_EL1_X0
 @@ -757,6 +947,7 @@ common_start:
- 	cmp		x0, x1
- 	bne		.
+-	cmp		x0, x1
+-	bne		.
++	// hakios: Bengal Cortex-A73 lacks Apple/PAC SCTLR bits; skip readback cmp
++	// hakios: SCTLR_EL1 ignores unimplemented RES0 bits
  #endif /* !VMAPPLE */
 +	LOADER_CHECKPOINT 8		// hakios: MMU enabled and SCTLR read-back matched
  
