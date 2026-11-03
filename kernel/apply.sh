@@ -40,6 +40,12 @@ if [ -f "$K/0004-pmap-4kb-quad-pte.patch" ]; then
 	echo "applied 0004-pmap-4kb-quad-pte.patch (XNU 4KB Quad-PTE Emulation Engine)"
 fi
 
+# Apply Part 5: Cortex-A73 PAC sysreg stub and early FB markers
+if [ -f "$K/0005-cortex-a73-pac-stub.patch" ]; then
+	git -C "$D" apply --whitespace=nowarn "$K/0005-cortex-a73-pac-stub.patch"
+	echo "applied 0005-cortex-a73-pac-stub.patch (Cortex-A73 PAC sysreg stub and early FB markers)"
+fi
+
 # Fix kasan-denylist regex for older/host Clang parser
 if [ -f "$D/san/memory/kasan-denylist" ]; then
 	sed -i '' 's/\[\*\]/\[\.\*\]/g' "$D/san/memory/kasan-denylist" 2>/dev/null || sed -i 's/\[\*\]/\[\.\*\]/g' "$D/san/memory/kasan-denylist"
