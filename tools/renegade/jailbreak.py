@@ -122,8 +122,7 @@ def die(msg):
 
 
 def mac_free():
-    st = os.statvfs(ROOT)
-    return st.f_bavail * st.f_frsize
+    return shutil.disk_usage(ROOT).free
 
 
 # --- fetch ----------------------------------------------------------------------------------------------------------

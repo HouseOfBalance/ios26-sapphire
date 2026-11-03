@@ -63,8 +63,7 @@ def is_simg(path):
 
 
 def free_gib(path):
-    st = os.statvfs(path)
-    return st.f_bavail * st.f_frsize / 2**30
+    return shutil.disk_usage(path).free / 2**30
 
 
 def need_free(path, what):

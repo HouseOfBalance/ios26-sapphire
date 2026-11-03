@@ -120,9 +120,15 @@ def dump(node, depth=0, hexall=False):
 
 
 if __name__ == '__main__':
+    if len(sys.argv) < 2 or sys.argv[1] in ('-h', '--help'):
+        print(__doc__.strip())
+        sys.exit(0 if sys.argv[1:] and sys.argv[1] in ('-h', '--help') else 1)
     cmd = sys.argv[1]
-    if cmd == 'dump':
+    if cmd == 'dump' and len(sys.argv) >= 3:
         root, end = parse(load(sys.argv[2]))
         dump(root, hexall='--hex' in sys.argv)
-    elif cmd == 'unwrap':
+    elif cmd == 'unwrap' and len(sys.argv) >= 4:
         open(sys.argv[3], 'wb').write(load(sys.argv[2]))
+    else:
+        print(__doc__.strip())
+        sys.exit(1)

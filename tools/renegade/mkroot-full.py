@@ -56,8 +56,7 @@ def run(cmd, **kw):
 
 
 def free_bytes(path=ROOT):
-    st = os.statvfs(path)
-    return st.f_bavail * st.f_frsize
+    return shutil.disk_usage(path).free
 
 
 def need_free(what):
@@ -226,7 +225,10 @@ def stage_copy(a, img, rootmnt, dmgs):
             sys.exit(f'ditto {name} failed')
         prune_after(rootmnt, name)
         if name == 'sysos':                          # give the pruned .symbols blocks back to the host
-            subprocess.run(['sync'])
+            if hasattr(os, 'sync'):
+                os.sync()
+            elif shutil.which('sync'):
+                subprocess.run(['sync'])
             rplat.detach(rootmnt, check=True)
             run([sys.executable, '-I', os.path.join(HERE, 'hfs_trim.py'), img])
             attach(img, rootmnt, readonly=False)
@@ -567,7 +569,10 @@ def patch_mount_phase2(root):
 def stage_seal(a, img, rootmnt):
     """Unmount, apply the owner map to the catalog, fsck."""
     if os.path.ismount(rootmnt):
-        subprocess.run(['sync'])
+        if hasattr(os, 'sync'):
+            os.sync()
+        elif shutil.which('sync'):
+            subprocess.run(['sync'])
         r = rplat.detach(rootmnt)
         if r.returncode:
             sys.exit('detach failed: ' + r.stderr)

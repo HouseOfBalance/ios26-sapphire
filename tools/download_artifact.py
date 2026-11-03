@@ -59,5 +59,9 @@ def download_run_artifact(run_id, out_dir='artifacts'):
     return downloaded
 
 if __name__ == '__main__':
-    run_id = sys.argv[1] if len(sys.argv) > 1 else '41325603836'
-    download_run_artifact(run_id)
+    if len(sys.argv) < 2 or sys.argv[1] in ('-h', '--help'):
+        print("Usage: python tools/download_artifact.py <RUN_ID> [OUT_DIR]")
+        sys.exit(0 if sys.argv[1:] and sys.argv[1] in ('-h', '--help') else 1)
+    run_id = sys.argv[1]
+    out_dir = sys.argv[2] if len(sys.argv) > 2 else 'artifacts'
+    download_run_artifact(run_id, out_dir)
