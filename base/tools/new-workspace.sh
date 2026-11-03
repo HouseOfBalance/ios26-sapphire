@@ -51,7 +51,7 @@ cp -a --reflink=auto "$ROOT/xnu-deps/." xnu-deps/
 # and without a kernel. What a missing cryptex-app costs, when there is one to take: the images come
 # out with no /System/Cryptexes/App at all, and Safari's daemons and AuthenticationServicesAgent --
 # eight jobs -- then look to mkjobs.py like programs nobody has (build.sh at cryptex-app, present()).
-for d in rootfs cryptex cryptex-app "20F66__iPhone10,3_6"; do
+for d in rootfs cryptex cryptex-app "iPhone14,7"; do
 	if [ -e "$ROOT/ios165/$d" ]; then cp -al "$ROOT/ios165/$d" ios165/; fi
 done
 for f in system.files system.manifest var.skel .done-rootfs .done-cryptex .done-cryptex-app a2s.json; do

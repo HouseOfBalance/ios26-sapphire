@@ -5064,8 +5064,8 @@ usb_command_loop(void)
  * is simply replaced). In QEMU the display is then exactly what iOS expects; on the real phone
  * the kernel's display driver scales that picture to the panel.
  */
-#define PHONE_WIDTH     1125            /* the screen of the iPhone X, whose identity we carry */
-#define PHONE_HEIGHT    2436
+#define PHONE_WIDTH     1170            /* the screen of iPhone 14 (iPhone14,7), whose identity we carry */
+#define PHONE_HEIGHT    2532
 /* HAKIOS_RAMFB_HEIGHT: QEMU's ramfb refuses a mode taller than 2048 (bochs-vbe's
  * VBE_DISPI_MAX_YRES), so the panel is asked for 2048 rows and the kernel scales the
  * 1125x2436 display into it -- the same thing it does on a real phone. */

@@ -2,9 +2,9 @@
 """Unpack an Android boot image header v0-v4 into kernel/ramdisk/second/dtb + header.txt."""
 import struct, sys, os
 
-if len(sys.argv) < 3:
+if len(sys.argv) < 3 or sys.argv[1] in ('-h', '--help'):
     print(f"Usage: {sys.argv[0]} <boot.img> <output_dir>")
-    sys.exit(1)
+    sys.exit(0 if sys.argv[1:] and sys.argv[1] in ('-h', '--help') else 1)
 
 src, out = sys.argv[1], sys.argv[2]
 os.makedirs(out, exist_ok=True)

@@ -114,4 +114,19 @@ assert cw == 1170 and ch == 2532, f'disp0 canvas {cw}x{ch} != 1170x2532 (iPhone 
 
 print(f'CHECK 6: Device identity model={model_str} ({target_sub_type}), board-id={bid} (0x{bid:02x}), chip-id=0x{cid:04x}, canvas={cw}x{ch} @ {scale}x - OK')
 
+# 7. Product Identity & MobileGestalt Attributes
+product = find_node(root, 'product')
+assert product is not None, 'product node missing from root device-tree'
+ptype = product.prop('product-type').decode('utf-8', errors='ignore').rstrip('\0')
+assert ptype == 'iPhone14,7', f'product-type {ptype} != iPhone14,7'
+pdesc = product.prop('product-description').decode('utf-8', errors='ignore').rstrip('\0')
+assert pdesc == 'iPhone 14', f'product-description {pdesc} != iPhone 14'
+art_sub, = struct.unpack('<I', product.prop('artwork-device-subtype'))
+assert art_sub == 2532, f'artwork-device-subtype {art_sub} != 2532'
+art_scale, = struct.unpack('<I', product.prop('artwork-scale-factor'))
+assert art_scale == 3, f'artwork-scale-factor {art_scale} != 3'
+gamut = product.prop('artwork-display-gamut').decode('utf-8', errors='ignore').rstrip('\0')
+assert gamut == 'sRGB', f'artwork-display-gamut {gamut} != sRGB'
+print(f'CHECK 7: /product node verified ({ptype}, "{pdesc}", subtype={art_sub}, scale={art_scale}x, gamut={gamut}) - OK')
+
 print('ALL VERIFICATIONS PASSED SUCCESSFULLY!')

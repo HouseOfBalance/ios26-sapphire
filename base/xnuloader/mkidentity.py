@@ -4,14 +4,14 @@
 usage: mkidentity.py DeviceTree.<board>.bin > identity.h
 
 The input is the device tree itself, i.e. the payload of Firmware/all_flash/DeviceTree.<board>.im4p
-of the IPSW, decompressed: "ipsw img4 im4p extract DeviceTree.d22ap.im4p -o DeviceTree.d22ap.bin".
+of the IPSW, decompressed: "ipsw img4 im4p extract DeviceTree.d27ap.im4p -o DeviceTree.d27ap.bin".
 
 iOS user space (MobileGestalt above all) decides what device it runs on from the device
 tree: the root node's model and compatible, and the /product node (screen class, artwork
 scale, product name ...), and the /product/haptics node: what the phone's haptics are (MobileGestalt's
 DeviceSupportsClosedLoopHaptics is its "closed-loop"; with it iOS plays the system's vibrations and
 feedbacks as waveforms on the actuator, and without it looks for an old vibration motor in IOKit,
-which the iPhone X does not have), and of the /product/camera node what the phone here has as well (its
+which modern iPhones do not have), and of the /product/camera node what the phone here has as well (its
 "flash": MobileGestalt's camera-flash, without which there is no flashlight in Control Center). The loader builds its own device tree for the hardware we really
 have, but copies these properties from the device tree in the iOS firmware so that the
 system believes it is the iPhone its files were built for.

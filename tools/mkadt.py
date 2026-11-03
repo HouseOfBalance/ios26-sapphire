@@ -131,12 +131,16 @@ BOOT_MANIFEST_HASH = hashlib.sha384(b'sweet boot manifest').digest()
 # the root identity and /product of the device tree.
 
 
+u32 = lambda *v: struct.pack('<%dI' % len(v), *v)
+u64 = lambda *v: struct.pack('<%dQ' % len(v), *v)
+cstr = lambda s: s.encode() + b'\0'
+
+
 def device_product(sub_type='D27AP'):
     """/product properties of the real device tree, without syscfg placeholders."""
     paths = [
         os.path.join(os.path.dirname(os.path.abspath(__file__)), f'../research/ios26/{sub_type.lower()}.adt'),
         os.path.join(os.path.dirname(os.path.abspath(__file__)), f'../research/ios26/{sub_type}.adt'),
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), '../research/ipsw-x/d22ap.adt'),
     ]
     for p in paths:
         if os.path.exists(p):
@@ -144,11 +148,18 @@ def device_product(sub_type='D27AP'):
             for c in root.children:
                 if dict((k, v) for k, f, v in c.props).get('name') == b'product\0':
                     return [(k, v) for k, f, v in c.props if not f and k not in ('name', 'AAPL,phandle')]
-    return None
-
-u32 = lambda *v: struct.pack('<%dI' % len(v), *v)
-u64 = lambda *v: struct.pack('<%dQ' % len(v), *v)
-cstr = lambda s: s.encode() + b'\0'
+    # Synthetic standard properties for iPhone 14 (D27AP) under iOS 26
+    return [
+        ('product-type', cstr('iPhone14,7')),
+        ('product-name', cstr('iPhone')),
+        ('product-description', cstr('iPhone 14')),
+        ('artwork-device-subtype', u32(2532)),
+        ('artwork-scale-factor', u32(3)),
+        ('artwork-display-gamut', cstr('sRGB')),
+        ('device-perf-memory-class', u32(2)),
+        ('allow-32bit-apps', u32(0)),
+        ('thin-bezel', u32(1)),
+    ]
 
 
 def node(name, props=(), children=()):

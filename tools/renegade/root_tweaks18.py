@@ -551,7 +551,7 @@ def sweetmetrics(root):
         print('sweetmetrics: skipped (RENEGADE_NO_METRICS=1)')
         note_skip('sweetmetrics', 'RENEGADE_NO_METRICS=1')
         return
-    src = find_sweetnet('ios18/sweetmetrics')
+    src = find_sweetnet('ios26/sweetmetrics')
     if not src:
         print('sweetmetrics: not built (tools/sweetnet/build.sh): skipped')
         note_skip('sweetmetrics', not_built())
@@ -671,14 +671,20 @@ def staged_apps(root):
 
 def event_timing(root):
     # UIKit looks up /System/Library/EventTimingProfiles/<target>.Default.plist with the ADT
-    # target-type (D22, iPhone X) while the 22H352 userland ships N841 profiles only:
+    # target-type (D27 for iPhone 14) to prevent:
     # 'Misconfigured Device: Default Event Timing Profile is missing'.
     d = os.path.join(root, 'System/Library/EventTimingProfiles')
+    if not os.path.isdir(d):
+        return
     for kind in ('Default', 'Touch'):
-        s, t = os.path.join(d, 'N841.%s.plist' % kind), os.path.join(d, 'D22.%s.plist' % kind)
-        if os.path.exists(s) and not os.path.exists(t):
-            shutil.copy2(s, t)
-            print('event timing profile', t)
+        targets = [os.path.join(d, '%s.%s.plist' % (tgt, kind)) for tgt in ('D27', 'D27AP', 'D22')]
+        candidates = [os.path.join(d, f) for f in os.listdir(d) if f.endswith('.%s.plist' % kind)]
+        if candidates:
+            src = candidates[0]
+            for t in targets:
+                if not os.path.exists(t):
+                    shutil.copy2(src, t)
+                    print('event timing profile', t)
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -746,8 +752,8 @@ def find_sweetnet(rel):
     return None
 
 
-UICACHE = None              # default: find_sweetnet('ios18/sweetuicache') (arm64e, pacstrip --sign)
-SWEETFP = None              # default: find_sweetnet('ios18/sweetfp.dylib')
+UICACHE = None              # default: find_sweetnet('ios26/sweetuicache') (arm64e, pacstrip --sign)
+SWEETFP = None              # default: find_sweetnet('ios26/sweetfp.dylib')
 ADDLC = os.path.join(HERE, '..', 'sweetnet', 'addlc.py')
 SWEETFP_PATH = '/usr/local/lib/sweetfp.dylib'
 POSTER_BIN = 'Applications/PosterBoard.app/PosterBoard'
@@ -844,7 +850,7 @@ def posterboard(root):
     if not os.path.exists(binp):
         print('posterboard: no', POSTER_BIN, 'in the image: skipped')
         return
-    dylib = SWEETFP or find_sweetnet('ios18/sweetfp.dylib')
+    dylib = SWEETFP or find_sweetnet('ios26/sweetfp.dylib')
     if not dylib:
         print('posterboard: sweetfp.dylib not built (tools/sweetnet/build.sh): skipped, PosterBoard left alone')
         note_skip('posterboard sweetfp', not_built() + '; PosterBoard left alone')
@@ -1093,7 +1099,7 @@ def firstboot(root, appreg=True, jb=True, wallpaper=True, metal=False):
         note_skip('first-boot job (app registration, wallpaper, jailbreak post-install)',
                   '/bin/sh missing in the root: dash comes from the ssh tweak, which needs prebuilt dropbear/dash/toybox')
         return
-    uic = UICACHE or find_sweetnet('ios18/sweetuicache')
+    uic = UICACHE or find_sweetnet('ios26/sweetuicache')
     if uic:
         install_file(uic, os.path.join(root, 'usr/local/bin/sweetuicache'))
     else:
@@ -1111,7 +1117,7 @@ def firstboot(root, appreg=True, jb=True, wallpaper=True, metal=False):
             print('firstboot: nothing left for the job to do: no job')
             return
     if wallpaper:
-        wall = [find_sweetnet('ios18/' + n) for n in ('sweetposterset', 'sweeticonstyle', 'sweetopen', 'SweetRun.app')]
+        wall = [find_sweetnet('ios26/' + n) for n in ('sweetposterset', 'sweeticonstyle', 'sweetopen', 'SweetRun.app')]
         if not all(wall):
             print('firstboot: sweetposterset/sweeticonstyle/sweetopen/SweetRun.app not built (tools/sweetnet/build.sh): '
                   'default wallpaper and icon style skipped')
@@ -1252,16 +1258,16 @@ def tool_gaps(feats):
     (always the case on Linux without CI artifacts). Returns {feature: reason} and records each in the skip summary;
     callers switch those features off instead of failing."""
     gaps = {}
-    if not (UICACHE or find_sweetnet('ios18/sweetuicache')):
+    if not (UICACHE or find_sweetnet('ios26/sweetuicache')):
         if feats.get('appreg'):
             gaps['appreg'] = ('sweetuicache ' + not_built() + '; the apps are still moved to /Applications and lsd registers them '
                               'itself when it seeds a fresh LaunchServices database (fresh userdata); an already-seeded one does not')
         if feats.get('wallpaper'):
             gaps['wallpaper'] = 'needs sweetuicache (registers SweetRun at first boot): ' + not_built()
     if feats.get('wallpaper') and 'wallpaper' not in gaps and not all(
-            find_sweetnet('ios18/' + n) for n in ('sweetposterset', 'sweeticonstyle', 'sweetopen', 'SweetRun.app')):
+            find_sweetnet('ios26/' + n) for n in ('sweetposterset', 'sweeticonstyle', 'sweetopen', 'SweetRun.app')):
         gaps['wallpaper'] = 'sweetposterset/sweeticonstyle/sweetopen/SweetRun.app ' + not_built()
-    if feats.get('posterboard') and not (SWEETFP or find_sweetnet('ios18/sweetfp.dylib')):
+    if feats.get('posterboard') and not (SWEETFP or find_sweetnet('ios26/sweetfp.dylib')):
         gaps['posterboard'] = 'sweetfp.dylib ' + not_built() + '; PosterBoard is left alone'
     if feats.get('bglrender') and not find_bgl():
         gaps['bglrender'] = ('payload: no prebuilt bergamota-gl (gpu/eagl/make-payload.sh needs a Mac; or a CI artifact in '
@@ -1330,7 +1336,7 @@ def prefs(root):
 
 def sweetprefs_tool(root):
     """/usr/local/bin/sweetprefs (tools/sweetnet/sweetprefs.c, arm64e + pacstrip): set/read a user default through cfprefsd."""
-    src = find_sweetnet('ios18/sweetprefs')
+    src = find_sweetnet('ios26/sweetprefs')
     if not src:
         print('sweetprefs: not built (tools/sweetnet/build.sh): skipped')
         note_skip('sweetprefs tool', not_built() + '; the preferences themselves (battery %, ...) are written as plists')
@@ -1339,7 +1345,7 @@ def sweetprefs_tool(root):
     print('sweetprefs: /usr/local/bin/sweetprefs installed')
     # remote testing over SSH (tools/sweetnet/sweetshot.m, sweettouch.c): screenshot of the scanned frame, synthetic touch/buttons
     for n in ('sweetshot', 'sweettouch'):
-        t = find_sweetnet('ios18/' + n)
+        t = find_sweetnet('ios26/' + n)
         if t:
             install_file(t, os.path.join(root, 'usr/local/bin', n))
             print('%s: /usr/local/bin/%s installed' % (n, n))

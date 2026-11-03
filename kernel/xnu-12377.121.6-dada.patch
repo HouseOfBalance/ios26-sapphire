@@ -76293,7 +76293,7 @@ index 0000000..da26569
 +}
 +
 +/*
-+ * hw.machine. On Apple's devices it is the product type ("iPhone10,3"), from the device tree's
++ * hw.machine. On Apple's devices it is the product type ("iPhone14,7"), from the device tree's
 + * "model", and iOS decides from it what kind of device it is on: with anything it does not know
 + * MobileGestalt settles for an iPod touch.
 + */
@@ -76303,7 +76303,7 @@ index 0000000..da26569
 +	uint32_t real = 1;
 +
 +	/*
-+	 * hw.machine is the model the loader put into the device tree, "iPhone10,3". It has to
++	 * hw.machine is the model the loader put into the device tree, "iPhone14,7". It has to
 +	 * begin with "iPhone": CoreFoundation picks the device-specific variants of resources
 +	 * (Something~iphone.plist, Key~iphone in an Info.plist) by this string, and for a name it
 +	 * does not know it picks none at all -- Control Center, for one, then lays its modules out

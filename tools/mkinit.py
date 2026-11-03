@@ -130,6 +130,9 @@ def build(obj, entitlements=None):
 
 if __name__ == '__main__':
     # mkinit.py OBJ OUT [ENTITLEMENTS.plist]
+    if len(sys.argv) < 3 or sys.argv[1] in ('-h', '--help'):
+        print("Usage: python tools/mkinit.py OBJ OUT [ENTITLEMENTS.plist]")
+        sys.exit(0 if sys.argv[1:] and sys.argv[1] in ('-h', '--help') else 1)
     ents = open(sys.argv[3], 'rb').read() if len(sys.argv) > 3 else None
     out = build(open(sys.argv[1], 'rb').read(), ents)
     open(sys.argv[2], 'wb').write(out)
