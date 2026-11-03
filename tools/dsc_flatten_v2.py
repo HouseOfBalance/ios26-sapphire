@@ -336,6 +336,160 @@ def flatten_dsc_file(
     return stats
 
 
+def find_slide_info_v5_regions(
+    data: Union[bytearray, memoryview, mmap.mmap]
+) -> List[Tuple[int, int, int]]:
+    """
+    Parse dyld_cache_header to locate slide_info v5 regions and their associated data offsets.
+    Returns list of (slide_info_offset, data_offset, slide_info_size).
+    """
+    regions = []
+    if len(data) < 0x200:
+        return regions
+
+    magic = bytes(data[:16]).split(b"\0")[0]
+    if not magic.startswith(b"dyld_v1"):
+        return regions
+
+    # dyld_cache_header layout:
+    # 0x138: uint32_t mappingWithSlideOffset
+    # 0x13c: uint32_t mappingWithSlideCount
+    m_off, m_count = struct.unpack_from("<II", data, 0x138)
+    if m_count > 0 and 0 < m_off < len(data):
+        entry_size = 56  # sizeof(dyld_cache_mapping_and_slide_info)
+        for i in range(m_count):
+            e_off = m_off + i * entry_size
+            if e_off + entry_size > len(data):
+                break
+            # dyld_cache_mapping_and_slide_info:
+            # uint64_t address, size, fileOffset, slideInfoFileOffset, slideInfoFileSize, flags
+            # uint32_t maxProt, initProt
+            addr, sz, f_off, s_off, s_sz, flg, maxp, initp = struct.unpack_from("<QQQQQIII", data, e_off)
+            if s_off > 0 and s_sz >= SLIDE_INFO_V5_HEADER_SIZE and s_off + 4 <= len(data):
+                ver = struct.unpack_from("<I", data, s_off)[0]
+                if ver == SLIDE_INFO_V5_VERSION:
+                    regions.append((s_off, f_off, s_sz))
+
+    # Fallback to legacy slideInfoOffset / slideInfoSize at offset 0x38 if no mappingWithSlide found
+    if not regions and len(data) >= 0x48:
+        old_s_off, old_s_sz = struct.unpack_from("<QQ", data, 0x38)
+        if old_s_off > 0 and old_s_sz >= SLIDE_INFO_V5_HEADER_SIZE and old_s_off + 4 <= len(data):
+            ver = struct.unpack_from("<I", data, old_s_off)[0]
+            if ver == SLIDE_INFO_V5_VERSION:
+                regions.append((old_s_off, 0, old_s_sz))
+
+    return regions
+
+
+def flatten_dsc_auto(
+    file_path: str,
+    flatten_all: bool = False,
+    output_path: Optional[str] = None,
+    stride_shift: int = STRIDE_SHIFT,
+    verbose: bool = False,
+    quiet: bool = False,
+) -> Dict[str, int]:
+    """
+    Automatically detect dyld_cache_header slide_info v5 mappings and flatten authenticated pointers.
+    """
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"DSC file not found: {file_path}")
+
+    target_file = output_path if output_path else file_path
+
+    if output_path:
+        with open(file_path, "rb") as src, open(output_path, "wb") as dst:
+            while chunk := src.read(1024 * 1024):
+                dst.write(chunk)
+
+    total_stats = {
+        "regions_found": 0,
+        "auth_flattened": 0,
+        "regular_flattened": 0,
+        "pages_slid": 0,
+    }
+
+    with open(target_file, "r+b") as f:
+        mm = mmap.mmap(f.fileno(), 0)
+        try:
+            regions = find_slide_info_v5_regions(mm)
+            total_stats["regions_found"] = len(regions)
+            if not regions:
+                if not quiet:
+                    print(f"[*] No slide_info v5 regions detected in {os.path.basename(file_path)}.")
+                return total_stats
+
+            for s_off, f_off, s_sz in regions:
+                if not quiet:
+                    print(
+                        f"[*] Flattening slide_info v5 region @ 0x{s_off:x} "
+                        f"(data_offset=0x{f_off:x}, size={s_sz} B)..."
+                    )
+                stats = flatten_slide_v5(
+                    mm,
+                    slide_info_offset=s_off,
+                    data_offset=f_off,
+                    flatten_all=flatten_all,
+                    stride_shift=stride_shift,
+                    verbose=verbose,
+                    quiet=quiet,
+                )
+                total_stats["auth_flattened"] += stats["auth_flattened"]
+                total_stats["regular_flattened"] += stats["regular_flattened"]
+                total_stats["pages_slid"] += stats["pages_slid"]
+
+            mm.flush()
+        finally:
+            mm.close()
+
+    return total_stats
+
+
+def flatten_dsc_directory(
+    dir_path: str,
+    flatten_all: bool = False,
+    verbose: bool = False,
+    quiet: bool = False,
+) -> Dict[str, int]:
+    """
+    Scan a directory for dyld_shared_cache* files and flatten all of them in place.
+    """
+    if not os.path.isdir(dir_path):
+        raise NotADirectoryError(f"Directory not found: {dir_path}")
+
+    combined_stats = {
+        "files_processed": 0,
+        "regions_found": 0,
+        "auth_flattened": 0,
+        "regular_flattened": 0,
+    }
+
+    for fname in sorted(os.listdir(dir_path)):
+        if fname.startswith("dyld_shared_cache") and not fname.endswith(".map") and not fname.endswith(".symbols"):
+            fpath = os.path.join(dir_path, fname)
+            if os.path.isfile(fpath):
+                if not quiet:
+                    print(f"\n--- Processing cache file: {fname} ---")
+                res = flatten_dsc_auto(
+                    fpath,
+                    flatten_all=flatten_all,
+                    verbose=verbose,
+                    quiet=quiet,
+                )
+                combined_stats["files_processed"] += 1
+                combined_stats["regions_found"] += res["regions_found"]
+                combined_stats["auth_flattened"] += res["auth_flattened"]
+                combined_stats["regular_flattened"] += res["regular_flattened"]
+
+    if not quiet:
+        print(
+            f"\n[✔] Directory flattening complete: {combined_stats['files_processed']} cache files, "
+            f"{combined_stats['regions_found']} regions, {combined_stats['auth_flattened']} auth pointers flattened."
+        )
+
+    return combined_stats
+
+
 # ==============================================================================
 # Comprehensive Self-Test Suite
 # ==============================================================================
@@ -677,8 +831,42 @@ def run_tests() -> bool:
             os.remove(tf_name)
     print("PASS")
 
+    # -------------------------------------------------------------------------
+    # Test 9: Auto-header discovery of slide_info v5 mappings
+    # -------------------------------------------------------------------------
+    print("[Test 9] Auto-header discovery (mappingWithSlide)...", end=" ")
+    mock_cache = bytearray(0x4000)
+    mock_cache[0:16] = b"dyld_v1  arm64e\0"
+    m_off = 0x200
+    m_cnt = 2
+    struct.pack_into("<II", mock_cache, 0x138, m_off, m_cnt)
+
+    # First mapping: non-slide / empty
+    struct.pack_into("<QQQQQIII", mock_cache, m_off, 0x180000000, 0x1000, 0, 0, 0, 0, 5, 5)
+
+    # Second mapping: valid slide_info v5
+    s_off2 = 0x1000
+    f_off2 = 0x2000
+    hdr2 = encode_slide_info5_header(4096, 1, 0x200000000)
+    mock_cache[s_off2 : s_off2 + len(hdr2)] = hdr2
+    struct.pack_into("<H", mock_cache, s_off2 + 24, 0x10)  # page 0 starts at offset 0x10
+    auth_ptr2 = encode_auth_ptr(0x1234, stride=0)
+    struct.pack_into("<Q", mock_cache, f_off2 + 0x10, auth_ptr2)
+
+    struct.pack_into("<QQQQQIII", mock_cache, m_off + 56, 0x190000000, 0x1000, f_off2, s_off2, 26, 0, 3, 3)
+
+    found_regions = find_slide_info_v5_regions(mock_cache)
+    assert len(found_regions) == 1, f"Expected 1 region, found {len(found_regions)}"
+    assert found_regions[0] == (s_off2, f_off2, 26), f"Unexpected region: {found_regions[0]}"
+
+    # Verify auto-flatten in buffer
+    stats9 = flatten_slide_v5(mock_cache, s_off2, data_offset=f_off2, quiet=True)
+    assert stats9["auth_flattened"] == 1
+    assert struct.unpack_from("<Q", mock_cache, f_off2 + 0x10)[0] == 0x200000000 + 0x1234
+    print("PASS")
+
     print("=" * 70)
-    print("ALL 8 SELF-TEST SUITES PASSED (100% SUCCESS)")
+    print("ALL 9 SELF-TEST SUITES PASSED (100% SUCCESS)")
     print("=" * 70)
     return True
 
@@ -699,9 +887,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Flatten iOS 26 / arm64e dyld_cache_slide_info5 authenticated pointers."
     )
-    parser.add_argument("dsc_file", nargs="?", help="Path to dyld shared cache binary file")
-    parser.add_argument("slide_info_offset", nargs="?", help="Offset to dyld_cache_slide_info5 header (e.g. 0x12000)")
+    parser.add_argument("dsc_file", nargs="?", help="Path to dyld shared cache binary file or directory")
+    parser.add_argument("slide_info_offset", nargs="?", help="Optional offset to dyld_cache_slide_info5 header (e.g. 0x12000). If omitted, automatically detects all regions from dyld_cache_header.")
     parser.add_argument("data_offset", nargs="?", default="0x0", help="Offset to data mapping base (default: 0x0)")
+    parser.add_argument("--dir", dest="directory", help="Process all dyld_shared_cache* files in the specified directory")
     parser.add_argument("--test", action="store_true", help="Run comprehensive self-test suite")
     parser.add_argument("--all", action="store_true", dest="flatten_all", help="Flatten regular pointers as well as auth pointers")
     parser.add_argument("-o", "--output", help="Write modified output to a new file instead of modifying in-place")
@@ -713,10 +902,49 @@ def main() -> int:
         success = run_tests()
         return 0 if success else 1
 
-    if not args.dsc_file or not args.slide_info_offset:
+    if args.directory:
+        try:
+            flatten_dsc_directory(
+                dir_path=args.directory,
+                flatten_all=args.flatten_all,
+                verbose=args.verbose,
+            )
+            return 0
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+
+    if not args.dsc_file:
         parser.print_help()
-        print("\nError: dsc_file and slide_info_offset are required when not running --test.")
+        print("\nError: dsc_file, --dir, or --test is required.")
         return 1
+
+    # Check if dsc_file is actually a directory
+    if os.path.isdir(args.dsc_file):
+        try:
+            flatten_dsc_directory(
+                dir_path=args.dsc_file,
+                flatten_all=args.flatten_all,
+                verbose=args.verbose,
+            )
+            return 0
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+
+    # Auto-detect mode if slide_info_offset is not provided
+    if not args.slide_info_offset:
+        try:
+            flatten_dsc_auto(
+                file_path=args.dsc_file,
+                flatten_all=args.flatten_all,
+                output_path=args.output,
+                verbose=args.verbose,
+            )
+            return 0
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
 
     try:
         slide_off = parse_int(args.slide_info_offset)

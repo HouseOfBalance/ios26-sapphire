@@ -1,7 +1,7 @@
 import urllib.request, json, sys
 
 run_id = sys.argv[1] if len(sys.argv) > 1 else '41302637147'
-url = f'https://api.github.com/repos/HouseOfBalance/ios-sapphire/actions/runs/{run_id}/jobs'
+url = f'https://api.github.com/repos/HouseOfBalance/ios26-sapphire/actions/runs/{run_id}/jobs'
 req = urllib.request.Request(url, headers={'User-Agent': 'Python-GH-Check'})
 try:
     with urllib.request.urlopen(req) as resp:

@@ -3,6 +3,15 @@
 ## Agent handoff / active work (2026-11-03, latest)
 
 ### >>> COMPLETE STATUS HANDOFF FOR SAPPHIRE (HakiOS XNU 12377 / iOS 26 ARM64E) <<<
+* **Current Status (2026-11-03): USERLAND & ROOTFS PIPELINE READY (DYLD SHARED CACHE FLATTENER INTEGRATED)**
+  - **Milestone Details:**
+    - Upgraded `tools/dsc_flatten_v2.py`:
+      * Implemented automatic `dyld_cache_header` parsing via `find_slide_info_v5_regions()` scanning `mappingWithSlideOffset` (offset `0x138`) across all 56-byte `dyld_cache_mapping_and_slide_info` structures.
+      * Added multi-cache directory processing mode (`--dir`) targeting `/System/Library/Caches/com.apple.dyld`.
+      * Expanded self-test suite: Added Test 9 verifying auto-discovery of slide_info v5 mappings; all 9/9 test suites pass (100% SUCCESS).
+    - Integrated DSC Flattener into `tools/renegade/mkroot-full.py` during `stage_cache` so PAC slide_info fixups are flattened seamlessly alongside `pacstrip_cache.py` and `fips_rehmac.py`.
+    - Created dedicated GitHub Actions workflow: `.github/workflows/build-rootfs.yml` for automated cloud building of `userdata.simg` (split chunks for >2GB support) on `macos-15`.
+    - Created Windows 1-Click Fastboot boot helper: `boot_sapphire.bat` detecting device serial, checking image integrity, and running `fastboot boot out\enxerto-boot.img`.
 * **Current Status (2026-11-03): FULL KERNEL & BOOT IMAGE COMPILED, PACKAGED & READY TO FLASH**
   - **Milestone Details:**
     - GitHub Actions Workflow Run `41548896017` on `HouseOfBalance/ios26-sapphire` finished with 100% SUCCESS.

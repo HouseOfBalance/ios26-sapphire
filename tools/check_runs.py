@@ -1,6 +1,6 @@
 import urllib.request, json
 
-url = 'https://api.github.com/repos/HouseOfBalance/ios-sapphire/actions/runs?per_page=5'
+url = 'https://api.github.com/repos/HouseOfBalance/ios26-sapphire/actions/runs?per_page=5'
 req = urllib.request.Request(url, headers={'User-Agent': 'Python-GH-Check'})
 try:
     with urllib.request.urlopen(req) as resp:

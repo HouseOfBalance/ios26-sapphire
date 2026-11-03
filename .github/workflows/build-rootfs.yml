@@ -1,0 +1,74 @@
+name: Build iOS RootFS (Userdata Sparse Image)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ipsw_url:
+        description: 'Direct Apple IPSW URL (Leave empty to use default iPhone11,8 iOS 18.7.8)'
+        required: false
+        default: ''
+      device:
+        description: 'Apple Device Identifier'
+        required: false
+        default: 'iPhone11,8'
+      build_version:
+        description: 'iOS Version'
+        required: false
+        default: '18.7.8'
+
+jobs:
+  build-rootfs:
+    runs-on: macos-15
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: |
+          brew install blacktop/tap/ipsw
+
+      - name: Verify Dyld Shared Cache Flattener
+        run: |
+          python3 tools/dsc_flatten_v2.py --test
+
+      - name: Fetch Root DMGs
+        run: |
+          mkdir -p research/ios18/ipsw
+          if [ -n "${{ github.event.inputs.ipsw_url }}" ]; then
+            URL="${{ github.event.inputs.ipsw_url }}"
+          else
+            URL=$(ipsw download ipsw --device "${{ github.event.inputs.device }}" --version "${{ github.event.inputs.build_version }}" --urls | tail -1)
+          fi
+          echo "Selected IPSW URL: $URL"
+          python3 tools/remotezip.py "$URL" BuildManifest.plist research/ios18/ipsw/ || true
+          bash tools/renegade/fetch-root.sh
+
+      - name: Build Root Image with Renegade & DSC Flattener
+        run: |
+          python3 tools/renegade/mkroot-full.py \
+            --ipsw-dir research/ios18/ipsw \
+            --out out/ios-root.img \
+            --simg out/userdata.simg \
+            --size 16g
+
+      - name: Verify Generated Sparse Image
+        run: |
+          ls -lh out/ || true
+          if [ -f out/userdata.simg ]; then
+            echo "Successfully generated userdata.simg"
+            # Split if larger than 2GB for GitHub artifact upload limits
+            mkdir -p out/parts
+            split -b 1900M out/userdata.simg out/parts/userdata.simg.part_
+          fi
+
+      - name: Upload RootFS Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hakios-ios-rootfs
+          path: out/parts/
+          if-no-files-found: warn

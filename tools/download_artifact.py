@@ -23,7 +23,7 @@ def download_run_artifact(run_id, out_dir='artifacts'):
     token = get_token()
     headers = {'Authorization': f'Bearer {token}', 'User-Agent': 'Mozilla/5.0'}
     
-    url = f'https://api.github.com/repos/HouseOfBalance/ios-sapphire/actions/runs/{run_id}/artifacts'
+    url = f'https://api.github.com/repos/HouseOfBalance/ios26-sapphire/actions/runs/{run_id}/artifacts'
     req = urllib.request.Request(url, headers=headers)
     resp = urllib.request.urlopen(req)
     data = json.loads(resp.read().decode('utf-8'))
