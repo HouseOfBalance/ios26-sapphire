@@ -3,6 +3,28 @@
 ## Agent handoff / active work (2026-11-03, latest)
 
 ### >>> COMPLETE STATUS HANDOFF FOR SAPPHIRE (HakiOS XNU 12377 / iOS 26 ARM64E) <<<
+* **Current Status (2026-11-03, Commit `4b525e0`): COMPREHENSIVE HARDENING, MOBILEGESTALT /PRODUCT SYNTHESIS & FULL AUDIT PASSED**
+  - **Milestone Details:**
+    - **Device Identity & MobileGestalt Synthesis:**
+      * Upgraded `tools/mkadt.py`: Added synthetic `/product` node for `iPhone14,7` / `D27AP` when external `.adt` files are not present. MobileGestalt now receives complete identity: `product-type='iPhone14,7'`, `product-description='iPhone 14'`, `artwork-device-subtype=2532`, `artwork-scale-factor=3`, `artwork-display-gamut='sRGB'`, `thin-bezel=1`, avoiding fallback to iPod touch or blank Safari rendering. Purged legacy `d22ap.adt` fallback path.
+      * Upgraded `tools/verify_sapphire_adt.py`: Added Check 7 validating `/product` node structure, subtype 2532, scale 3x, and sRGB gamut (7/7 checks PASS).
+      * Aligned `base/xnuloader/identity.h` root node bytes to pure `D27`, `D27AP`, and `iPhone14,7`.
+      * Updated screen canvas in `base/xnuloader/loader.c` from legacy 1125x2436 to 1170x2532 (`PHONE_WIDTH 1170`, `PHONE_HEIGHT 2532`).
+      * Corrected XNU patch comments in `kernel/xnu-12377.121.6-dada.patch` (`GenericARMPE::getMachineName`) and `base/tools/new-workspace.sh` to reference `iPhone14,7`.
+    - **UIKit Event Timing Profile Guard:**
+      * Updated `event_timing()` in `tools/renegade/root_tweaks18.py` to ensure `D27.Default.plist` and `D27.Touch.plist` exist, preventing UIKit startup errors (`Misconfigured Device: Default Event Timing Profile is missing`).
+      * Updated default sweetnet lookups in `root_tweaks18.py` to target `ios26/` first.
+    - **Cross-Platform CLI & Portability Hardening:**
+      * Replaced POSIX `os.statvfs` with portable `shutil.disk_usage().free` in `tools/renegade/mkroot-full.py`, `tools/renegade/update.py`, and `tools/renegade/jailbreak.py`.
+      * Guarded external `sync` subprocess execution with `os.sync()` and `shutil.which('sync')`.
+      * Added argument validation and `--help` support across `tools/adt.py`, `tools/check_job.py`, `tools/download_artifact.py`, `tools/mkinit.py`, and `tools/unpack_bootv2.py`.
+    - **Verification Results:**
+      * `tools/renegade/tests`: 54/54 PASS.
+      * `tools/verify_sapphire_adt.py`: 7/7 PASS (FB, GICv3, UFS 2.2, UART, 8 CPUs, Device Model iPhone14,7 / board-id 24, and /product node).
+      * `tools/dsc_flatten_v2.py --test`: 9/9 PASS.
+      * `tools/validate-repo.py -v`: 5 patches, 35 tools validated, 0 errors.
+      * Repository-wide Python compilation (`python -m compileall -q .`): 0 errors.
+
 * **Current Status (2026-11-03): REPOSITORY-WIDE BUG AUDIT, CLI HARDENING & FULL PLATFORM COMPATIBILITY COMPLETED**
   - **Milestone Details:**
     - **CLI Robustness & Unhandled Exception Hardening:**
