@@ -79,7 +79,7 @@ def patch_vm_resident(src):
             "\t\t}\n"
             "\t}"
         )
-        content = p_start.sub(repl_start, content, count=1)
+        content = p_start.sub(lambda m: repl_start, content, count=1)
         print(f"  [OK] {rel_path}: pmap_startup start_ns divide-by-zero guard installed")
     else:
         print(f"  [WARN] {rel_path}: start_ns pattern not found")
@@ -106,7 +106,7 @@ def patch_vm_resident(src):
             "\t\t}\n"
             "\t}"
         )
-        content = p_now.sub(repl_now, content, count=1)
+        content = p_now.sub(lambda m: repl_now, content, count=1)
         print(f"  [OK] {rel_path}: pmap_startup now_ns guard installed")
     else:
         print(f"  [WARN] {rel_path}: now_ns pattern not found")
@@ -494,7 +494,7 @@ def patch_pe_identify_machine(src):
             f"{indent}}}\n"
             f"{indent}{m_dec.group(2)}"
         )
-        c = p_dec.sub(r_dt_query, c, count=1)
+        c = p_dec.sub(lambda m: r_dt_query, c, count=1)
         print(f"  [OK] {rel_path}: installed CNTFRQ_EL0 sysreg / 19.2 MHz query fallback")
     else:
         print(f"  [WARN] {rel_path}: dec_clock_rate_hz not found for CNTFRQ fallback")

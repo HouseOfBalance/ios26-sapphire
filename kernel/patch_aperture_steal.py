@@ -86,7 +86,7 @@ def patch_vm_resident(src_dir):
 		return (void *)(vm_offset_t)phystokv(pa);
 	}"""
 
-    patched_content = pattern.sub(steal_patch, content, count=1)
+    patched_content = pattern.sub(lambda m: steal_patch, content, count=1)
 
     if patched_content == content:
         print("[ERROR] Substitution failed in vm_resident.c", file=sys.stderr)
