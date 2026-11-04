@@ -1202,3 +1202,20 @@ What it took today (in order): 0058 HID services (Apple IOHIDFamily-1915 user cl
       * Gold (rows 130-139): CP13 (past cpu_bootstrap)
       * Sky Blue (rows 140-149): CP14 (past rtclock_early_init)
     - Updated `.github/workflows/build-xnu-12377.yml` to run `kernel/patch_kernel_pac.py` automatically before packaging.
+
+- Executed `fastboot boot enxerto-boot.img` (build commit `c5acccd`, CI run `41761619380`).
+  * Live Hardware Milestone Confirmed on Physical AMOLED Screen (`media_1793766984890_6432b163.jpg`):
+    - AMOLED screen displays **11 DISTINCT COLOR BANDS** near punch-hole!
+      1. Cyan (rows 10-19): Passed OSLAR debug unlock (`start.s`).
+      2. Magenta (rows 20-29): Page tables built, TTEs visible (`start.s`).
+      3. White (rows 30-39): Reached `common_start`, before MMU enable (`start.s`).
+      4. Blue (rows 40-49): MMU ON, before ret into `_arm_init()` (`start.s`).
+      5. Orange (rows 50-59): Entered `arm_init()` in C code.
+      6. Green (rows 60-69): CP30, before slide/rebase.
+      7. Purple (rows 70-79): CP31, past slide/rebase (`OSRuntimeSignStructors` bypassed).
+      8. **Yellow (rows 80-89)**: CP32, past bypassed `arm_static_if_init`!
+      9. **Cyan (rows 90-99)**: CP4, copied `BootArgs`, before `cpu_data_init`!
+      10. **Brown (rows 100-109)**: CP5, `cpu_data_init(&BootCpuData)` completed! `retab` patch verified working!
+      11. **Lime Green (rows 110-119)**: CP6, `PE_init_platform(FALSE, args)` completed! DeviceTree `sapphire.adt` parsed and initialized!
+  * Current Halt Point:
+    - Between `PE_init_platform` (Lime, rows 110-119) and `thread->machine.preemption_count = 0` (Pink, rows 120-129).
