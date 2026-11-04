@@ -1217,5 +1217,28 @@ What it took today (in order): 0058 HID services (Apple IOHIDFamily-1915 user cl
       9. **Cyan (rows 90-99)**: CP4, copied `BootArgs`, before `cpu_data_init`!
       10. **Brown (rows 100-109)**: CP5, `cpu_data_init(&BootCpuData)` completed! `retab` patch verified working!
       11. **Lime Green (rows 110-119)**: CP6, `PE_init_platform(FALSE, args)` completed! DeviceTree `sapphire.adt` parsed and initialized!
-  * Current Halt Point:
-    - Between `PE_init_platform` (Lime, rows 110-119) and `thread->machine.preemption_count = 0` (Pink, rows 120-129).
+  * Current Halt Point Analysis & Resolution:
+    - Halt was located between `PE_init_platform` (Lime, rows 110-119) and `thread->machine.preemption_count = 0` (Pink, rows 120-129).
+    - Disassembly of `arm_init` and `ml_cpu.c` revealed two critical blockers:
+      1. **`MAX_CPU_CLUSTERS 1` in `board_config.h`:**
+         - Apple's BCM2837 target hardcoded `#define MAX_CPU_CLUSTERS 1`, causing `MAX_CPU_CLUSTER_PHY_ID` to default to `0`.
+         - On SM6225 Bengal (Sapphire), `cpu0` has `reg = 0x100` (`phys_cluster_id = 1`), and `cpu4..cpu7` have `cluster-id = 1`.
+         - In `ml_parse_cpu_topology()`, `assert(phys_cluster_id <= MAX_CPU_CLUSTER_PHY_ID)` failed immediately on `cpu0` (`1 <= 0`), tripping `brk #0xbffc`.
+         - Furthermore, `assert(cpu->cluster_id < MAX_CPU_CLUSTERS)` and `assert(topology_info.num_clusters < MAX_CPU_CLUSTERS)` failed on `cpu4` (`1 < 1`).
+         - **Fix:** Upgraded `#define MAX_CPU_CLUSTERS 4` and `#define MAX_CPU_CLUSTER_PHY_ID 4` in both `xnu-12377.121.6-dada.patch` and `patch_cortex_a73.py`.
+      2. **`master_cpu` Out-of-Range Assertion (`arm_init.c`):**
+         - Added runtime guard in `arm_init.c`: if `master_cpu < 0 || master_cpu > ml_get_max_cpu_number()`, fallback to `master_cpu = 0`.
+      3. **Exception Handler Overlap Fixed:**
+         - Moved Method 1 early exception Red band from rows 110-119 to rows 200-209 (`0x5c0d3000`) so it never collides with progress markers.
+      4. **Fine-Grained Visual Ladder:**
+         - 110-114: Lime (CP6, past PE_init_platform)
+         - 115-119: Coral (before ml_parse_cpu_topology)
+         - 120-124: Teal (past ml_parse_cpu_topology)
+         - 125-129: Hot Pink (master_cpu verified and clamped)
+         - 130-134: Pink (CP44, preemption_count = 0)
+         - 135-139: Gold (CP13, past cpu_bootstrap)
+         - 140-144: Sky Blue (CP14, past rtclock_early_init)
+         - 145-149: White (CP15, past kernel_startup_bootstrap)
+         - 150-154: Lavender (CP16, past cpu_init)
+         - 160-164: Crimson (CP18, past serial_init)
+         - 200-209: Red (early exception trap dump to 0x82f00000)

@@ -91600,7 +91600,7 @@ diff --git a/pexpert/pexpert/arm64/board_config.h b/pexpert/pexpert/arm64/board_
 index 5a6cd33..70fd089 100644
 --- a/pexpert/pexpert/arm64/board_config.h
 +++ b/pexpert/pexpert/arm64/board_config.h
-@@ -304,6 +304,17 @@
+@@ -304,6 +304,18 @@
  
  
  
@@ -91609,7 +91609,8 @@ index 5a6cd33..70fd089 100644
 +
 +#define MAX_L2_CLINE                   6
 +#define MAX_CPUS                       8 /* QEMU virt / standard ARMv9 bring-up */
-+#define MAX_CPU_CLUSTERS               1
++#define MAX_CPU_CLUSTERS               4
++#define MAX_CPU_CLUSTER_PHY_ID         4
 +
 +#define CORE_NCTRS                     8 /* Placeholder; KPC is not enabled for this target */
 +#endif  /* ARM64_BOARD_CONFIG_BCM2837 */

@@ -76,7 +76,23 @@ def main():
 
         replacement_pe = """\tPE_init_platform(FALSE, args); /* Get platform expert set up */
 \tloader_checkpoint(6);   /* past PE_init_platform */
-\thk_draw_band(0x0032CD32, 110, 10);  /* hakios visual marker: Lime at rows 110-119 (past PE_init_platform) */"""
+\thk_draw_band(0x0032CD32, 110, 5);  /* hakios visual marker: Lime at rows 110-114 (past PE_init_platform) */"""
+
+        target_topo = """\tml_parse_cpu_topology();
+
+\tmaster_cpu = ml_get_boot_cpu_number();
+\tassert(master_cpu >= 0 && master_cpu <= ml_get_max_cpu_number());"""
+
+        replacement_topo = """\thk_draw_band(0x00FF7F50, 115, 5);  /* hakios visual marker: Coral at rows 115-119 (before ml_parse_cpu_topology) */
+\tml_parse_cpu_topology();
+\thk_draw_band(0x00008080, 120, 5);  /* hakios visual marker: Teal at rows 120-124 (past ml_parse_cpu_topology) */
+
+\tmaster_cpu = ml_get_boot_cpu_number();
+\tif (master_cpu < 0 || master_cpu > ml_get_max_cpu_number()) {
+\t\tmaster_cpu = 0;
+\t}
+\thk_draw_band(0x00FF1493, 125, 5);  /* hakios visual marker: Hot Pink at rows 125-129 (master_cpu valid) */
+\tassert(master_cpu >= 0 && master_cpu <= ml_get_max_cpu_number());"""
 
         target_boot = """\tthread->machine.preemption_count = 0;
 \tloader_checkpoint(44);
@@ -85,17 +101,38 @@ def main():
 
         replacement_boot = """\tthread->machine.preemption_count = 0;
 \tloader_checkpoint(44);
-\thk_draw_band(0x00FF69B4, 120, 10);  /* hakios visual marker: Pink at rows 120-129 (preemption 0) */
+\thk_draw_band(0x00FF69B4, 130, 5);  /* hakios visual marker: Pink at rows 130-134 (preemption count 0) */
 \tcpu_bootstrap();
 \tloader_checkpoint(13);
-\thk_draw_band(0x00FFD700, 130, 10);  /* hakios visual marker: Gold at rows 130-139 (past cpu_bootstrap) */"""
+\thk_draw_band(0x00FFD700, 135, 5);  /* hakios visual marker: Gold at rows 135-139 (past cpu_bootstrap) */"""
 
         target_rt = """\trtclock_early_init();
 \tloader_checkpoint(14);"""
 
         replacement_rt = """\trtclock_early_init();
 \tloader_checkpoint(14);
-\thk_draw_band(0x0087CEEB, 140, 10);  /* hakios visual marker: Sky Blue at rows 140-149 (past rtclock_early_init) */"""
+\thk_draw_band(0x0087CEEB, 140, 5);  /* hakios visual marker: Sky Blue at rows 140-144 (past rtclock_early_init) */"""
+
+        target_ksb = """\tkernel_startup_bootstrap();
+\tloader_checkpoint(15);"""
+
+        replacement_ksb = """\tkernel_startup_bootstrap();
+\tloader_checkpoint(15);
+\thk_draw_band(0x00FFFFFF, 145, 5);  /* hakios visual marker: White at rows 145-149 (past kernel_startup_bootstrap) */"""
+
+        target_cpu_init = """\tcpu_init();
+\tloader_checkpoint(16);"""
+
+        replacement_cpu_init = """\tcpu_init();
+\tloader_checkpoint(16);
+\thk_draw_band(0x00E6E6FA, 150, 5);  /* hakios visual marker: Lavender at rows 150-154 (past cpu_init) */"""
+
+        target_serial = """\tconst unsigned int serial_exists = serial_init();
+\tloader_checkpoint(18);"""
+
+        replacement_serial = """\tconst unsigned int serial_exists = serial_init();
+\tloader_checkpoint(18);
+\thk_draw_band(0x00DC143C, 160, 5);  /* hakios visual marker: Crimson at rows 160-164 (past serial_init) */"""
 
         if target_init in c_norm:
             c_norm = c_norm.replace(target_init, replacement_init)
@@ -115,6 +152,12 @@ def main():
         else:
             print("  [WARN] target_pe not found in arm_init.c")
 
+        if target_topo in c_norm:
+            c_norm = c_norm.replace(target_topo, replacement_topo)
+            print("  [OK] osfmk/arm/arm_init.c: cpu_topology visual markers and master_cpu clamp instrumented")
+        else:
+            print("  [WARN] target_topo not found in arm_init.c")
+
         if target_boot in c_norm:
             c_norm = c_norm.replace(target_boot, replacement_boot)
             print("  [OK] osfmk/arm/arm_init.c: cpu_bootstrap visual markers instrumented")
@@ -126,6 +169,24 @@ def main():
             print("  [OK] osfmk/arm/arm_init.c: rtclock_early_init visual markers instrumented")
         else:
             print("  [WARN] target_rt not found in arm_init.c")
+
+        if target_ksb in c_norm:
+            c_norm = c_norm.replace(target_ksb, replacement_ksb)
+            print("  [OK] osfmk/arm/arm_init.c: kernel_startup_bootstrap visual markers instrumented")
+        else:
+            print("  [WARN] target_ksb not found in arm_init.c")
+
+        if target_cpu_init in c_norm:
+            c_norm = c_norm.replace(target_cpu_init, replacement_cpu_init)
+            print("  [OK] osfmk/arm/arm_init.c: cpu_init visual markers instrumented")
+        else:
+            print("  [WARN] target_cpu_init not found in arm_init.c")
+
+        if target_serial in c_norm:
+            c_norm = c_norm.replace(target_serial, replacement_serial)
+            print("  [OK] osfmk/arm/arm_init.c: serial_init visual markers instrumented")
+        else:
+            print("  [WARN] target_serial not found in arm_init.c")
 
         with open(p1, "w", encoding="utf-8", newline="\n") as f:
             f.write(c_norm)
@@ -398,9 +459,9 @@ def main():
 \tmsr\tSCTLR_EL1, x11
 \tisb
 
-\t// Draw RED band at rows 110-119 (0x5c074740)
-\tmovz\tx10, #0x4740
-\tmovk\tx10, #0x5c07, lsl #16
+\t// Draw RED band at rows 200-209 (0x5c0d3000)
+\tmovz\tx10, #0x3000
+\tmovk\tx10, #0x5c0d, lsl #16
 \tmovz\tw13, #0x0000
 \tmovk\tw13, #0x00ff, lsl #16
 \tmov\tw14, #10800
@@ -485,6 +546,22 @@ LEXT(hk_draw_band)
         with open(p4, "w", encoding="utf-8", newline="\n") as f:
             f.write(c_norm)
         print("  [OK] osfmk/arm64/start.s: visual markers and hk_draw_band installed")
+
+    # 5. pexpert/pexpert/arm64/board_config.h (SM6225 Bengal has 2 clusters: Gold A73 + Silver A53)
+    p5 = os.path.join(src, "pexpert", "pexpert", "arm64", "board_config.h")
+    if os.path.isfile(p5):
+        with open(p5, "r", encoding="utf-8", errors="replace") as f:
+            c5 = f.read()
+        if "#define MAX_CPU_CLUSTERS               1" in c5:
+            c5 = c5.replace("#define MAX_CPU_CLUSTERS               1",
+                            "#define MAX_CPU_CLUSTERS               4\n#define MAX_CPU_CLUSTER_PHY_ID         4")
+            with open(p5, "w", encoding="utf-8", newline="\n") as f:
+                f.write(c5)
+            print("  [OK] pexpert/pexpert/arm64/board_config.h: MAX_CPU_CLUSTERS set to 4")
+        elif "MAX_CPU_CLUSTERS               4" in c5:
+            print("  [OK] pexpert/pexpert/arm64/board_config.h: already has MAX_CPU_CLUSTERS 4")
+        else:
+            print("  [WARN] MAX_CPU_CLUSTERS not found in board_config.h")
 
     print("Cortex-A73 patches successfully applied!")
 
