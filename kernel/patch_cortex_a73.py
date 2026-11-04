@@ -56,7 +56,8 @@ def main():
 \tloader_checkpoint(31);   /* past slide/rebase/sign */
 \thk_draw_band(0x00800080, 70, 10);   /* hakios visual marker: Purple at rows 70-79 (past slide/rebase) */
 
-\tarm_static_if_init(args);
+\t// hakios: bypass arm_static_if_init on Cortex-A73 (uses blraa with chained fixup pointers)
+\t// arm_static_if_init(args);
 \tloader_checkpoint(32);   /* past static_if_init */
 \thk_draw_band(0x00FFFF00, 80, 10);   /* hakios visual marker: Yellow at rows 80-89 (past static_if_init) */"""
 
@@ -70,6 +71,32 @@ def main():
 \tloader_checkpoint(5);   /* past cpu_data_init */
 \thk_draw_band(0x00A52A2A, 100, 10);  /* hakios visual marker: Brown at rows 100-109 (past cpu_data_init) */"""
 
+        target_pe = """\tPE_init_platform(FALSE, args); /* Get platform expert set up */
+\tloader_checkpoint(6);   /* past PE_init_platform */"""
+
+        replacement_pe = """\tPE_init_platform(FALSE, args); /* Get platform expert set up */
+\tloader_checkpoint(6);   /* past PE_init_platform */
+\thk_draw_band(0x0032CD32, 110, 10);  /* hakios visual marker: Lime at rows 110-119 (past PE_init_platform) */"""
+
+        target_boot = """\tthread->machine.preemption_count = 0;
+\tloader_checkpoint(44);
+\tcpu_bootstrap();
+\tloader_checkpoint(13);"""
+
+        replacement_boot = """\tthread->machine.preemption_count = 0;
+\tloader_checkpoint(44);
+\thk_draw_band(0x00FF69B4, 120, 10);  /* hakios visual marker: Pink at rows 120-129 (preemption 0) */
+\tcpu_bootstrap();
+\tloader_checkpoint(13);
+\thk_draw_band(0x00FFD700, 130, 10);  /* hakios visual marker: Gold at rows 130-139 (past cpu_bootstrap) */"""
+
+        target_rt = """\trtclock_early_init();
+\tloader_checkpoint(14);"""
+
+        replacement_rt = """\trtclock_early_init();
+\tloader_checkpoint(14);
+\thk_draw_band(0x0087CEEB, 140, 10);  /* hakios visual marker: Sky Blue at rows 140-149 (past rtclock_early_init) */"""
+
         if target_init in c_norm:
             c_norm = c_norm.replace(target_init, replacement_init)
             print("  [OK] osfmk/arm/arm_init.c: arm_init visual markers instrumented")
@@ -81,6 +108,24 @@ def main():
             print("  [OK] osfmk/arm/arm_init.c: cpu_data_init visual markers instrumented")
         else:
             print("  [WARN] target_cpu not found in arm_init.c")
+
+        if target_pe in c_norm:
+            c_norm = c_norm.replace(target_pe, replacement_pe)
+            print("  [OK] osfmk/arm/arm_init.c: PE_init_platform visual markers instrumented")
+        else:
+            print("  [WARN] target_pe not found in arm_init.c")
+
+        if target_boot in c_norm:
+            c_norm = c_norm.replace(target_boot, replacement_boot)
+            print("  [OK] osfmk/arm/arm_init.c: cpu_bootstrap visual markers instrumented")
+        else:
+            print("  [WARN] target_boot not found in arm_init.c")
+
+        if target_rt in c_norm:
+            c_norm = c_norm.replace(target_rt, replacement_rt)
+            print("  [OK] osfmk/arm/arm_init.c: rtclock_early_init visual markers instrumented")
+        else:
+            print("  [WARN] target_rt not found in arm_init.c")
 
         with open(p1, "w", encoding="utf-8", newline="\n") as f:
             f.write(c_norm)

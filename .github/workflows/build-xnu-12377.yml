@@ -103,6 +103,7 @@ jobs:
           done
           if [ -n "$KERNEL" ]; then
             echo "Found compiled Mach-O kernel: $KERNEL"
+            python3 kernel/patch_kernel_pac.py "$KERNEL"
             cp "$KERNEL" out/mach.development.bcm2837
             python3 tools/mkpayload.py --compress \
               --cmdline "debug=0xc serial=3 cpus=1 keepsyms=1 -enable_kprintf_spam sweetearlyfb=1 sweethidtest=3" \

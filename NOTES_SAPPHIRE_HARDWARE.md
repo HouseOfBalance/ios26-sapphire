@@ -1171,3 +1171,34 @@ What it took today (in order): 0058 HID services (Apple IOHIDFamily-1915 user cl
   * Fix (Method 1):
     - Completely replaced `Lloader_early_exception` with Method 1: dumps `ESR`, `ELR`, `FAR`, `LR`, `SP` to physical RAM `0x82f00000`, flushes with `dc cvac`, transitions to PA, safely disables MMU, draws RED band at rows 110-119, and spins with `wfe`.
     - Bypassed `OSRuntimeSignStructors` in `arm_init.c` since Cortex-A73 has no Apple PAC hardware.
+
+- Executed `fastboot boot enxerto-boot.img` (build commit `fc49b68`, CI run `41756611907`).
+  * Live Hardware Milestone Confirmed on Physical AMOLED Screen (`media_1793758473755_a8132f4b.jpg` & photos):
+    - AMOLED screen displays 7 DISTINCT COLOR BANDS near punch-hole:
+      1. Cyan (rows 10-19): Passed OSLAR debug unlock.
+      2. Magenta (rows 20-29): Page tables built, TTEs visible via `dsb ish`.
+      3. White (rows 30-39): Reached `common_start`, right before MMU enable.
+      4. Blue (rows 40-49): Executed AFTER MMU ENABLE (`SCTLR_EL1`), right before `ret` into `_arm_init()`!
+      5. Orange (rows 50-59): Successfully entered `arm_init()` in C code!
+      6. Green (rows 60-69): Successfully executed `loader_checkpoint(30)` in C code!
+      7. Purple (rows 70-79): Successfully executed `loader_checkpoint(31)` in C code past `arm_slide_rebase_and_sign_image()`! Bypassing `OSRuntimeSignStructors` completely succeeded!
+  * Freeze Point Analysis:
+    - Kernel froze immediately inside `arm_static_if_init()` at `0xfffffff007371398`.
+    - Disassembly confirmed `arm_static_if_init` executes `blraa x8, x17` (`0xd73f0911`), which is an Undefined Instruction on Cortex-A73. Furthermore, the pointers in `0xfffffff0082b0508` (`0x80102abe00322e44` & `0x80002abe003c5774`) are raw chained fixups with discriminator `0x2abe` that were never resolved on non-Apple silicon.
+  * Universal PAC Fix & Static-If Bypass Applied:
+    - Bypassed `arm_static_if_init(args)` in `arm_init.c` (Apple static-if instruction patching is irrelevant on Qualcomm Bengal Cortex-A73).
+    - Created `kernel/patch_kernel_pac.py`: pre-patches all 50,411 non-hint ARMv8.3 PAC instructions across all executable Mach-O segments (`__TEXT_EXEC`, `__KLD`) directly to native ARMv8.0 equivalents:
+      * 18,494 `retab`/`retaa` -> `ret` (`0xd65f03c0`)
+      * 17,442 `pac*`/`aut*` -> `nop` (`0xd503201f`)
+      * 13,507 `blraa`/`blrab` -> `blr Xn` (`0xd63f0000 | (Rn << 5)`)
+      * 951 `braa`/`brab` -> `br Xn` (`0xd61f0000 | (Rn << 5)`)
+      * 17 `pacga` -> `mov Xd, xzr` (`0xaa1f03e0 | Rd`)
+    - Extended visual marker ladder in `arm_init.c`:
+      * Yellow (rows 80-89): CP32 (past bypassed static_if_init)
+      * Cyan (rows 90-99): CP4 (before cpu_data_init)
+      * Brown (rows 100-109): CP5 (past cpu_data_init)
+      * Lime (rows 110-119): CP6 (past PE_init_platform)
+      * Pink (rows 120-129): CP44 (preemption count 0)
+      * Gold (rows 130-139): CP13 (past cpu_bootstrap)
+      * Sky Blue (rows 140-149): CP14 (past rtclock_early_init)
+    - Updated `.github/workflows/build-xnu-12377.yml` to run `kernel/patch_kernel_pac.py` automatically before packaging.
