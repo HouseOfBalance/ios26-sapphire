@@ -19,6 +19,7 @@
 #include <kern/thread.h>
 #include <kern/task.h>
 #include <vm/vm_map.h>
+#include <libkern/copyio.h>
 #else
 typedef struct arm_saved_state arm_saved_state_t;
 typedef void *thread_t;
@@ -35,6 +36,7 @@ extern void set_saved_state_pc(arm_saved_state_t *state, uint64_t pc);
 typedef uint64_t user_addr_t;
 typedef uint64_t vm_size_t;
 typedef uint64_t vm_offset_t;
+extern int copyin(const user_addr_t user_addr, void *kernel_addr, vm_size_t nbytes);
 #endif
 
 #include "pac_decode.h"
@@ -43,8 +45,6 @@ extern unsigned long gVirtBase, gPhysBase;
 #define PHYSTOKV(pa) ((uint64_t)(pa) + (gVirtBase - gPhysBase))
 
 extern uint64_t kvtophys(vm_offset_t va);
-extern uint64_t pmap_find_phys(void *pmap, uint64_t va);
-extern int copyin(const user_addr_t user_addr, void *kernel_addr, vm_size_t nbytes);
 extern void loader_log_line(const char *line);
 
 /* Thống kê hiệu năng runtime */
@@ -130,7 +130,7 @@ pac_patch_handle_trap(arm_saved_state_t *state, bool is_user)
 
 	/* 1. Đọc mã lệnh insn 32-bit từ vị trí PC */
 	if (is_user) {
-		if (copyin((const void *)pc, &insn, sizeof(insn)) != 0) {
+		if (copyin((user_addr_t)pc, &insn, sizeof(insn)) != 0) {
 			return false;
 		}
 		uint64_t par, daif;
