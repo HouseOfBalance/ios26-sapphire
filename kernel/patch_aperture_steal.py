@@ -57,7 +57,7 @@ def patch_vm_resident(src_dir):
         print("[ERROR] Could not find 'pmap_steal_memory_internal' definition in vm_resident.c", file=sys.stderr)
         return 1
 
-    steal_patch = r"""\1
+    steal_patch = """
 	/* hakios: aperture-based early memory steal via pmap_next_page */
 	extern boolean_t pmap_initialized;
 	extern vm_offset_t first_avail;
@@ -86,7 +86,7 @@ def patch_vm_resident(src_dir):
 		return (void *)(vm_offset_t)phystokv(pa);
 	}"""
 
-    patched_content = pattern.sub(lambda m: steal_patch, content, count=1)
+    patched_content = pattern.sub(lambda m: m.group(1) + steal_patch, content, count=1)
 
     if patched_content == content:
         print("[ERROR] Substitution failed in vm_resident.c", file=sys.stderr)
