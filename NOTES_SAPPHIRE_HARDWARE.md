@@ -1152,3 +1152,22 @@ What it took today (in order): 0058 HID services (Apple IOHIDFamily-1915 user cl
       * Yellow (rows 80-89): past `arm_static_if_init()`.
       * Cyan (rows 90-99): before `cpu_data_init()`.
       * Brown (rows 100-109): past `cpu_data_init()`.
+
+- Executed `fastboot boot enxerto-boot.img` (build commit `f11380f`, CI run `41745669147`).
+  * Live Hardware Milestone Confirmed on Physical AMOLED Screen (`media_1793756135013_f46f0ff8.jpg`):
+    - AMOLED screen displays 6 DISTINCT COLOR BANDS near punch-hole:
+      1. Cyan (rows 10-19): Passed OSLAR debug unlock.
+      2. Magenta (rows 20-29): Page tables built, TTEs visible via `dsb ish`.
+      3. White (rows 30-39): Reached `common_start`, right before MMU enable.
+      4. Blue (rows 40-49): Executed AFTER MMU ENABLE (`SCTLR_EL1`), right before `ret` into `_arm_init()`!
+      5. Orange (rows 50-59): Successfully entered `arm_init()` in C code!
+      6. Green (rows 60-69): Successfully executed `loader_checkpoint(30)` in C code!
+    - MMU is ON and translating KVA perfectly. Kernel is running C code!
+  * Root Cause Analysis:
+    - Kernel binary is `MH_EXECUTE` with empty `__thread_starts` (`__thread_starts_sect_start == __thread_starts_sect_end`), so rebase is skipped.
+    - Execution immediately enters `OSRuntimeSignStructors(&_mh_execute_header)` at `0xfffffff007c38b94`.
+    - `OSRuntimeSignStructors` executes non-hint PAC instructions (`pacia x16, x17` at `0xfffffff007cc40e4` and `retab` at `0xfffffff007a75124`), causing an Undefined Instruction exception on Cortex-A73.
+    - The old `Lloader_early_exception` handler shut off MMU while `PC` was in KVA (`0xfffffff007...`), crashing instruction fetch immediately.
+  * Fix (Method 1):
+    - Completely replaced `Lloader_early_exception` with Method 1: dumps `ESR`, `ELR`, `FAR`, `LR`, `SP` to physical RAM `0x82f00000`, flushes with `dc cvac`, transitions to PA, safely disables MMU, draws RED band at rows 110-119, and spins with `wfe`.
+    - Bypassed `OSRuntimeSignStructors` in `arm_init.c` since Cortex-A73 has no Apple PAC hardware.

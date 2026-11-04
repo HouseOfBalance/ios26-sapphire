@@ -7,7 +7,7 @@ def main():
         sys.exit(1)
     
     src = sys.argv[1]
-    print(f"Applying Cortex-A73 PAC sysreg stubs, robust exception handler, and visual FB ladder to {src}...")
+    print(f"Applying Cortex-A73 PAC stubs, Method 1 exception handler, and visual FB ladder to {src}...")
 
     # 1. osfmk/arm/arm_init.c
     p1 = os.path.join(src, "osfmk", "arm", "arm_init.c")
@@ -22,6 +22,23 @@ def main():
             print("  [OK] osfmk/arm/arm_init.c: APIBKeyLo_EL1 stubbed")
 
         c_norm = c.replace("\r\n", "\n")
+
+        # Bypass PAC structor signing (OSRuntimeSignStructors uses pacia/retab which UNDEF on Cortex-A73)
+        sign1_old = "OSRuntimeSignStructors(&_mh_execute_header);"
+        sign1_new = "// hakios: bypass PAC structor signing on Cortex-A73\n\t\t// OSRuntimeSignStructors(&_mh_execute_header);"
+        if sign1_old in c_norm:
+            c_norm = c_norm.replace(sign1_old, sign1_new)
+            print("  [OK] osfmk/arm/arm_init.c: OSRuntimeSignStructors bypassed")
+        else:
+            print("  [WARN] sign1_old not found in arm_init.c")
+
+        sign2_old = "OSRuntimeSignStructorsInFileset(kc_mh);"
+        sign2_new = "// hakios: bypass PAC structor signing on Cortex-A73\n\t\t// OSRuntimeSignStructorsInFileset(kc_mh);"
+        if sign2_old in c_norm:
+            c_norm = c_norm.replace(sign2_old, sign2_new)
+            print("  [OK] osfmk/arm/arm_init.c: OSRuntimeSignStructorsInFileset bypassed")
+        else:
+            print("  [WARN] sign2_old not found in arm_init.c")
 
         # Instrument early checkpoints in arm_init()
         target_init = """\tloader_checkpoint(30);   /* hakios: reached arm_init (C) at all (ret from start.s worked) */
@@ -120,7 +137,6 @@ def main():
 \t// hakios: Bengal Cortex-A73 lacks hardware PAC sysregs; stub out
 .endm"""
 
-        # Normalize newlines
         c_norm = c.replace("\r\n", "\n")
         assert load_keys_old in c_norm, "PAC_STD_LOAD_KEYS not found in pac_std_asm.h"
         assert load_a_old in c_norm, "PAC_STD_LOAD_A_KEYS not found in pac_std_asm.h"
@@ -301,57 +317,56 @@ def main():
         assert cp11_old in c_norm, "checkpoint 11 not found in start.s"
         c_norm = c_norm.replace(cp11_old, cp11_new)
 
-        # Early Exception: Robust MMU transition + Red band (rows 110-119, 0x5c074740) + register dump
-        exc_old = """\tadr\t\tx9, Lloader_stub_slot
+        # Early Exception: Method 1 (Pure asm, no stack, safe transition, dump to 0x82f00000, Red band at rows 110-119)
+        exc_old = """\tmov\t\tx2, #1
+\tmrs\t\tx9, SCTLR_EL1
+\tbic\t\tx9, x9, #1
+\tmsr\t\tSCTLR_EL1, x9
+\tisb
+\tadr\t\tx9, Lloader_stub_slot
 \tldr\t\tx9, [x9, #8]
 \tcbz\t\tx9, .
 \tbr\t\tx9"""
 
-        exc_new = """\tadr\t\tx9, Lloader_stub_slot
-\tldr\t\tx9, [x9, #8]
-\tcbnz\tx9, 9f
-\t// Exception Handler: transition to PA if MMU is enabled
-\tmrs\t\tx12, SCTLR_EL1
-\ttbz\t\tx12, #0, 1f
-\tadr\t\tx10, 1f
+        exc_new = """\t// Method 1: Dump crash registers to fixed RAM 0x82f00000 (accessible in V=P via TTBR0)
+\tmovz\tx9, #0x0000
+\tmovk\tx9, #0x82f0, lsl #16
+\tstp\tx3, x4, [x9]
+\tstp\tx5, x6, [x9, #16]
+\tstr\tx7, [x9, #32]
+\tdc\tcvac, x9
+\tdsb\tsy
+
+\t// Transition to PA if MMU is enabled before disabling MMU:
+\tmrs\tx12, SCTLR_EL1
+\ttbz\tx12, #0, 1f
+\tadr\tx10, 1f
 \tadrp\tx11, EXT(loader_stub_slot)@page
 \tadd\tx11, x11, EXT(loader_stub_slot)@pageoff
 \tldr\tx11, [x11, #24]
 \tsub\tx10, x10, x11
 \tbr\tx10
 1:
-\t// Running at PA: turn off MMU safely
-\tmrs\t\tx11, SCTLR_EL1
-\tbic\t\tx11, x11, #1
-\tmsr\t\tSCTLR_EL1, x11
+\t// Now running at PA: safely disable MMU
+\tmrs\tx11, SCTLR_EL1
+\tbic\tx11, x11, #1
+\tmsr\tSCTLR_EL1, x11
 \tisb
-\t// hakios visual marker: Red band at rows 110-119 (0x5c074740)
-\tmovz\tx9, #0x4740
-\tmovk\tx9, #0x5c07, lsl #16
-\tmovz\tx10, #0x0000
-\tmovk\tx10, #0x00ff, lsl #16
-\tmovk\tx10, #0x0000, lsl #32
-\tmovk\tx10, #0x00ff, lsl #48
-\tmov\t\tw11, #2700
-2:
-\tstp\tx10, x10, [x9], #16
-\tsubs\tw11, w11, #1
-\tb.ne\t2b
-\t// Save crash registers into fixed physical RAM 0x82f00000 for triage
-\tmovz\tx9, #0x0000
-\tmovk\tx9, #0x82f0, lsl #16
-\tstp\tx3, x4, [x9]
-\tstp\tx5, x6, [x9, #16]
-\tstr\tx7, [x9, #32]
-\tb\t\t.
-9:
-\tmrs\t\tx11, SCTLR_EL1
-\tbic\t\tx11, x11, #1
-\tmsr\t\tSCTLR_EL1, x11
-\tisb
-\tbr\t\tx9"""
 
-        assert exc_old in c_norm, "Lloader_early_exception stub slot not found in start.s"
+\t// Draw RED band at rows 110-119 (0x5c074740)
+\tmovz\tx10, #0x4740
+\tmovk\tx10, #0x5c07, lsl #16
+\tmovz\tw13, #0x0000
+\tmovk\tw13, #0x00ff, lsl #16
+\tmov\tw14, #10800
+3:\tstr\tw13, [x10], #4
+\tsubs\tw14, w14, #1
+\tb.ne\t3b
+
+2:\twfe
+\tb\t2b"""
+
+        assert exc_old in c_norm, "Lloader_early_exception old block not found in start.s"
         c_norm = c_norm.replace(exc_old, exc_new)
 
         # Append hk_draw_band helper to start.s
