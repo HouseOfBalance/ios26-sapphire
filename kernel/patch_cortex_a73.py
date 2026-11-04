@@ -7,7 +7,7 @@ def main():
         sys.exit(1)
     
     src = sys.argv[1]
-    print(f"Applying Cortex-A73 PAC sysreg stubs and visual FB markers to {src}...")
+    print(f"Applying Cortex-A73 PAC sysreg stubs, robust exception handler, and visual FB ladder to {src}...")
 
     # 1. osfmk/arm/arm_init.c
     p1 = os.path.join(src, "osfmk", "arm", "arm_init.c")
@@ -19,11 +19,54 @@ def main():
         if t1 in c and t2 in c:
             c = c.replace(t1, 'r->reg_before = 0;')
             c = c.replace(t2, 'r->reg_after = 0;')
-            with open(p1, "w", encoding="utf-8") as f:
-                f.write(c)
-            print("  [OK] osfmk/arm/arm_init.c")
+            print("  [OK] osfmk/arm/arm_init.c: APIBKeyLo_EL1 stubbed")
+
+        c_norm = c.replace("\r\n", "\n")
+
+        # Instrument early checkpoints in arm_init()
+        target_init = """\tloader_checkpoint(30);   /* hakios: reached arm_init (C) at all (ret from start.s worked) */
+\tarm_slide_rebase_and_sign_image();
+\tloader_checkpoint(31);   /* past slide/rebase/sign */
+
+\tarm_static_if_init(args);
+\tloader_checkpoint(32);   /* past static_if_init */"""
+
+        replacement_init = """\textern void hk_draw_band(uint32_t color, uint32_t row_start, uint32_t row_count);
+\thk_draw_band(0x00FFA500, 50, 10);   /* hakios visual marker: Orange at rows 50-59 (entered arm_init) */
+\tloader_checkpoint(30);   /* hakios: reached arm_init (C) at all (ret from start.s worked) */
+\thk_draw_band(0x0000FF00, 60, 10);   /* hakios visual marker: Green at rows 60-69 (past CP30, about to slide/rebase) */
+\tarm_slide_rebase_and_sign_image();
+\tloader_checkpoint(31);   /* past slide/rebase/sign */
+\thk_draw_band(0x00800080, 70, 10);   /* hakios visual marker: Purple at rows 70-79 (past slide/rebase) */
+
+\tarm_static_if_init(args);
+\tloader_checkpoint(32);   /* past static_if_init */
+\thk_draw_band(0x00FFFF00, 80, 10);   /* hakios visual marker: Yellow at rows 80-89 (past static_if_init) */"""
+
+        target_cpu = """\tloader_checkpoint(4);   /* before cpu_data_init */
+\tcpu_data_init(&BootCpuData);
+\tloader_checkpoint(5);   /* past cpu_data_init */"""
+
+        replacement_cpu = """\thk_draw_band(0x0000FFFF, 90, 10);   /* hakios visual marker: Cyan at rows 90-99 (before cpu_data_init) */
+\tloader_checkpoint(4);   /* before cpu_data_init */
+\tcpu_data_init(&BootCpuData);
+\tloader_checkpoint(5);   /* past cpu_data_init */
+\thk_draw_band(0x00A52A2A, 100, 10);  /* hakios visual marker: Brown at rows 100-109 (past cpu_data_init) */"""
+
+        if target_init in c_norm:
+            c_norm = c_norm.replace(target_init, replacement_init)
+            print("  [OK] osfmk/arm/arm_init.c: arm_init visual markers instrumented")
         else:
-            print("  [WARN] targets not found in arm_init.c")
+            print("  [WARN] target_init not found in arm_init.c")
+
+        if target_cpu in c_norm:
+            c_norm = c_norm.replace(target_cpu, replacement_cpu)
+            print("  [OK] osfmk/arm/arm_init.c: cpu_data_init visual markers instrumented")
+        else:
+            print("  [WARN] target_cpu not found in arm_init.c")
+
+        with open(p1, "w", encoding="utf-8", newline="\n") as f:
+            f.write(c_norm)
 
     # 2. osfmk/arm64/pac_std_asm.h
     p2 = os.path.join(src, "osfmk", "arm64", "pac_std_asm.h")
@@ -32,49 +75,49 @@ def main():
             c = f.read()
         
         load_keys_old = """.macro PAC_STD_LOAD_KEYS base, lo, hi
-	PAC_STD_LOAD_KEY \\base, PAC_STD_KEY_IA, \\lo, \\hi
-	msr	APIAKeyLo_EL1, \\lo
-	msr	APIAKeyHi_EL1, \\hi
-	PAC_STD_LOAD_KEY \\base, PAC_STD_KEY_IB, \\lo, \\hi
-	msr	APIBKeyLo_EL1, \\lo
-	msr	APIBKeyHi_EL1, \\hi
-	PAC_STD_LOAD_KEY \\base, PAC_STD_KEY_DA, \\lo, \\hi
-	msr	APDAKeyLo_EL1, \\lo
-	msr	APDAKeyHi_EL1, \\hi
-	PAC_STD_LOAD_KEY \\base, PAC_STD_KEY_DB, \\lo, \\hi
-	msr	APDBKeyLo_EL1, \\lo
-	msr	APDBKeyHi_EL1, \\hi
-	PAC_STD_LOAD_KEY \\base, PAC_STD_KEY_GA, \\lo, \\hi
-	msr	APGAKeyLo_EL1, \\lo
-	msr	APGAKeyHi_EL1, \\hi
+\tPAC_STD_LOAD_KEY \\base, PAC_STD_KEY_IA, \\lo, \\hi
+\tmsr\tAPIAKeyLo_EL1, \\lo
+\tmsr\tAPIAKeyHi_EL1, \\hi
+\tPAC_STD_LOAD_KEY \\base, PAC_STD_KEY_IB, \\lo, \\hi
+\tmsr\tAPIBKeyLo_EL1, \\lo
+\tmsr\tAPIBKeyHi_EL1, \\hi
+\tPAC_STD_LOAD_KEY \\base, PAC_STD_KEY_DA, \\lo, \\hi
+\tmsr\tAPDAKeyLo_EL1, \\lo
+\tmsr\tAPDAKeyHi_EL1, \\hi
+\tPAC_STD_LOAD_KEY \\base, PAC_STD_KEY_DB, \\lo, \\hi
+\tmsr\tAPDBKeyLo_EL1, \\lo
+\tmsr\tAPDBKeyHi_EL1, \\hi
+\tPAC_STD_LOAD_KEY \\base, PAC_STD_KEY_GA, \\lo, \\hi
+\tmsr\tAPGAKeyLo_EL1, \\lo
+\tmsr\tAPGAKeyHi_EL1, \\hi
 .endm"""
 
         load_keys_new = """.macro PAC_STD_LOAD_KEYS base, lo, hi
-	// hakios: Bengal Cortex-A73 lacks hardware PAC sysregs; stub out
+\t// hakios: Bengal Cortex-A73 lacks hardware PAC sysregs; stub out
 .endm"""
 
         load_a_old = """.macro PAC_STD_LOAD_A_KEYS base, id, lo, hi, t1, t2, t3, t4
-	PAC_STD_DERIVE_KEY \\base, PAC_STD_KEY_IA, \\id, \\lo, \\hi, \\t1, \\t2, \\t3, \\t4
-	msr	APIAKeyLo_EL1, \\lo
-	msr	APIAKeyHi_EL1, \\hi
-	msr	APDAKeyLo_EL1, \\lo
-	msr	APDAKeyHi_EL1, \\hi
+\tPAC_STD_DERIVE_KEY \\base, PAC_STD_KEY_IA, \\id, \\lo, \\hi, \\t1, \\t2, \\t3, \\t4
+\tmsr\tAPIAKeyLo_EL1, \\lo
+\tmsr\tAPIAKeyHi_EL1, \\hi
+\tmsr\tAPDAKeyLo_EL1, \\lo
+\tmsr\tAPDAKeyHi_EL1, \\hi
 .endm"""
 
         load_a_new = """.macro PAC_STD_LOAD_A_KEYS base, id, lo, hi, t1, t2, t3, t4
-	// hakios: Bengal Cortex-A73 lacks hardware PAC sysregs; stub out
+\t// hakios: Bengal Cortex-A73 lacks hardware PAC sysregs; stub out
 .endm"""
 
         load_b_old = """.macro PAC_STD_LOAD_B_KEYS base, id, lo, hi, t1, t2, t3, t4
-	PAC_STD_DERIVE_KEY \\base, PAC_STD_KEY_IB, \\id, \\lo, \\hi, \\t1, \\t2, \\t3, \\t4
-	msr	APIBKeyLo_EL1, \\lo
-	msr	APIBKeyHi_EL1, \\hi
-	msr	APDBKeyLo_EL1, \\lo
-	msr	APDBKeyHi_EL1, \\hi
+\tPAC_STD_DERIVE_KEY \\base, PAC_STD_KEY_IB, \\id, \\lo, \\hi, \\t1, \\t2, \\t3, \\t4
+\tmsr\tAPIBKeyLo_EL1, \\lo
+\tmsr\tAPIBKeyHi_EL1, \\hi
+\tmsr\tAPDBKeyLo_EL1, \\lo
+\tmsr\tAPDBKeyHi_EL1, \\hi
 .endm"""
 
         load_b_new = """.macro PAC_STD_LOAD_B_KEYS base, id, lo, hi, t1, t2, t3, t4
-	// hakios: Bengal Cortex-A73 lacks hardware PAC sysregs; stub out
+\t// hakios: Bengal Cortex-A73 lacks hardware PAC sysregs; stub out
 .endm"""
 
         # Normalize newlines
@@ -165,7 +208,7 @@ def main():
         assert cp2_old in c_norm, "checkpoint 2 not found in start.s"
         c_norm = c_norm.replace(cp2_old, cp2_new)
 
-        # CP3: after page tables built - Magenta band (rows 20-29, 0x5c015180)
+        # CP3: after page tables built - Magenta band (rows 20-29, 0x5c015180) & save (VA - PA) delta
         cp3_old = """\t/* Ensure TTEs are visible */
 \tdsb\t\tish
 
@@ -175,6 +218,11 @@ def main():
 
         cp3_new = """\t/* Ensure TTEs are visible */
 \tdsb\t\tish
+\t// hakios: record (VA - PA) delta in loader_stub_slot[3] for runtime PA transitions
+\tadrp\tx9, EXT(loader_stub_slot)@page
+\tadd\tx9, x9, EXT(loader_stub_slot)@pageoff
+\tsub\tx10, x22, x23
+\tstr\tx10, [x9, #24]
 \t// hakios visual marker CP3: Magenta band at rows 20-29 (0x5c015180)
 \tmovz\tx9, #0x5180
 \tmovk\tx9, #0x5c01, lsl #16
@@ -253,7 +301,7 @@ def main():
         assert cp11_old in c_norm, "checkpoint 11 not found in start.s"
         c_norm = c_norm.replace(cp11_old, cp11_new)
 
-        # Early Exception: Red band (rows 50-59, 0x5c034bc0)
+        # Early Exception: Robust MMU transition + Red band (rows 110-119, 0x5c074740) + register dump
         exc_old = """\tadr\t\tx9, Lloader_stub_slot
 \tldr\t\tx9, [x9, #8]
 \tcbz\t\tx9, .
@@ -261,10 +309,25 @@ def main():
 
         exc_new = """\tadr\t\tx9, Lloader_stub_slot
 \tldr\t\tx9, [x9, #8]
-\tcbnz\tx9, 1f
-\t// hakios visual marker: Red band at rows 50-59 (0x5c034bc0)
-\tmovz\tx9, #0x4bc0
-\tmovk\tx9, #0x5c03, lsl #16
+\tcbnz\tx9, 9f
+\t// Exception Handler: transition to PA if MMU is enabled
+\tmrs\t\tx12, SCTLR_EL1
+\ttbz\t\tx12, #0, 1f
+\tadr\t\tx10, 1f
+\tadrp\tx11, EXT(loader_stub_slot)@page
+\tadd\tx11, x11, EXT(loader_stub_slot)@pageoff
+\tldr\tx11, [x11, #24]
+\tsub\tx10, x10, x11
+\tbr\tx10
+1:
+\t// Running at PA: turn off MMU safely
+\tmrs\t\tx11, SCTLR_EL1
+\tbic\t\tx11, x11, #1
+\tmsr\t\tSCTLR_EL1, x11
+\tisb
+\t// hakios visual marker: Red band at rows 110-119 (0x5c074740)
+\tmovz\tx9, #0x4740
+\tmovk\tx9, #0x5c07, lsl #16
 \tmovz\tx10, #0x0000
 \tmovk\tx10, #0x00ff, lsl #16
 \tmovk\tx10, #0x0000, lsl #32
@@ -274,16 +337,94 @@ def main():
 \tstp\tx10, x10, [x9], #16
 \tsubs\tw11, w11, #1
 \tb.ne\t2b
+\t// Save crash registers into fixed physical RAM 0x82f00000 for triage
+\tmovz\tx9, #0x0000
+\tmovk\tx9, #0x82f0, lsl #16
+\tstp\tx3, x4, [x9]
+\tstp\tx5, x6, [x9, #16]
+\tstr\tx7, [x9, #32]
 \tb\t\t.
-1:
+9:
+\tmrs\t\tx11, SCTLR_EL1
+\tbic\t\tx11, x11, #1
+\tmsr\t\tSCTLR_EL1, x11
+\tisb
 \tbr\t\tx9"""
 
         assert exc_old in c_norm, "Lloader_early_exception stub slot not found in start.s"
         c_norm = c_norm.replace(exc_old, exc_new)
 
+        # Append hk_draw_band helper to start.s
+        hk_draw_band_code = """
+/*
+ * hakios: visual marker band drawer (accessible from both start.s and arm_init.c)
+ * void hk_draw_band(uint32_t color, uint32_t row_start, uint32_t row_count);
+ */
+\t.text
+\t.align 2
+\t.globl EXT(hk_draw_band)
+LEXT(hk_draw_band)
+\tstp\t\tx29, x30, [sp, #-48]!
+\tstp\t\tx19, x20, [sp, #16]
+\tstp\t\tx21, x22, [sp, #32]
+
+\tand\t\tx0, x0, #0xffffffff
+\torr\t\tx19, x0, x0, lsl #32
+
+\tmov\t\tx20, #4320
+\tmul\t\tx20, x1, x20
+\tmovz\tx21, #0x5c00, lsl #16
+\tadd\t\tx20, x20, x21
+
+\tmov\t\tw21, #270
+\tmul\t\tw21, w2, w21
+
+\tmrs\t\tx22, SCTLR_EL1
+\ttbz\t\tx22, #0, 1f
+
+\tadr\t\tx10, 1f
+\tadrp\tx11, EXT(loader_stub_slot)@page
+\tadd\tx11, x11, EXT(loader_stub_slot)@pageoff
+\tldr\tx11, [x11, #24]
+\tsub\tx10, x10, x11
+\tbr\t\tx10
+
+1:
+\tmrs\t\tx9, SCTLR_EL1
+\tbic\t\tx10, x9, #1
+\tmsr\t\tSCTLR_EL1, x10
+\tisb
+
+\tmov\t\tx11, x20
+\tmov\t\tw12, w21
+2:
+\tstp\tx19, x19, [x11], #16
+\tsubs\tw12, w12, #1
+\tb.ne\t2b
+
+\tmsr\t\tSCTLR_EL1, x9
+\tisb
+
+\ttbz\t\tx22, #0, 3f
+
+\tadr\t\tx10, 3f
+\tadrp\tx12, EXT(loader_stub_slot)@page
+\tadd\tx12, x12, EXT(loader_stub_slot)@pageoff
+\tldr\tx12, [x12, #24]
+\tadd\tx10, x10, x12
+\tbr\t\tx10
+
+3:
+\tldp\t\tx21, x22, [sp, #32]
+\tldp\t\tx19, x20, [sp, #16]
+\tldp\t\tx29, x30, [sp], #48
+\tret
+"""
+        c_norm = c_norm + hk_draw_band_code
+
         with open(p4, "w", encoding="utf-8", newline="\n") as f:
             f.write(c_norm)
-        print("  [OK] osfmk/arm64/start.s")
+        print("  [OK] osfmk/arm64/start.s: visual markers and hk_draw_band installed")
 
     print("Cortex-A73 patches successfully applied!")
 

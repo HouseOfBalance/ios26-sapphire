@@ -1130,6 +1130,25 @@ What it took today (in order): 0058 HID services (Apple IOHIDFamily-1915 user cl
   * Live Photo Observation (`media_1793727192654_0048007d.jpg`): The AMOLED screen shows a solid, bright **YELLOW band** across the top of the display (`0x5c000000`)!
   * **Historic Landmark:** `start_first_cpu` in XNU is confirmed running on physical Cortex-A73 hardware! PAC sysreg traps eradicated!
   * Next instrumentation: Multi-checkpoint visual ladder (CP1 Yellow rows 0-9, CP2 Cyan rows 10-19, CP3 Magenta rows 20-29, CP7 White rows 30-39, CP11 Blue rows 40-49, Exception Red rows 50-59).
-  * Commit `1d3fab5` built cleanly in CI run `41689028318` (conclusion=success).
-  * Latest `enxerto-boot.img` downloaded and copied to `C:\Users\hungtv\Downloads\platform-tools\enxerto-boot.img` (10,997,760 bytes).
-  * When resuming: boot phone with `fastboot boot enxerto-boot.img` to observe which color ladder stripes appear.
+
+- Executed `fastboot boot enxerto-boot.img` (build commit `1d3fab5`, CI run `41689028318`).
+  * Live Hardware Milestone Confirmed on Physical AMOLED Screen (`media_1793750138511_395d8a21.jpg`):
+    - AMOLED screen displays 4 DISTINCT COLOR BANDS near punch-hole:
+      1. Cyan (rows 10-19): Passed OSLAR debug unlock.
+      2. Magenta (rows 20-29): Page tables built, TTEs visible via `dsb ish`.
+      3. White (rows 30-39): Reached `common_start`, right before MMU enable.
+      4. Blue (rows 40-49): Executed AFTER MMU ENABLE (`SCTLR_EL1`), right before `ret` into `_arm_init()`!
+    - MMU enablement on Cortex-A73 is 100% PROVEN and operational!
+  * Root Cause Analysis of Post-Ret Hang:
+    - In `Lloader_early_exception`, drawing the red band to `0x5c034bc0` executed with MMU ON from KVA without address translation, causing a secondary Data Abort (recursive exception loop).
+  * Implementation:
+    - Recorded `VA - PA` delta in `loader_stub_slot[3]` at checkpoint 3.
+    - Implemented `hk_draw_band` in `start.s` with safe KVA<->PA transitions for drawing physical framebuffer markers from C code in KVA.
+    - Updated `Lloader_early_exception` to safely transition to PA before disabling MMU, drawing the Red band at rows 110-119, and dumping `ESR_EL1`, `ELR_EL1`, `FAR_EL1`, `LR`, `SP` to physical RAM `0x82f00000`.
+    - Instrumented `arm_init()` with fine-grained visual markers:
+      * Orange (rows 50-59): entry of `arm_init()`.
+      * Green (rows 60-69): past `loader_checkpoint(30)`, entering `arm_slide_rebase_and_sign_image()`.
+      * Purple (rows 70-79): past `arm_slide_rebase_and_sign_image()`.
+      * Yellow (rows 80-89): past `arm_static_if_init()`.
+      * Cyan (rows 90-99): before `cpu_data_init()`.
+      * Brown (rows 100-109): past `cpu_data_init()`.
