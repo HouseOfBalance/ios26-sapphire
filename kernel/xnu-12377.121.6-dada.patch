@@ -84917,7 +84917,7 @@ new file mode 100644
 index 0000000..d4d75ad
 --- /dev/null
 +++ b/osfmk/arm64/gic_v3_irq.c
-@@ -0,0 +1,530 @@
+@@ -0,0 +1,572 @@
 +/*
 + * Minimal GICv3 support for generic (non-Apple) ARMv8 boards.
 + *
@@ -84967,6 +84967,7 @@ index 0000000..d4d75ad
 +#define GICD_CTLR_ENABLE_G1NS   (1u << 1)
 +#define GICD_CTLR_ARE_NS        (1u << 4)
 +#define GICD_CTLR_RWP           (1u << 31)
++#define GIC_POLL_LIMIT          1000000u
 +#define GICD_IGROUPR(n)         (0x0080 + 4 * (n))
 +#define GICD_ISENABLER(n)       (0x0100 + 4 * (n))
 +#define GICD_ICENABLER(n)       (0x0180 + 4 * (n))
@@ -85114,12 +85115,16 @@ index 0000000..d4d75ad
 +	return false;
 +}
 +
-+static void
++static bool
 +gic_distributor_settle(void)
 +{
-+	while (gic_read32(gicd_base + GICD_CTLR) & GICD_CTLR_RWP) {
-+		/* wait for the change to take effect */
++	for (uint32_t poll = 0; poll < GIC_POLL_LIMIT; poll++) {
++		if ((gic_read32(gicd_base + GICD_CTLR) & GICD_CTLR_RWP) == 0) {
++			return true;
++		}
 +	}
++	hk_draw_band(0x00FF0000, 402, 2); /* Red: GIC distributor RWP timeout */
++	return false;
 +}
 +
 +void
@@ -85185,7 +85190,12 @@ index 0000000..d4d75ad
 +	gic_write32(gicd_base + GICD_ICFGR(intid / 16), config | (edge ? 2u : 0u) << (intid % 16 * 2));
 +	/* GICD_IROUTER: Aff3 in [39:32], Aff2.Aff1.Aff0 in [23:0]; bit 31 (any processor) clear */
 +	*(volatile uint64_t *)(gicd_base + GICD_IROUTER(intid)) = (mpidr & 0xff00000000ull) | (mpidr & 0xffffff);
-+	gic_distributor_settle();
++	if (!gic_distributor_settle()) {
++		simple_lock(&gic_spi_lock, LCK_GRP_NULL);
++		os_atomic_store(&slot->intid, 0, release);
++		simple_unlock(&gic_spi_lock);
++		return KERN_FAILURE;
++	}
 +	gic_v3_spi_unmask(intid);
 +	return KERN_SUCCESS;
 +}
@@ -85318,6 +85328,7 @@ index 0000000..d4d75ad
 +
 +/* the distance between redistributors when the device tree gives one (redistributor-stride), else 0 */
 +static uint64_t gicr_stride;
++static uint32_t gic_irq_handler_state;
 +
 +static vm_offset_t
 +gic_find_redistributor(void)
@@ -85384,6 +85395,8 @@ index 0000000..d4d75ad
 +	/* System-register CPU interface */
 +	__builtin_arm_wsr64("ICC_SRE_EL1", __builtin_arm_rsr64("ICC_SRE_EL1") | 1);
 +	__builtin_arm_isb(ISB_SY);
++	__builtin_arm_wsr64("ICC_IGRPEN1_EL1", 0);
++	__builtin_arm_isb(ISB_SY);
 +
 +	gicr = gicr_cpu_base[cpu] = gic_find_redistributor();
 +	if (gicr == 0) {
@@ -85395,8 +85408,16 @@ index 0000000..d4d75ad
 +	uint32_t waker = gic_read32(gicr + GICR_WAKER);
 +	if (waker & (GICR_WAKER_PROCSLEEP | GICR_WAKER_CHILDASLEEP)) {
 +		gic_write32(gicr + GICR_WAKER, waker & ~GICR_WAKER_PROCSLEEP);
-+		while (gic_read32(gicr + GICR_WAKER) & GICR_WAKER_CHILDASLEEP) {
-+			/* spin until the redistributor is awake */
++		uint32_t poll;
++		for (poll = 0; poll < GIC_POLL_LIMIT; poll++) {
++			if ((gic_read32(gicr + GICR_WAKER) & GICR_WAKER_CHILDASLEEP) == 0) {
++				break;
++			}
++		}
++		if (poll == GIC_POLL_LIMIT) {
++			gicr_cpu_base[cpu] = 0;
++			hk_draw_band(0x00FF0000, 404, 2); /* Red: GIC redistributor wake timeout */
++			return;
 +		}
 +	}
 +
@@ -85415,20 +85436,41 @@ index 0000000..d4d75ad
 +		mine |= sgis;
 +	}
 +
++	/* Install the global dispatcher before enabling any Group 1 interrupt source. */
++	uint32_t expected = 0;
++	if (__atomic_compare_exchange_n(&gic_irq_handler_state, &expected, 1, false,
++	    __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
++		ml_install_interrupt_handler(NULL, 0, NULL, gic_irq_handler, NULL);
++		__atomic_store_n(&gic_irq_handler_state, 2, __ATOMIC_RELEASE);
++	} else {
++		uint32_t poll;
++		for (poll = 0; poll < GIC_POLL_LIMIT; poll++) {
++			if (__atomic_load_n(&gic_irq_handler_state, __ATOMIC_ACQUIRE) == 2) {
++				break;
++			}
++		}
++		if (poll == GIC_POLL_LIMIT) {
++			gicr_cpu_base[cpu] = 0;
++			hk_draw_band(0x00FF0000, 402, 2); /* Red: GIC handler registration timeout */
++			return;
++		}
++	}
++
 +	/* Virtual timer PPI (and those): Group 1 (IRQ), default priority, enabled */
 +	gic_write32(gicr + GICR_IGROUPR0, gic_read32(gicr + GICR_IGROUPR0) | mine);
 +	gic_write32(gicr + GICR_IGRPMODR0, gic_read32(gicr + GICR_IGRPMODR0) & ~mine);
 +	*(volatile uint8_t *)(gicr + GICR_IPRIORITYR(GIC_INTID_VTIMER)) = GIC_PRIORITY_DEFAULT;
-+	gic_write32(gicr + GICR_ISENABLER0, mine);
 +
 +	/* Distributor: affinity routing, Group 1 enabled (normally already so) */
 +	uint32_t ctlr = gic_read32(gicd_base + GICD_CTLR);
 +	if ((ctlr & (GICD_CTLR_ENABLE_G1NS | GICD_CTLR_ARE_NS)) != (GICD_CTLR_ENABLE_G1NS | GICD_CTLR_ARE_NS)) {
 +		gic_write32(gicd_base + GICD_CTLR, ctlr | GICD_CTLR_ENABLE_G1NS | GICD_CTLR_ARE_NS);
-+		while (gic_read32(gicd_base + GICD_CTLR) & GICD_CTLR_RWP) {
-+			/* wait for the write to take effect */
++		if (!gic_distributor_settle()) {
++			gicr_cpu_base[cpu] = 0;
++			return;
 +		}
 +	}
++	gic_write32(gicr + GICR_ISENABLER0, mine);
 +
 +	/*
 +	 * CPU interface: accept all priorities, no preemption grouping, Group 1 on. And no priority
@@ -85439,10 +85481,10 @@ index 0000000..d4d75ad
 +	__builtin_arm_wsr64("ICC_AP1R0_EL1", 0);
 +	__builtin_arm_wsr64("ICC_PMR_EL1", 0xff);
 +	__builtin_arm_wsr64("ICC_BPR1_EL1", 0);
++	__asm__ volatile("dsb sy" ::: "memory");
 +	__builtin_arm_wsr64("ICC_IGRPEN1_EL1", 1);
 +	__builtin_arm_isb(ISB_SY);
 +
-+	ml_install_interrupt_handler(NULL, 0, NULL, gic_irq_handler, NULL);
 +	kprintf("gic: v3, distributor %p, cpu %d's redistributor %p, virtual timer on PPI %d\n",
 +	    (void *)gicd_base, cpu, (void *)gicr, GIC_INTID_VTIMER);
 +}

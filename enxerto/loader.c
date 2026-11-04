@@ -109,8 +109,7 @@ static void inflate_progress(uint64_t done)
 /*
  * Side-effect-free validation of a payload at [rd_start, rd_end): header sane, every
  * file range inside the payload, every destination inside the payload's own RAM window.
- * Payloads from the ABL ramdisk were trusted blindly; payloads that arrive over the
- * Bergamota fastboot link must not be able to write anywhere else.
+ * Validate every payload before using its header, segment table, or destination ranges.
  */
 const char *loader_check(uintptr_t rd_start, uintptr_t rd_end)
 {
@@ -119,9 +118,11 @@ const char *loader_check(uintptr_t rd_start, uintptr_t rd_end)
 
 	if (rd_end < rd_start || size < sizeof(struct payload))
 		return "payload too short";
+	if (rd_start & 7)
+		return "bad payload alignment";
 	if (!magic_ok(p->magic))
 		return "no SWEETXNU payload";
-	if ((p->version != 1 && p->version != 2) || (p->adt_off & 7) || (rd_start & 7))
+	if ((p->version != 1 && p->version != 2) || (p->adt_off & 7))
 		return "bad payload header";
 	const unsigned stride = p->version == 2 ? 40 : 32;
 	if (p->nsegs == 0 || p->nsegs > 64 || sizeof(struct payload) + (uint64_t)p->nsegs * stride > size)
@@ -129,8 +130,6 @@ const char *loader_check(uintptr_t rd_start, uintptr_t rd_end)
 	uint64_t ram_lo = p->phys_base, ram_hi = p->phys_base + p->mem_size;
 	if (ram_hi <= ram_lo)
 		return "bad RAM window";
-	if (rd_end > ram_lo && rd_start < ram_hi)
-		return "ramdisk overlaps kernel memory";
 	if (p->adt_off > size || p->adt_size > size - p->adt_off)
 		return "ADT outside payload";
 	uint64_t pa_of_va_base = p->phys_base - p->virt_base;
@@ -145,6 +144,8 @@ const char *loader_check(uintptr_t rd_start, uintptr_t rd_end)
 			return "segment outside payload";
 		if (pa < ram_lo || pa > kend_pa || s->vmsize > kend_pa - pa)
 			return "segment outside RAM";
+		if (rd_end > pa && rd_start < pa + s->vmsize)
+			return "payload overlaps kernel segment destination";
 		if (p->version == 2 && s->raw_size) {
 			if (s->raw_size > s->vmsize)
 				return "segment inflates past its size";
@@ -152,6 +153,23 @@ const char *loader_check(uintptr_t rd_start, uintptr_t rd_end)
 			return "segment larger than its size";
 		}
 	}
+	uint64_t adt_end_pa = kend_pa + p->adt_size;
+	uint64_t ba_pa = (adt_end_pa + PAGE_16K - 1) & ~(PAGE_16K - 1);
+	uint64_t ba_end_pa = ba_pa + PAGE_16K;
+	if ((p->adt_size != 0 && rd_end > kend_pa && rd_start < adt_end_pa) ||
+	    (rd_end > ba_pa && rd_start < ba_end_pa))
+		return "payload overlaps boot data destination";
+	int entry_in_segment = 0;
+	for (uint32_t i = 0; i < p->nsegs; i++) {
+		const struct payload_seg *s = (const struct payload_seg *)(p->segs + (uint64_t)i * stride);
+		if (p->entry_va >= s->vmaddr && p->entry_va - s->vmaddr < s->vmsize) {
+			entry_in_segment = 1;
+			break;
+		}
+	}
+	uint64_t entry_pa = p->entry_va + pa_of_va_base;
+	if (!entry_in_segment || entry_pa < ram_lo || entry_pa >= kend_pa)
+		return "entry point outside kernel segments";
 	return 0;
 }
 
@@ -190,22 +208,21 @@ const char *loader_boot(uintptr_t dtb)
 
 /*
  * Boot the payload in [rd_start, rd_end) (ABL ramdisk or the fastboot download); returns only on error.
- * verify: run loader_check() first (always for downloads; the ABL ramdisk path keeps its old trust).
+ * verify: retained for callers; structural and bounds validation always runs before use.
  */
 const char *loader_boot_payload(uintptr_t rd_start, uintptr_t rd_end, int verify)
 {
 	const struct payload *p = (const struct payload *)rd_start;
-	if (rd_end < rd_start || rd_end - rd_start < 8 || !magic_ok(p->magic))
+	(void)verify;
+	if (rd_end < rd_start || rd_end - rd_start < 8 || (rd_start & 7) || !magic_ok(p->magic))
 		return "no SWEETXNU payload";
 	/* A real payload: switch to the branded boot screen (con_* output becomes its log window). */
 	bootui_init();
 	bootui_progress(PM_INITRD, "INITRD FOUND");
 	con_hex2("INITRD", "lo=", rd_start, "hi=", rd_end);
-	if (verify) {
-		const char *bad = loader_check(rd_start, rd_end);
-		if (bad)
-			return bad;
-	}
+	const char *bad = loader_check(rd_start, rd_end);
+	if (bad)
+		return bad;
 	if ((p->version != 1 && p->version != 2) || (p->adt_off & 7) || (rd_start & 7))
 		return "bad payload header";
 	const unsigned stride = p->version == 2 ? 40 : 32;
@@ -215,10 +232,6 @@ const char *loader_boot_payload(uintptr_t rd_start, uintptr_t rd_end, int verify
 	con_hex("VIRT", p->virt_base);
 	con_hex("ENTRY", p->entry_va);
 	bootui_progress(PM_PAYLOAD, "PAYLOAD OK");
-
-	/* The payload must not overlap where the kernel goes. */
-	if (rd_end > p->phys_base && rd_start < p->phys_base + p->mem_size)
-		return "ramdisk overlaps kernel memory";
 
 	/* Kernel destination through boot_args (see below), and the payload: cacheable while we work. */
 	uint64_t kend_pa = p->kernel_end + pa_of_va_base;

@@ -61,7 +61,8 @@ def patch_vm_resident(src_dir):
 	/* hakios: aperture-based early memory steal via pmap_next_page */
 	extern boolean_t pmap_initialized;
 	extern vm_offset_t first_avail;
-	extern pmap_paddr_t avail_start, avail_end, gPhysBase;
+	extern pmap_paddr_t avail_start, avail_end;
+	extern unsigned long gPhysBase;
 
 	if (!pmap_initialized) {
 		ppnum_t first_pn = 0, pn;
@@ -82,7 +83,7 @@ def patch_vm_resident(src_dir):
 		steal_pages = (uint64_t)(steal_size >> PAGE_SHIFT);
 
 		/* Preflight the contiguous aperture so a short range cannot partially steal then panic. */
-		if (first < gPhysBase || end <= first || steal_size > end - first) {
+		if (first < (pmap_paddr_t)gPhysBase || end <= first || steal_size > end - first) {
 			extern void hk_draw_band(uint32_t, uint32_t, uint32_t);
 			hk_draw_band(0x00FF0000, 266, 2); /* Red: insufficient early aperture */
 			for (;;) {

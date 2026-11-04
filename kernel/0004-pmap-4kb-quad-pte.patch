@@ -21,7 +21,7 @@ diff --git a/osfmk/arm/pmap/pmap.c b/osfmk/arm/pmap/pmap.c
 index a18749e..d222a22 100644
 --- a/osfmk/arm/pmap/pmap.c
 +++ b/osfmk/arm/pmap/pmap.c
-@@ -678,6 +678,40 @@ pte_is_xs(const pt_attr_t *pt_attr, pt_entry_t pte)
+@@ -678,6 +678,42 @@ pte_is_xs(const pt_attr_t *pt_attr, pt_entry_t pte)
   *            in this value will automatically be incremented for each PTE
   *            write.
   */
@@ -48,11 +48,13 @@ index a18749e..d222a22 100644
 +	uint64_t v3 = v_base + 3ULL;
 +
 +	__asm__ volatile (
++		"dsb ishst\n"
 +		"tlbi vale1is, %0\n"
 +		"tlbi vale1is, %1\n"
 +		"tlbi vale1is, %2\n"
 +		"tlbi vale1is, %3\n"
 +		"dsb ish\n"
++		"isb\n"
 +		:
 +		: "r"(v0), "r"(v1), "r"(v2), "r"(v3)
 +		: "memory"

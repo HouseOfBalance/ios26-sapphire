@@ -852,7 +852,7 @@ new file mode 100644
 index 0000000..3333333
 --- /dev/null
 +++ b/osfmk/arm64/lse_patch.c
-@@ -0,0 +1,710 @@
+@@ -0,0 +1,724 @@
 +/*
 + * lse_patch.c - XNU Kernel LSE Atomic Trap Handler & Branch Island Engine
 + * Target: Cortex-A73/A53 (ARMv8.0-A baseline, Snapdragon 685 SM6225)
@@ -903,7 +903,7 @@ index 0000000..3333333
 +extern void set_saved_state_pc(arm_saved_state_t *state, uint64_t pc);
 +
 +extern int copyin(const void *uaddr, void *kaddr, size_t len);
-+extern uintptr_t pmap_find_phys(void *pmap, uintptr_t va);
++extern uint64_t pmap_find_pa(void *pmap, uintptr_t va);
 +extern uint64_t kvtophys(uintptr_t va);
 +extern void *current_task(void);
 +
@@ -1118,6 +1118,22 @@ index 0000000..3333333
 +static uint32_t lse_kernel_pool[LSE_ISLAND_MAX_SLOTS * LSE_STUB_WORDS]
 +    __attribute__((aligned(64)));
 +static uint32_t lse_kernel_count = 0;
++
++static bool
++lse_reserve_kernel_slot(uint32_t *slot_index)
++{
++	uint32_t current = __atomic_load_n(&lse_kernel_count, __ATOMIC_RELAXED);
++
++	while (current < LSE_ISLAND_MAX_SLOTS) {
++		if (__atomic_compare_exchange_n(&lse_kernel_count, &current, current + 1,
++		    false, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
++			*slot_index = current;
++			return true;
++		}
++	}
++
++	return false;
++}
 +
 +/*
 + * Scratch Register Selector: Picks 3 distinct registers not in {rs, rt, rn}
@@ -1404,7 +1420,7 @@ index 0000000..3333333
 +            continue;
 +        }
 +
-+        uint64_t page_pa = pmap_find_phys(pmap, cur_page);
++        uint64_t page_pa = pmap_find_pa(pmap, cur_page);
 +        if (!page_pa) {
 +            continue;
 +        }
@@ -1472,8 +1488,9 @@ index 0000000..3333333
 +    void *pmap = NULL;
 +
 +    if (!is_user) {
-+        if (lse_kernel_count >= LSE_ISLAND_MAX_SLOTS) return false;
-+        uint32_t *slot = &lse_kernel_pool[lse_kernel_count * LSE_STUB_WORDS];
++        uint32_t slot_index;
++        if (!lse_reserve_kernel_slot(&slot_index)) return false;
++        uint32_t *slot = &lse_kernel_pool[slot_index * LSE_STUB_WORDS];
 +        slot_va = (uintptr_t)slot;
 +        pa_stub = kvtophys(slot_va);
 +        if (!pa_stub) return false;
@@ -1485,7 +1502,7 @@ index 0000000..3333333
 +        slot_va = find_el0_code_cave(pmap, elr, LSE_STUB_WORDS * 4);
 +        if (!slot_va) return false;
 +
-+        pa_stub = pmap_find_phys(pmap, slot_va);
++        pa_stub = pmap_find_pa(pmap, slot_va);
 +        if (!pa_stub) return false;
 +    }
 +
@@ -1502,14 +1519,11 @@ index 0000000..3333333
 +    }
 +
 +    /* Patch faulting site with branch to island stub */
-+    uint64_t pa_site = is_user ? pmap_find_phys(pmap, elr) : kvtophys(elr);
++    uint64_t pa_site = is_user ? pmap_find_pa(pmap, elr) : kvtophys(elr);
 +    if (!pa_site) return false;
 +
 +    patch_memory_phys(pa_site, elr, b_to_island);
 +
-+    if (!is_user) {
-+        lse_kernel_count++;
-+    }
 +    return true;
 +}
 +
