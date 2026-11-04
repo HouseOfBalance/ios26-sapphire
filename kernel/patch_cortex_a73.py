@@ -1300,6 +1300,47 @@ kernel_debug_string_early(const char *message)
         else:
             print("  [WARN] t16_pms_def not found in vm_resident.c")
 
+        # In pmap_steal_memory_internal: loop start and progress
+        t16_steal = '\tmap_addr = round_page(addr);\n\tif (os_add_overflow(addr, size, &end)) {\n\t\tpanic("pmap_steal_memory() overflow, addr: %lx, size: 0x%lx", addr, size);\n\t}\n\twhile (map_addr < end) {'
+        r16_steal = """\tmap_addr = round_page(addr);
+\tif (os_add_overflow(addr, size, &end)) {
+\t\tpanic("pmap_steal_memory() overflow, addr: %lx, size: 0x%lx", addr, size);
+\t}
+\t{
+\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
+\t\thk_draw_band(0x00FF1493, 264, 2); /* Deep Pink: pmap_steal_memory_internal loop entered */
+\t}
+\twhile (map_addr < end) {
+\t\tif ((map_addr & 0x000FFFFF) == 0) {
+\t\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
+\t\t\tuint32_t mb = (uint32_t)((map_addr - addr) >> 20);
+\t\t\tuint32_t col = (mb & 1) ? 0x0000FFFF : 0x00FF00FF;
+\t\t\thk_draw_band(col, 268 + ((mb & 0x7) * 2), 2);
+\t\t}"""
+        if t16_steal in c16:
+            c16 = c16.replace(t16_steal, r16_steal, 1)
+            print("  [OK] osfmk/vm/vm_resident.c: pmap_steal loop progress markers installed")
+        else:
+            print("  [WARN] t16_steal not found in vm_resident.c")
+
+        # After vm_pages steal in pmap_startup
+        t16_vmp = '\tvm_pages     = pmap_steal_freeable_memory(npages * sizeof(struct vm_page));\n\tvm_pages_end = vm_page_get(npages);'
+        r16_vmp = """\tvm_pages     = pmap_steal_freeable_memory(npages * sizeof(struct vm_page));
+\t{
+\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
+\t\thk_draw_band(0x0000FF00, 284, 2); /* Lime: vm_pages stolen successfully */
+\t}
+\tvm_pages_end = vm_page_get(npages);
+\t{
+\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
+\t\thk_draw_band(0x00FF8C00, 288, 2); /* Dark Orange: vm_pages_end computed */
+\t}"""
+        if t16_vmp in c16:
+            c16 = c16.replace(t16_vmp, r16_vmp, 1)
+            print("  [OK] osfmk/vm/vm_resident.c: vm_pages return markers installed")
+        else:
+            print("  [WARN] t16_vmp not found in vm_resident.c")
+
         # Page init loop in pmap_startup
         t16_loop = '\tvm_free_page_lock();\n\n\tfor (uint32_t i = 0; i < npages && pmap_next_page(&phys_page); i++) {'
         r16_loop = """\tvm_free_page_lock();
@@ -1352,6 +1393,127 @@ kernel_debug_string_early(const char *message)
             print("  [OK] osfmk/vm/vm_init.c: vm_mem_bootstrap milestone bands installed")
         else:
             print("  [WARN] t17 not found in vm_init.c")
+
+    # 18. osfmk/arm/pmap/pmap_data.c (early boot page table allocation fallback when !pmap_initialized)
+    p18 = os.path.join(src, "osfmk", "arm", "pmap", "pmap_data.c")
+    if os.path.isfile(p18):
+        with open(p18, "r", encoding="utf-8", errors="replace") as f:
+            c18 = f.read().replace("\r\n", "\n")
+        t18 = '#else /* XNU_MONITOR */\n\tvm_page_t mem = VM_PAGE_NULL;'
+        r18 = """#else /* XNU_MONITOR */
+\textern boolean_t pmap_initialized;
+\tif (!pmap_initialized) {
+\t\textern boolean_t pmap_next_page(ppnum_t *);
+\t\tppnum_t pn;
+\t\tif (pmap_next_page(&pn)) {
+\t\t\t*pa = (pmap_paddr_t)ptoa(pn);
+\t\t\tbzero((void *)phystokv(*pa), size);
+\t\t\treturn KERN_SUCCESS;
+\t\t}
+\t\treturn KERN_RESOURCE_SHORTAGE;
+\t}
+\tvm_page_t mem = VM_PAGE_NULL;"""
+        if t18 in c18:
+            c18 = c18.replace(t18, r18, 1)
+            with open(p18, "w", encoding="utf-8", newline="\n") as f:
+                f.write(c18)
+            print("  [OK] osfmk/arm/pmap/pmap_data.c: early pmap page alloc patched")
+        else:
+            print("  [WARN] t18 not found in pmap_data.c")
+
+    # 19. osfmk/arm/pmap/pmap.c (prevent VM_PAGE_WAIT hang during early boot in pmap_expand & pmap_tt_allocate)
+    p19 = os.path.join(src, "osfmk", "arm", "pmap", "pmap.c")
+    if os.path.isfile(p19):
+        with open(p19, "r", encoding="utf-8", errors="replace") as f:
+            c19 = f.read().replace("\r\n", "\n")
+
+        t19_exp = 'while ((ret = pmap_tt_allocate(pmap, &tt_p, ttlevel + 1, ((options & PMAP_TT_ALLOCATE_NOWAIT)? PMAP_PAGES_ALLOCATE_NOWAIT : 0))) != KERN_SUCCESS) {\n\t\t\t\tif (options & PMAP_OPTIONS_NOWAIT) {\n\t\t\t\t\t/* Can be KERN_RESOURCE_SHORTAGE or KERN_ABORTED. */\n\t\t\t\t\treturn ret;\n\t\t\t\t}'
+        r19_exp = """while ((ret = pmap_tt_allocate(pmap, &tt_p, ttlevel + 1, ((options & PMAP_TT_ALLOCATE_NOWAIT)? PMAP_PAGES_ALLOCATE_NOWAIT : 0))) != KERN_SUCCESS) {
+\t\t\t\tif (options & PMAP_OPTIONS_NOWAIT) {
+\t\t\t\t\t/* Can be KERN_RESOURCE_SHORTAGE or KERN_ABORTED. */
+\t\t\t\t\treturn ret;
+\t\t\t\t}
+\t\t\t\tif (!pmap_initialized) {
+\t\t\t\t\treturn ret;
+\t\t\t\t}"""
+        if t19_exp in c19:
+            c19 = c19.replace(t19_exp, r19_exp, 1)
+            print("  [OK] osfmk/arm/pmap/pmap.c: pmap_expand early return patched")
+        else:
+            print("  [WARN] t19_exp not found in pmap.c")
+
+        t19_tt = 'while (pmap_pages_alloc_zeroed(&pa, PAGE_SIZE, alloc_flags) != KERN_SUCCESS) {\n\t\t\tif (options & PMAP_OPTIONS_NOWAIT) {\n\t\t\t\treturn KERN_RESOURCE_SHORTAGE;\n\t\t\t}\n\t\t\tVM_PAGE_WAIT();\n\t\t}'
+        r19_tt = """while (pmap_pages_alloc_zeroed(&pa, PAGE_SIZE, alloc_flags) != KERN_SUCCESS) {
+\t\t\tif (options & PMAP_OPTIONS_NOWAIT) {
+\t\t\t\treturn KERN_RESOURCE_SHORTAGE;
+\t\t\t}
+\t\t\tif (!pmap_initialized) {
+\t\t\t\treturn KERN_RESOURCE_SHORTAGE;
+\t\t\t}
+\t\t\tVM_PAGE_WAIT();
+\t\t}"""
+        if t19_tt in c19:
+            c19 = c19.replace(t19_tt, r19_tt, 1)
+            print("  [OK] osfmk/arm/pmap/pmap.c: pmap_tt_allocate early wait patched")
+        else:
+            print("  [WARN] t19_tt not found in pmap.c")
+
+        t19_ptd = 'while ((ptdp = ptd_alloc(pmap)) == NULL) {\n\t\t\tif (options & PMAP_OPTIONS_NOWAIT) {\n\t\t\t\t/* Deallocate all allocated resources so far. */\n\t\t\t\tpmap_pages_free(pa, PAGE_SIZE);\n\t\t\t\treturn KERN_RESOURCE_SHORTAGE;\n\t\t\t}\n\t\t\tVM_PAGE_WAIT();\n\t\t}'
+        r19_ptd = """while ((ptdp = ptd_alloc(pmap)) == NULL) {
+\t\t\tif (options & PMAP_OPTIONS_NOWAIT) {
+\t\t\t\t/* Deallocate all allocated resources so far. */
+\t\t\t\tpmap_pages_free(pa, PAGE_SIZE);
+\t\t\t\treturn KERN_RESOURCE_SHORTAGE;
+\t\t\t}
+\t\t\tif (!pmap_initialized) {
+\t\t\t\tpmap_pages_free(pa, PAGE_SIZE);
+\t\t\t\treturn KERN_RESOURCE_SHORTAGE;
+\t\t\t}
+\t\t\tVM_PAGE_WAIT();
+\t\t}"""
+        if t19_ptd in c19:
+            c19 = c19.replace(t19_ptd, r19_ptd, 1)
+            print("  [OK] osfmk/arm/pmap/pmap.c: ptd_alloc early wait patched")
+        else:
+            print("  [WARN] t19_ptd not found in pmap.c")
+
+        with open(p19, "w", encoding="utf-8", newline="\n") as f:
+            f.write(c19)
+
+    # 20. osfmk/arm64/arm_vm_init.c (ensure valid L2 table allocated for *cpu_l1_tte and expand heap coverage)
+    p20 = os.path.join(src, "osfmk", "arm64", "arm_vm_init.c")
+    if os.path.isfile(p20):
+        with open(p20, "r", encoding="utf-8", errors="replace") as f:
+            c20 = f.read().replace("\r\n", "\n")
+
+        # 20a. Allocate L2 table on demand if *cpu_l1_tte is EMPTY in bootstrap L3 loop
+        t20_l1 = 'cpu_l1_tte = cpu_tte + L1_TABLE_T1_INDEX(va_l1, TCR_EL1_BOOT);\n\n\twhile (va_l1 < va_l1_end) {\n\t\tva_l2 = va_l1;'
+        r20_l1 = """cpu_l1_tte = cpu_tte + L1_TABLE_T1_INDEX(va_l1, TCR_EL1_BOOT);
+
+\twhile (va_l1 < va_l1_end) {
+\t\tif (*cpu_l1_tte == ARM_TTE_EMPTY) {
+\t\t\tvm_offset_t l2_page = alloc_ptpage(FALSE);
+\t\t\t*cpu_l1_tte = (kvtophys(l2_page) & ARM_TTE_TABLE_MASK) | ARM_TTE_TYPE_TABLE | ARM_TTE_VALID | ARM_DYNAMIC_TABLE_XN | ARM_TTE_TABLE_AP(ARM_TTE_TABLE_AP_USER_NA);
+\t\t\tbzero((void *)l2_page, ARM_PGBYTES);
+\t\t}
+\t\tva_l2 = va_l1;"""
+        if t20_l1 in c20:
+            c20 = c20.replace(t20_l1, r20_l1, 1)
+            print("  [OK] osfmk/arm64/arm_vm_init.c: on-demand L2 table allocation in bootstrap L3 loop installed")
+        else:
+            print("  [WARN] t20_l1 not found in arm_vm_init.c")
+
+        # 20b. Expand va_l1_end to pre-cover 64MB of heap
+        t20_end = '\tva_l1_end = va_l1 + ((2 + (mem_segments * 10)) << 20);'
+        r20_end = '\tva_l1_end = va_l1 + ((64 + (mem_segments * 10)) << 20);'
+        if t20_end in c20:
+            c20 = c20.replace(t20_end, r20_end, 1)
+            print("  [OK] osfmk/arm64/arm_vm_init.c: expanded bootstrap heap range from 42MB to 104MB")
+        else:
+            print("  [WARN] t20_end not found in arm_vm_init.c")
+
+        with open(p20, "w", encoding="utf-8", newline="\n") as f:
+            f.write(c20)
 
     print("Cortex-A73 patches successfully applied!")
 
