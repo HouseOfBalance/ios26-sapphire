@@ -132,6 +132,12 @@ def main():
 \tprocessor_bootstrap();
 \thk_draw_band(0x00FF4500, 155, 5);  /* hakios visual marker: Orange-Red at rows 155-159 (past processor_bootstrap) */"""
 
+        target_vm = """\tarm_vm_init(mem_size, args);"""
+
+        replacement_vm = """\thk_draw_band(0x0000FA9A, 158, 2);  /* hakios visual marker: Medium Spring Green at rows 158-159 (before arm_vm_init) */
+\tarm_vm_init(mem_size, args);
+\thk_draw_band(0x00FF007F, 160, 3);  /* hakios visual marker: Rose at rows 160-162 (past arm_vm_init) */"""
+
         target_serial = """\tconst unsigned int serial_exists = serial_init();
 \tloader_checkpoint(18);
 \tkernel_startup_initialize_upto(STARTUP_SUB_KPRINTF);
@@ -139,10 +145,10 @@ def main():
 
         replacement_serial = """\tconst unsigned int serial_exists = serial_init();
 \tloader_checkpoint(18);
-\thk_draw_band(0x00DC143C, 160, 5);  /* hakios visual marker: Crimson at rows 160-164 (past serial_init) */
+\thk_draw_band(0x00DC143C, 163, 3);  /* hakios visual marker: Crimson at rows 163-165 (past serial_init) */
 \tkernel_startup_initialize_upto(STARTUP_SUB_KPRINTF);
 \tloader_checkpoint(19);
-\thk_draw_band(0x007FFF00, 165, 5);  /* hakios visual marker: Chartreuse at rows 165-169 (past STARTUP_SUB_KPRINTF) */"""
+\thk_draw_band(0x007FFF00, 166, 4);  /* hakios visual marker: Chartreuse at rows 166-169 (past STARTUP_SUB_KPRINTF) */"""
 
         target_console = """\tPE_create_console();
 \tloader_checkpoint(20);"""
@@ -151,11 +157,16 @@ def main():
 \tloader_checkpoint(20);
 \thk_draw_band(0x0000BFFF, 170, 5);  /* hakios visual marker: Deep Sky Blue at rows 170-174 (past PE_create_console) */"""
 
+        target_pe_true = """\tPE_init_platform(TRUE, args);"""
+
+        replacement_pe_true = """\tPE_init_platform(TRUE, args);
+\thk_draw_band(0x0000FF7F, 175, 5);  /* hakios visual marker: Spring Green at rows 175-179 (past PE_init_platform TRUE) */"""
+
         target_mstart = """\tloader_checkpoint(21);
 \tmachine_startup(args);"""
 
         replacement_mstart = """\tloader_checkpoint(21);
-\thk_draw_band(0x00FFFF00, 175, 5);  /* hakios visual marker: Yellow at rows 175-179 (entering machine_startup) */
+\thk_draw_band(0x00FFFF00, 180, 5);  /* hakios visual marker: Yellow at rows 180-184 (entering machine_startup) */
 \tmachine_startup(args);"""
 
         if target_init in c_norm:
@@ -206,6 +217,12 @@ def main():
         else:
             print("  [WARN] target_cpu_init not found in arm_init.c")
 
+        if target_vm in c_norm:
+            c_norm = c_norm.replace(target_vm, replacement_vm)
+            print("  [OK] osfmk/arm/arm_init.c: arm_vm_init visual markers instrumented")
+        else:
+            print("  [WARN] target_vm not found in arm_init.c")
+
         if target_serial in c_norm:
             c_norm = c_norm.replace(target_serial, replacement_serial)
             print("  [OK] osfmk/arm/arm_init.c: serial_init visual markers instrumented")
@@ -217,6 +234,12 @@ def main():
             print("  [OK] osfmk/arm/arm_init.c: PE_create_console visual markers instrumented")
         else:
             print("  [WARN] target_console not found in arm_init.c")
+
+        if target_pe_true in c_norm:
+            c_norm = c_norm.replace(target_pe_true, replacement_pe_true)
+            print("  [OK] osfmk/arm/arm_init.c: PE_init_platform(TRUE) visual markers instrumented")
+        else:
+            print("  [WARN] target_pe_true not found in arm_init.c")
 
         if target_mstart in c_norm:
             c_norm = c_norm.replace(target_mstart, replacement_mstart)
@@ -319,7 +342,6 @@ def main():
 \t\t}
 \t}"""
         sleh_hook_new = """\textern void hk_draw_band(uint32_t color, uint32_t row_start, uint32_t row_count);
-\textern unsigned long gVirtBase;
 \tif (class == 0) {
 \t\tif (pac_patch_handle_trap(state, is_user)) {
 \t\t\treturn;
@@ -327,11 +349,11 @@ def main():
 \t\tif (lse_patch_handle_trap(state, is_user)) {
 \t\t\treturn;
 \t\t}
-\t\tif (!is_user && gVirtBase == 0) {
-\t\t\thk_draw_band(0x00FF0000, 200, 10); /* Red band: unhandled early kernel UNDEF */
+\t\tif (!is_user) {
+\t\t\thk_draw_band(0x00FF0000, 200, 10); /* Red band: unhandled kernel UNDEF */
 \t\t}
-\t} else if (!is_user && gVirtBase == 0) {
-\t\thk_draw_band(0x00FF00FF, 210, 10); /* Magenta band: early kernel fault/panic */
+\t} else if (!is_user) {
+\t\thk_draw_band(0x00FF00FF, 210, 10); /* Magenta band: kernel fault/panic */
 \t}"""
         if sleh_hook_old in c_norm:
             c_norm = c_norm.replace(sleh_hook_old, sleh_hook_new)
@@ -546,14 +568,17 @@ def main():
 /*
  * hakios: visual marker band drawer (accessible from both start.s and arm_init.c)
  * void hk_draw_band(uint32_t color, uint32_t row_start, uint32_t row_count);
+ * Temporarily restores TTBR0_EL1 to PA(bootstrap_pagetables) when MMU is ON so
+ * PA transition works both before and after arm_vm_init() switches TTBR0_EL1.
  */
 \t.text
 \t.align 2
 \t.globl EXT(hk_draw_band)
 LEXT(hk_draw_band)
-\tstp\t\tx29, x30, [sp, #-48]!
+\tstp\t\tx29, x30, [sp, #-64]!
 \tstp\t\tx19, x20, [sp, #16]
 \tstp\t\tx21, x22, [sp, #32]
+\tstp\t\tx23, x24, [sp, #48]
 
 \tand\t\tx0, x0, #0xffffffff
 \torr\t\tx19, x0, x0, lsl #32
@@ -566,14 +591,28 @@ LEXT(hk_draw_band)
 \tmov\t\tw21, #270
 \tmul\t\tw21, w2, w21
 
+\tmrs\t\tx23, DAIF
+\tmsr\t\tDAIFSet, #0xf
+
 \tmrs\t\tx22, SCTLR_EL1
 \ttbz\t\tx22, #0, 1f
 
-\tadr\t\tx10, 1f
+\tmrs\t\tx24, TTBR0_EL1
 \tadrp\tx11, EXT(loader_stub_slot)@page
 \tadd\tx11, x11, EXT(loader_stub_slot)@pageoff
 \tldr\tx11, [x11, #24]
-\tsub\tx10, x10, x11
+\tadrp\tx12, EXT(bootstrap_pagetables)@page
+\tadd\tx12, x12, EXT(bootstrap_pagetables)@pageoff
+\tsub\tx12, x12, x11
+\tmsr\t\tTTBR0_EL1, x12
+\tisb
+\ttlbi\tvmalle1
+\tdsb\t\tsy
+\tisb
+
+\tadr\t\tx13, 3f
+\tadr\t\tx10, 1f
+\tsub\t\tx10, x10, x11
 \tbr\t\tx10
 
 1:
@@ -588,23 +627,26 @@ LEXT(hk_draw_band)
 \tstp\tx19, x19, [x11], #16
 \tsubs\tw12, w12, #1
 \tb.ne\t2b
+\tdsb\t\tsy
 
 \tmsr\t\tSCTLR_EL1, x9
 \tisb
 
-\ttbz\t\tx22, #0, 3f
-
-\tadr\t\tx10, 3f
-\tadrp\tx12, EXT(loader_stub_slot)@page
-\tadd\tx12, x12, EXT(loader_stub_slot)@pageoff
-\tldr\tx12, [x12, #24]
-\tadd\tx10, x10, x12
-\tbr\t\tx10
+\ttbz\t\tx22, #0, 4f
+\tbr\t\tx13
 
 3:
+\tmsr\t\tTTBR0_EL1, x24
+\tisb
+\ttlbi\tvmalle1
+\tdsb\t\tsy
+\tisb
+4:
+\tmsr\t\tDAIF, x23
+\tldp\t\tx23, x24, [sp, #48]
 \tldp\t\tx21, x22, [sp, #32]
 \tldp\t\tx19, x20, [sp, #16]
-\tldp\t\tx29, x30, [sp], #48
+\tldp\t\tx29, x30, [sp], #64
 \tret
 """
         c_norm = c_norm + hk_draw_band_code
@@ -673,6 +715,21 @@ LEXT(hk_draw_band)
             print("  [OK] osfmk/arm64/locore.s: ml_sign_thread_state and ml_check_signed_state stubbed")
         else:
             print("  [WARN] ml_sign_thread_state / ml_check_signed_state not found in locore.s")
+
+    # 9. osfmk/arm64/loader_return.c (draw Dark Orange band at rows 220-229 on loader_return / panic)
+    p9 = os.path.join(src, "osfmk", "arm64", "loader_return.c")
+    if os.path.isfile(p9):
+        with open(p9, "r", encoding="utf-8", errors="replace") as f:
+            c9 = f.read().replace("\r\n", "\n")
+        lr_old = "void\nloader_return(void)\n{\n\tredwood_ufs_close();"
+        lr_new = "void\nloader_return(void)\n{\n\textern void hk_draw_band(uint32_t color, uint32_t row_start, uint32_t row_count);\n\thk_draw_band(0x00FF8C00, 220, 10); /* Dark Orange band: loader_return / panic */\n\tredwood_ufs_close();"
+        if lr_old in c9:
+            c9 = c9.replace(lr_old, lr_new, 1)
+            with open(p9, "w", encoding="utf-8", newline="\n") as f:
+                f.write(c9)
+            print("  [OK] osfmk/arm64/loader_return.c: Dark Orange band added to loader_return()")
+        else:
+            print("  [WARN] loader_return target not found in loader_return.c")
 
     print("Cortex-A73 patches successfully applied!")
 
