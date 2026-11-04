@@ -39,59 +39,68 @@ def patch_arm_vm_init(xnu_dir):
 
     with open(target_path, "r", encoding="utf-8", errors="replace") as f:
         content = f.read()
+    original_content = content
 
     rel_path = os.path.relpath(target_path, xnu_dir).replace("\\", "/")
 
-    # Check if already patched
-    if "/* hakios: ensure avail_start and first_avail are rounded up to 16KB PAGE_SIZE */" in content:
+    marker = "/* hakios: ensure avail_start and first_avail are rounded up to 16KB PAGE_SIZE */"
+    alignment = re.compile(
+        r'avail_start\s*=\s*\(\s*avail_start\s*\+\s*PAGE_MASK\s*\)\s*'
+        r'&\s*~\s*\(\s*pmap_paddr_t\s*\)\s*PAGE_MASK\s*;'
+    )
+    first_assignment = re.compile(r'first_avail\s*=\s*avail_start\s*;')
+
+    # The marker alone is not proof of a complete patch: an earlier partial run
+    # could have written it before failing to match one of the assignments.
+    marker_match = re.search(re.escape(marker), content)
+    alignment_match = alignment.search(content)
+    first_match = first_assignment.search(content)
+    if (marker_match and alignment_match and first_match and
+            marker_match.start() < alignment_match.start() < first_match.start()):
         print(f"  [ALREADY PATCHED] {rel_path}: avail_start and first_avail alignment already present")
         return True
 
-    patched = False
+    if not first_match:
+        print(f"  [ERROR] {rel_path}: could not find first_avail = avail_start assignment")
+        return False
 
-    # 1. Patch avail_start = (avail_start + PAGE_MASK) & ~(pmap_paddr_t)PAGE_MASK;
-    p_avail = re.compile(r'(avail_start\s*=\s*\(avail_start\s*\+\s*PAGE_MASK\)\s*&\s*~)(PAGE_MASK;)')
-    if p_avail.search(content):
-        content = p_avail.sub(r'\1(pmap_paddr_t)\2', content, count=1)
-        patched = True
-
-    # 2. Patch first_avail = avail_start; to explicitly round up avail_start and first_avail
-    p_first = re.compile(r'(\n[ \t]*)(first_avail\s*=\s*avail_start;)')
-    if p_first.search(content):
-        r_first = (
-            r'\1/* hakios: ensure avail_start and first_avail are rounded up to 16KB PAGE_SIZE */\n'
-            r'\tavail_start = (avail_start + PAGE_MASK) & ~(pmap_paddr_t)PAGE_MASK;\n'
-            r'\tfirst_avail = avail_start;'
+    # Ensure the full-width round-up is immediately before first_avail is copied.
+    # Reuse an existing correctly typed alignment only when it precedes that copy.
+    first_match = first_assignment.search(content)
+    alignment_before_first = next(
+        (m for m in alignment.finditer(content) if m.start() < first_match.start()), None
+    )
+    if alignment_before_first is None:
+        line_start = content.rfind("\n", 0, first_match.start()) + 1
+        indent = re.match(r'[ \t]*', content[line_start:first_match.start()]).group(0)
+        replacement = (
+            f"{indent}{marker}\n"
+            f"{indent}avail_start = (avail_start + PAGE_MASK) & ~(pmap_paddr_t)PAGE_MASK;\n"
+            f"{indent}first_avail = avail_start;"
         )
-        content = p_first.sub(r_first, content, count=1)
-        patched = True
+        content = content[:line_start] + replacement + content[first_match.end():]
+    elif marker_match is None or marker_match.start() > alignment_before_first.start():
+        # The cast may already exist, but the diagnostic/idempotency marker does not.
+        line_start = content.rfind("\n", 0, alignment_before_first.start()) + 1
+        indent = re.match(r'[ \t]*', content[line_start:alignment_before_first.start()]).group(0)
+        content = content[:line_start] + f"{indent}{marker}\n" + content[line_start:]
 
-    if not patched:
-        # Fallback string matching
-        target_str = "avail_start = (avail_start + PAGE_MASK) & ~PAGE_MASK;"
-        repl_str = "avail_start = (avail_start + PAGE_MASK) & ~(pmap_paddr_t)PAGE_MASK;"
-        if target_str in content:
-            content = content.replace(target_str, repl_str, 1)
-            patched = True
+    # Verify both edits in order before writing or reporting success.
+    marker_match = re.search(re.escape(marker), content)
+    alignment_match = alignment.search(content)
+    first_match = first_assignment.search(content)
+    if not (marker_match and alignment_match and first_match and
+            marker_match.start() < alignment_match.start() < first_match.start()):
+        print(f"  [ERROR] {rel_path}: incomplete 16KB alignment patch; source left unchanged")
+        return False
 
-        target_first = "first_avail = avail_start;"
-        repl_first = (
-            "/* hakios: ensure avail_start and first_avail are rounded up to 16KB PAGE_SIZE */\n"
-            "\tavail_start = (avail_start + PAGE_MASK) & ~(pmap_paddr_t)PAGE_MASK;\n"
-            "\tfirst_avail = avail_start;"
-        )
-        if target_first in content:
-            content = content.replace(target_first, repl_first, 1)
-            patched = True
-
-    if patched:
+    if content != original_content:
         with open(target_path, "w", encoding="utf-8", newline="\n") as f:
             f.write(content)
         print(f"  [OK] {rel_path}: patched avail_start and first_avail 16KB alignment")
         return True
-    else:
-        print(f"  [ERROR] {rel_path}: could not find target patterns for avail_start / first_avail")
-        return False
+    print(f"  [ALREADY PATCHED] {rel_path}: avail_start and first_avail alignment already present")
+    return True
 
 
 def patch_pmap(xnu_dir):

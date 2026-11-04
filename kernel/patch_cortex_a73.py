@@ -635,6 +635,15 @@ LEXT(hk_draw_band)
 \tstp\t\tx21, x22, [sp, #32]
 \tstp\t\tx23, x24, [sp, #48]
 
+\t/* Keep callers from writing beyond the 2400-row framebuffer. */
+\tmov\t\tx22, #2400
+\tcmp\t\tx1, x22
+\tb.hs\t5f
+\tsub\t\tx22, x22, x1
+\tcmp\t\tx2, x22
+\tcsel\t\tx2, x2, x22, lo
+\tcbz\t\tx2, 5f
+
 \tand\t\tx0, x0, #0xffffffff
 \torr\t\tx19, x0, x0, lsl #32
 
@@ -698,6 +707,13 @@ LEXT(hk_draw_band)
 \tisb
 4:
 \tmsr\t\tDAIF, x23
+\tldp\t\tx23, x24, [sp, #48]
+\tldp\t\tx21, x22, [sp, #32]
+\tldp\t\tx19, x20, [sp, #16]
+\tldp\t\tx29, x30, [sp], #64
+\tret
+
+5:
 \tldp\t\tx23, x24, [sp, #48]
 \tldp\t\tx21, x22, [sp, #32]
 \tldp\t\tx19, x20, [sp, #16]

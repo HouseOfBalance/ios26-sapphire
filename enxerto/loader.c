@@ -165,7 +165,8 @@ int loader_has_payload(uintptr_t dtb)
 	if (magic_ok((const char *)emb))
 		return 1;
 	if (!fdt_chosen_u64(dtb, "linux,initrd-start", &rd_start) ||
-	    !fdt_chosen_u64(dtb, "linux,initrd-end", &rd_end) || rd_end < rd_start + 8)
+	    !fdt_chosen_u64(dtb, "linux,initrd-end", &rd_end) ||
+	    rd_end < rd_start || rd_end - rd_start < 8)
 		return 0;
 	return magic_ok((const char *)rd_start);
 }
@@ -194,7 +195,7 @@ const char *loader_boot(uintptr_t dtb)
 const char *loader_boot_payload(uintptr_t rd_start, uintptr_t rd_end, int verify)
 {
 	const struct payload *p = (const struct payload *)rd_start;
-	if (rd_end < rd_start + 8 || !magic_ok(p->magic))
+	if (rd_end < rd_start || rd_end - rd_start < 8 || !magic_ok(p->magic))
 		return "no SWEETXNU payload";
 	/* A real payload: switch to the branded boot screen (con_* output becomes its log window). */
 	bootui_init();
@@ -227,9 +228,12 @@ const char *loader_boot_payload(uintptr_t rd_start, uintptr_t rd_end, int verify
 		{ rd_start, rd_end },
 		{ 0, 0 },	/* the image: filled in from mmu_info */
 	};
-	struct mmu_info mi;
+	struct mmu_info mi = { 0 };
 	int mmu_rc = mmu_enable_ranges(&mi, wb, 2);
 	con_hex2("MMU", "rc=", (uint32_t)mmu_rc, "l3=", (uint32_t)mi.n_l3);
+	if (mmu_rc != 0) {
+		return "MMU setup failed";
+	}
 	wb[2] = (struct mmu_range){ mi.img_lo, mi.img_hi };
 	bootui_progress(PM_MMU, "MMU ON");
 
@@ -304,7 +308,7 @@ const char *loader_boot_payload(uintptr_t rd_start, uintptr_t rd_end, int verify
 	con_str("XNU", "jumping (fbcon clears screen)");
 	bootui_handoff();
 
-	/* Clean to memory, MMU and caches off, invalidate, jump (also right when mmu_rc failed). */
+	/* Clean to memory, MMU and caches off, invalidate, jump. */
 #ifdef BOOT_PAUSE_MS
 	/* debug builds (BOOTPAUSE=ms build.sh): leave the log on screen long enough for a photo */
 	{

@@ -61,24 +61,57 @@ def patch_vm_resident(src_dir):
 	/* hakios: aperture-based early memory steal via pmap_next_page */
 	extern boolean_t pmap_initialized;
 	extern vm_offset_t first_avail;
-	extern pmap_paddr_t avail_start;
+	extern pmap_paddr_t avail_start, avail_end, gPhysBase;
 
 	if (!pmap_initialized) {
 		ppnum_t first_pn = 0, pn;
-		uint32_t steal_pages = (uint32_t)(round_page(size) >> PAGE_SHIFT);
-		for (uint32_t p = 0; p < steal_pages; p++) {
+		vm_size_t steal_size;
+		uint64_t steal_pages, allocated_pages = 0;
+		pmap_paddr_t first = (pmap_paddr_t)first_avail;
+		pmap_paddr_t end = avail_end;
+
+		/* hakios: reject invalid or overflowing requests without a pre-console panic. */
+		if (size == 0 || size > (vm_size_t)(~(vm_size_t)0 - PAGE_MASK)) {
+			extern void hk_draw_band(uint32_t, uint32_t, uint32_t);
+			hk_draw_band(0x00FF0000, 266, 2); /* Red: invalid early steal size */
+			for (;;) {
+				__asm__ volatile("wfe");
+			}
+		}
+		steal_size = round_page(size);
+		steal_pages = (uint64_t)(steal_size >> PAGE_SHIFT);
+
+		/* Preflight the contiguous aperture so a short range cannot partially steal then panic. */
+		if (first < gPhysBase || end <= first || steal_size > end - first) {
+			extern void hk_draw_band(uint32_t, uint32_t, uint32_t);
+			hk_draw_band(0x00FF0000, 266, 2); /* Red: insufficient early aperture */
+			for (;;) {
+				__asm__ volatile("wfe");
+			}
+		}
+
+		for (uint64_t p = 0; p < steal_pages; p++) {
 			if (!pmap_next_page(&pn)) {
-				panic("pmap_steal_memory_internal: early aperture steal exhausted RAM (%u pages)", steal_pages);
+				/* The preflight should make this unreachable; keep the failure non-panicking. */
+				vm_page_wire_count += (unsigned int)allocated_pages;
+				vm_page_stolen_count += (unsigned int)allocated_pages;
+				avail_start = first_avail;      /* keep both in sync */
+				extern void hk_draw_band(uint32_t, uint32_t, uint32_t);
+				hk_draw_band(0x00FF0000, 266, 2); /* Red: aperture changed during early steal */
+				for (;;) {
+					__asm__ volatile("wfe");
+				}
 			}
 			if (p == 0) {
 				first_pn = pn;
 			}
+			allocated_pages++;
 		}
-		vm_page_wire_count += steal_pages;
-		vm_page_stolen_count += steal_pages;
+		vm_page_wire_count += (unsigned int)allocated_pages;
+		vm_page_stolen_count += (unsigned int)allocated_pages;
 		avail_start = first_avail;      /* keep both in sync */
 		pmap_paddr_t pa = ptoa(first_pn);
-		bzero((void *)phystokv(pa), round_page(size));
+		bzero((void *)phystokv(pa), steal_size);
 		{
 			extern void hk_draw_band(uint32_t, uint32_t, uint32_t);
 			hk_draw_band(0x00FF1493, 264, 2); /* Deep Pink: aperture steal */

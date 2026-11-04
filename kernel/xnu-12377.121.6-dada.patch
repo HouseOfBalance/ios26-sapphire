@@ -84917,7 +84917,7 @@ new file mode 100644
 index 0000000..d4d75ad
 --- /dev/null
 +++ b/osfmk/arm64/gic_v3_irq.c
-@@ -0,0 +1,518 @@
+@@ -0,0 +1,530 @@
 +/*
 + * Minimal GICv3 support for generic (non-Apple) ARMv8 boards.
 + *
@@ -84960,6 +84960,8 @@ index 0000000..d4d75ad
 +#include <pexpert/arm64/board_config.h>
 +
 +#if defined(GENERIC_GIC_V3_IRQ)
++
++extern void hk_draw_band(uint32_t color, uint32_t row_start, uint32_t row_count);
 +
 +#define GICD_CTLR               0x0000
 +#define GICD_CTLR_ENABLE_G1NS   (1u << 1)
@@ -85335,7 +85337,7 @@ index 0000000..d4d75ad
 +		}
 +		frame += gicr_stride ? gicr_stride : (typer & GICR_TYPER_VLPIS) ? 2 * GICR_FRAME_SIZE : GICR_FRAME_SIZE;
 +	}
-+	panic("gic: no redistributor for MPIDR 0x%llx", mpidr);
++	return 0;
 +}
 +
 +/* Per-CPU bring-up: every processor calls this for itself, the boot processor first. */
@@ -85354,7 +85356,8 @@ index 0000000..d4d75ad
 +		if (SecureDTLookupEntry(NULL, "/arm-io/gic", &entry) != kSuccess ||
 +		    SecureDTGetProperty(entry, "reg", &prop, &prop_size) != kSuccess ||
 +		    prop_size < 4 * sizeof(uint64_t)) {
-+			panic("gic: no usable /arm-io/gic node in the device tree");
++			hk_draw_band(0x00FF0000, 400, 2); /* Red: unusable GIC device-tree node */
++			return;
 +		}
 +		uint64_t const *reg = prop;
 +		vm_offset_t soc_base = pe_arm_get_soc_base_phys();
@@ -85368,7 +85371,11 @@ index 0000000..d4d75ad
 +			gicr_stride = *(uint64_t const *)prop;
 +		}
 +		if (gicd_base == 0 || gicr_base == 0) {
-+			panic("gic: cannot map the distributor/redistributor");
++			gicd_base = 0;
++			gicr_base = 0;
++			gicr_size = 0;
++			hk_draw_band(0x00FF0000, 402, 2); /* Red: GIC MMIO mapping failed */
++			return;
 +		}
 +	} else if (gicr_cpu_base[cpu] != 0) {
 +		return;
@@ -85379,6 +85386,11 @@ index 0000000..d4d75ad
 +	__builtin_arm_isb(ISB_SY);
 +
 +	gicr = gicr_cpu_base[cpu] = gic_find_redistributor();
++	if (gicr == 0) {
++		gicr_cpu_base[cpu] = 0;
++		hk_draw_band(0x00FF0000, 404, 2); /* Red: no GIC redistributor matched this CPU */
++		return;
++	}
 +
 +	uint32_t waker = gic_read32(gicr + GICR_WAKER);
 +	if (waker & (GICR_WAKER_PROCSLEEP | GICR_WAKER_CHILDASLEEP)) {

@@ -27,8 +27,15 @@ def patch_vm_resident(src_dir):
     # Normalize line endings for reliable matching
     c = content.replace("\r\n", "\n")
 
-    # Check for idempotency
-    if 'kernel_debug_string_early("pf:t0");' in c and 'kernel_debug_string_early("pf:span");' in c:
+    # Check for idempotency. These markers are patched independently below so a
+    # partially instrumented source can be completed without duplicating the
+    # breadcrumbs that are already present.
+    has_time_markers = all(
+        f'kernel_debug_string_early("{marker}");' in c
+        for marker in ("pf:t0", "pf:t1", "pf:t2")
+    )
+    has_span_marker = 'kernel_debug_string_early("pf:span");' in c
+    if has_time_markers and has_span_marker:
         print("  [OK] osfmk/vm/vm_resident.c: early breadcrumbs already installed")
         return True
 
@@ -49,7 +56,9 @@ def patch_vm_resident(src_dir):
         '\tkernel_debug_string_early("pf:t2");'
     )
 
-    if t1_exact in c:
+    if has_time_markers:
+        print("  [OK] osfmk/vm/vm_resident.c: pf:t0, pf:t1, pf:t2 breadcrumbs already present")
+    elif t1_exact in c:
         c = c.replace(t1_exact, r1, 1)
         print("  [OK] osfmk/vm/vm_resident.c: pf:t0, pf:t1, pf:t2 breadcrumbs installed")
     else:
@@ -99,7 +108,9 @@ def patch_vm_resident(src_dir):
     #
     # We insert "pf:span" breadcrumb immediately after mem_sz is computed:
     pattern2 = re.compile(r'(\tmem_sz\s*=\s*ptoa\(pmap_free_pages(?:_span)?\(\)\);)')
-    if pattern2.search(c):
+    if has_span_marker:
+        print("  [OK] osfmk/vm/vm_resident.c: pf:span breadcrumb already present")
+    elif pattern2.search(c):
         c = pattern2.sub(r'\1\n\tkernel_debug_string_early("pf:span");', c, count=1)
         print("  [OK] osfmk/vm/vm_resident.c: pf:span breadcrumb installed")
     else:
