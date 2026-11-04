@@ -40,9 +40,29 @@ if [ -f "$K/0004-pmap-4kb-quad-pte.patch" ]; then
 	echo "applied 0004-pmap-4kb-quad-pte.patch (XNU 4KB Quad-PTE Emulation Engine)"
 fi
 
-# Apply Part 5: Cortex-A73 PAC sysreg stub and early FB markers
+# Apply Part 5a: Cortex-A73 PAC sysreg stub and early FB markers
 if [ -f "$K/patch_cortex_a73.py" ]; then
 	python3 "$K/patch_cortex_a73.py" "$D"
+fi
+
+# Apply Part 5b: 16KB RAM Alignment & Range Fix
+if [ -f "$K/patch_ram_alignment.py" ]; then
+	python3 "$K/patch_ram_alignment.py" "$D"
+fi
+
+# Apply Part 5c: Early Breadcrumb Visual Instrumentation
+if [ -f "$K/patch_breadcrumbs.py" ]; then
+	python3 "$K/patch_breadcrumbs.py" "$D"
+fi
+
+# Apply Part 5d: SM6225 Timer & Clock Subsystem Patch
+if [ -f "$K/patch_timer_sm6225.py" ]; then
+	python3 "$K/patch_timer_sm6225.py" "$D"
+fi
+
+# Apply Part 5e: Aperture-Based Early Memory Steal
+if [ -f "$K/patch_aperture_steal.py" ]; then
+	python3 "$K/patch_aperture_steal.py" "$D"
 fi
 
 # Fix kasan-denylist regex for older/host Clang parser
