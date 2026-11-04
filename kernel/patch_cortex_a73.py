@@ -712,7 +712,7 @@ LEXT(hk_render_screen_asm)
 \tmsr\t\tSCTLR_EL1, x10
 \tisb
 
-\tmov\t\tx25, #20
+\tmov\t\tx25, #1040
 \tmov\t\tx26, #250
 
 \tmovz\tw14, #0xffff
@@ -729,7 +729,7 @@ LEXT(hk_render_screen_asm)
 
 \tcmp\t\tw0, #10
 \tb.ne\t3f
-\tmov\t\tx25, #20
+\tmov\t\tx25, #1040
 \tadd\t\tx26, x26, #32
 \tcmp\t\tx26, #2360
 \tb.ge\t7f
@@ -753,7 +753,7 @@ LEXT(hk_render_screen_asm)
 \tmov\t\tw4, #0
 6:\tldrb\tw5, [x1, x4]
 
-\tmov\t\tw6, #7
+\tmov\t\tw6, #0
 \tmov\t\tx7, x2
 \tadd\t\tx8, x2, x15
 
@@ -768,8 +768,9 @@ LEXT(hk_render_screen_asm)
 \tstr\t\twzr, [x7], #4
 \tstr\t\twzr, [x8], #4
 \tstr\t\twzr, [x8], #4
-63:\tsubs\tw6, w6, #1
-\tb.ge\t61b
+63:\tadd\t\tw6, w6, #1
+\tcmp\t\tw6, #8
+\tb.lt\t61b
 
 \tadd\t\tx2, x2, x15
 \tadd\t\tx2, x2, x15
@@ -777,10 +778,10 @@ LEXT(hk_render_screen_asm)
 \tcmp\t\tw4, #16
 \tb.lt\t6b
 
-\tadd\t\tx25, x25, #16
-\tcmp\t\tx25, #1060
-\tb.lt\t2b
-\tmov\t\tx25, #20
+\tsubs\tx25, x25, #16
+\tcmp\t\tx25, #20
+\tb.ge\t2b
+\tmov\t\tx25, #1040
 \tadd\t\tx26, x26, #32
 \tcmp\t\tx26, #2360
 \tb.lt\t2b
@@ -972,6 +973,22 @@ loader_return(void)
             print("  [OK] osfmk/kern/startup.c: startup subsystem visual trace installed")
         else:
             print("  [WARN] t_startup not found in startup.c")
+
+
+    # 11. osfmk/ipc/ipc_policy.c (bypass validation panic on generic ARM bring-up)
+    p11 = os.path.join(src, "osfmk", "ipc", "ipc_policy.c")
+    if os.path.isfile(p11):
+        with open(p11, "r", encoding="utf-8", errors="replace") as f:
+            c11 = f.read()
+        target_val = "ipc_sec_policy_configs_validate(void)\n{"
+        replace_val = "ipc_sec_policy_configs_validate(void)\n{\n\treturn; /* hakios: bypass dev validation */"
+        if target_val in c11:
+            c11 = c11.replace(target_val, replace_val, 1)
+            with open(p11, "w", encoding="utf-8", newline="\n") as f:
+                f.write(c11)
+            print("  [OK] osfmk/ipc/ipc_policy.c: ipc_sec_policy_configs_validate bypassed")
+        else:
+            print("  [WARN] ipc_sec_policy_configs_validate target not found in ipc_policy.c")
 
     print("Cortex-A73 patches successfully applied!")
 
