@@ -1131,11 +1131,40 @@ loader_return(void)
 \t}'''
         if target_dbg in c13:
             c13 = c13.replace(target_dbg, replace_dbg, 1)
-            with open(p13, "w", encoding="utf-8", newline="\n") as f:
-                f.write(c13)
             print("  [OK] osfmk/kern/debug.c: on-screen panic dump installed in panic_trap_to_debugger")
         else:
             print("  [WARN] target_dbg not found in debug.c")
+
+        target_early_panic = 'loader_log_line("\\n== EARLY PANIC: ");\n\t\t\tloader_log_line(buf);\n\t\t\tloader_log_line(" ==\\n");\n\t\t}'
+        replace_early_panic = '''loader_log_line("\\n== EARLY PANIC: ");
+\t\t\tloader_log_line(buf);
+\t\t\tloader_log_line(" ==\\n");
+\t\t\t/* hakios: on-screen early panic dump directly to display */
+\t\t\t{
+\t\t\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
+\t\t\t\thk_draw_band(0x00FF0000, 210, 10); /* Bright Red band: early panic */
+\t\t\t\textern void hk_render_screen_asm(const char *, uint32_t, const unsigned char *);
+\t\t\t\textern const unsigned char iso_font[];
+\t\t\t\tstatic char hk_epmsg[400];
+\t\t\t\tint epn = snprintf(hk_epmsg, sizeof(hk_epmsg), "=== EARLY PANIC ===\\n%s\\n", buf);
+\t\t\t\tfor (uintptr_t p = (uintptr_t)hk_epmsg; p < (uintptr_t)hk_epmsg + epn + 64; p += 64) {
+\t\t\t\t\t__asm__ volatile ("dc cvac, %0" : : "r" (p));
+\t\t\t\t}
+\t\t\t\t__asm__ volatile ("dsb sy");
+\t\t\t\thk_render_screen_asm(hk_epmsg, epn, iso_font);
+\t\t\t\tfor (;;) {
+\t\t\t\t\t__asm__ volatile ("wfe");
+\t\t\t\t}
+\t\t\t}
+\t\t}'''
+        if target_early_panic in c13:
+            c13 = c13.replace(target_early_panic, replace_early_panic, 1)
+            print("  [OK] osfmk/kern/debug.c: on-screen early panic dump installed")
+        else:
+            print("  [WARN] target_early_panic not found in debug.c")
+
+        with open(p13, "w", encoding="utf-8", newline="\n") as f:
+            f.write(c13)
 
     # 14. osfmk/arm64/pac_decode.h & pac_patch.c (ARMv8.3/ARMv8.4 RCpc LDAPR/LDAPUR/STLUR trap self-patch engine)
     p14_h = os.path.join(src, "osfmk", "arm64", "pac_decode.h")
@@ -1194,6 +1223,135 @@ loader_return(void)
                 print("  [WARN] smp_old not found in pac_patch.c")
         else:
             print("  [OK] osfmk/arm64/pac_patch.c: RCpc SMP race already present")
+
+    # 15. bsd/kern/kdebug.c (visual trace on all early debug milestone strings)
+    p15 = os.path.join(src, "bsd", "kern", "kdebug.c")
+    if os.path.isfile(p15):
+        with open(p15, "r", encoding="utf-8", errors="replace") as f:
+            c15 = f.read().replace("\r\n", "\n")
+        t15 = "void\nkernel_debug_string_early(const char *message)\n{"
+        r15 = """void
+kernel_debug_string_early(const char *message)
+{
+\t{
+\t\textern void hk_draw_band(uint32_t color, uint32_t row_start, uint32_t row_count);
+\t\tstatic uint32_t hk_dbg_step = 0;
+\t\tconst uint32_t colors[4] = { 0x00FFD700, 0x0000FFFF, 0x00FF00FF, 0x00FFFF00 }; /* Gold, Cyan, Magenta, Yellow */
+\t\thk_draw_band(colors[hk_dbg_step & 3], 244 + ((hk_dbg_step & 0x3f) * 4), 3);
+\t\thk_dbg_step++;
+\t}"""
+        if t15 in c15:
+            c15 = c15.replace(t15, r15, 1)
+            with open(p15, "w", encoding="utf-8", newline="\n") as f:
+                f.write(c15)
+            print("  [OK] bsd/kern/kdebug.c: kernel_debug_string_early visual progress installed")
+        else:
+            print("  [WARN] t15 not found in kdebug.c")
+
+    # 16. osfmk/vm/vm_resident.c (visual trace for vm_page_bootstrap and pmap_startup)
+    p16 = os.path.join(src, "osfmk", "vm", "vm_resident.c")
+    if os.path.isfile(p16):
+        with open(p16, "r", encoding="utf-8", errors="replace") as f:
+            c16 = f.read().replace("\r\n", "\n")
+        
+        # Entry of vm_page_bootstrap
+        t16_entry = "vm_page_bootstrap(\n\tvm_offset_t             *startp,\n\tvm_offset_t             *endp)\n{"
+        r16_entry = """vm_page_bootstrap(
+\tvm_offset_t             *startp,
+\tvm_offset_t             *endp)
+{
+\t{
+\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
+\t\thk_draw_band(0x00FF7F50, 288, 2); /* Coral: vm_page_bootstrap entered */
+\t}"""
+        if t16_entry in c16:
+            c16 = c16.replace(t16_entry, r16_entry, 1)
+            print("  [OK] osfmk/vm/vm_resident.c: vm_page_bootstrap entry marker installed")
+        else:
+            print("  [WARN] t16_entry not found in vm_resident.c")
+
+        # After pmap_startup call in vm_page_bootstrap
+        t16_pms_call = '\tkernel_debug_string_early("pmap_startup");\n\tpmap_startup(&virtual_space_start, &virtual_space_end);'
+        r16_pms_call = """\tkernel_debug_string_early("pmap_startup");
+\tpmap_startup(&virtual_space_start, &virtual_space_end);
+\t{
+\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
+\t\thk_draw_band(0x0032CD32, 292, 2); /* Lime: pmap_startup returned to vm_page_bootstrap */
+\t}"""
+        if t16_pms_call in c16:
+            c16 = c16.replace(t16_pms_call, r16_pms_call, 1)
+            print("  [OK] osfmk/vm/vm_resident.c: pmap_startup call return marker installed")
+        else:
+            print("  [WARN] t16_pms_call not found in vm_resident.c")
+
+        # Entry of pmap_startup
+        t16_pms_def = "pmap_startup(\n\tvm_offset_t     *startp,\n\tvm_offset_t     *endp)\n{"
+        r16_pms_def = """pmap_startup(
+\tvm_offset_t     *startp,
+\tvm_offset_t     *endp)
+{
+\t{
+\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
+\t\thk_draw_band(0x00FF8C00, 296, 2); /* Dark Orange: pmap_startup entered */
+\t}"""
+        if t16_pms_def in c16:
+            c16 = c16.replace(t16_pms_def, r16_pms_def, 1)
+            print("  [OK] osfmk/vm/vm_resident.c: pmap_startup entry marker installed")
+        else:
+            print("  [WARN] t16_pms_def not found in vm_resident.c")
+
+        # Page init loop in pmap_startup
+        t16_loop = '\tvm_free_page_lock();\n\n\tfor (uint32_t i = 0; i < npages && pmap_next_page(&phys_page); i++) {'
+        r16_loop = """\tvm_free_page_lock();
+\t{
+\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
+\t\thk_draw_band(0x0087CEEB, 300, 2); /* Sky Blue: before page init loop */
+\t}
+\tfor (uint32_t i = 0; i < npages && pmap_next_page(&phys_page); i++) {
+\t\tif (i == 0) {
+\t\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
+\t\t\thk_draw_band(0x004682B4, 304, 2); /* Steel Blue: page loop started */
+\t\t}
+\t\tif (i == (npages >> 1)) {
+\t\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
+\t\t\thk_draw_band(0x001E90FF, 308, 2); /* Dodger Blue: page loop 50% */
+\t\t}"""
+        if t16_loop in c16:
+            c16 = c16.replace(t16_loop, r16_loop, 1)
+            print("  [OK] osfmk/vm/vm_resident.c: page init loop markers installed")
+        else:
+            print("  [WARN] t16_loop not found in vm_resident.c")
+
+        with open(p16, "w", encoding="utf-8", newline="\n") as f:
+            f.write(c16)
+
+    # 17. osfmk/vm/vm_init.c (visual trace for vm_mem_bootstrap)
+    p17 = os.path.join(src, "osfmk", "vm", "vm_init.c")
+    if os.path.isfile(p17):
+        with open(p17, "r", encoding="utf-8", errors="replace") as f:
+            c17 = f.read().replace("\r\n", "\n")
+        t17 = '\tvm_mem_bootstrap_log("vm_page_bootstrap");\n\tvm_page_bootstrap(&start, &end);'
+        r17 = """\tvm_mem_bootstrap_log("vm_page_bootstrap");
+\tvm_page_bootstrap(&start, &end);
+\t{
+\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
+\t\thk_draw_band(0x0000FF00, 316, 2); /* Lime Green: vm_page_bootstrap returned */
+\t}"""
+        if t17 in c17:
+            c17 = c17.replace(t17, r17, 1)
+            c17 = c17.replace('zone_bootstrap();', 'zone_bootstrap();\n\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x0000FFFF, 320, 2); }', 1)
+            c17 = c17.replace('vm_object_bootstrap();', 'vm_object_bootstrap();\n\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FF1493, 324, 2); }', 1)
+            c17 = c17.replace('vm_retire_boot_pages();', 'vm_retire_boot_pages();\n\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FFFF00, 328, 2); }', 1)
+            c17 = c17.replace('vm_map_init();', 'vm_map_init();\n\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x009400D3, 332, 2); }', 1)
+            c17 = c17.replace('kmem_init(start, end);', 'kmem_init(start, end);\n\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x0000BFFF, 336, 2); }', 1)
+            c17 = c17.replace('kernel_startup_initialize_upto(STARTUP_SUB_KMEM);', 'kernel_startup_initialize_upto(STARTUP_SUB_KMEM);\n\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FFFFFF, 340, 2); }', 1)
+            c17 = c17.replace('vm_fault_init();', 'vm_fault_init();\n\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FFA500, 344, 2); }', 1)
+            c17 = c17.replace('kernel_startup_initialize_upto(STARTUP_SUB_ZALLOC);', 'kernel_startup_initialize_upto(STARTUP_SUB_ZALLOC);\n\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x007FFF00, 348, 2); }', 1)
+            with open(p17, "w", encoding="utf-8", newline="\n") as f:
+                f.write(c17)
+            print("  [OK] osfmk/vm/vm_init.c: vm_mem_bootstrap milestone bands installed")
+        else:
+            print("  [WARN] t17 not found in vm_init.c")
 
     print("Cortex-A73 patches successfully applied!")
 
