@@ -1094,6 +1094,64 @@ loader_return(void)
         else:
             print("  [WARN] target_dbg not found in debug.c")
 
+    # 14. osfmk/arm64/pac_decode.h & pac_patch.c (ARMv8.3/ARMv8.4 RCpc LDAPR/LDAPUR/STLUR trap self-patch engine)
+    p14_h = os.path.join(src, "osfmk", "arm64", "pac_decode.h")
+    if os.path.isfile(p14_h):
+        with open(p14_h, "r", encoding="utf-8", errors="replace") as f:
+            c14_h = f.read().replace("\r\n", "\n")
+        if "ARMv8.3-A RCpc" not in c14_h:
+            t14_h = "    return PAC_NOT_PAC;\n}"
+            r14_h = """    /* ---- 8. LDAPR / LDAPRB / LDAPRH (ARMv8.3-A RCpc) -> LDAR / LDARB / LDARH (ARMv8.0) ---- */
+    if ((i & 0x3ffffc00u) == 0x38bfc000u) {
+        unsigned sz = (i >> 30) & 3, rn = (i >> 5) & 31, rt = i & 31;
+        uint32_t ldar = ((uint32_t)sz << 30) | 0x08dffc00u | ((uint32_t)rn << 5) | (uint32_t)rt;
+        return pac__patch(r, "ldapr", ldar);
+    }
+
+    /* ---- 9. LDAPUR (ARMv8.4-A RCpc2) -> LDUR (ARMv8.0) ----------------------------------- */
+    if ((i & 0x3fc00c00u) == 0x19400000u) {
+        uint32_t ldur = (i & ~0x3fc00000u) | 0x38400000u;
+        return pac__patch(r, "ldapur", ldur);
+    }
+
+    /* ---- 10. STLUR (ARMv8.4-A RCpc2) -> STUR (ARMv8.0) ---------------------------------- */
+    if ((i & 0x3fc00c00u) == 0x19000000u) {
+        uint32_t stur = (i & ~0x3fc00000u) | 0x38000000u;
+        return pac__patch(r, "stlur", stur);
+    }
+
+    return PAC_NOT_PAC;
+}"""
+            if t14_h in c14_h:
+                c14_h = c14_h.replace(t14_h, r14_h, 1)
+                with open(p14_h, "w", encoding="utf-8", newline="\n") as f:
+                    f.write(c14_h)
+                print("  [OK] osfmk/arm64/pac_decode.h: RCpc LDAPR/LDAPUR/STLUR decode installed")
+            else:
+                print("  [WARN] t14_h not found in pac_decode.h")
+        else:
+            print("  [OK] osfmk/arm64/pac_decode.h: RCpc already present")
+
+    p14_c = os.path.join(src, "osfmk", "arm64", "pac_patch.c")
+    if os.path.isfile(p14_c):
+        with open(p14_c, "r", encoding="utf-8", errors="replace") as f:
+            c14_c = f.read().replace("\r\n", "\n")
+        if "0x08dffc00u" not in c14_c:
+            smp_old = "(insn & 0xffe00000u) == 0xf8400000u) {"
+            smp_new = """(insn & 0xffe00000u) == 0xf8400000u ||
+\t    (insn & 0x3ffffc00u) == 0x08dffc00u || /* LDAR (ARMv8.0) */
+\t    (insn & 0x3fc00c00u) == 0x38400000u || /* LDUR (ARMv8.0) */
+\t    (insn & 0x3fc00c00u) == 0x38000000u) { /* STUR (ARMv8.0) */"""
+            if smp_old in c14_c:
+                c14_c = c14_c.replace(smp_old, smp_new, 1)
+                with open(p14_c, "w", encoding="utf-8", newline="\n") as f:
+                    f.write(c14_c)
+                print("  [OK] osfmk/arm64/pac_patch.c: RCpc SMP race defense installed")
+            else:
+                print("  [WARN] smp_old not found in pac_patch.c")
+        else:
+            print("  [OK] osfmk/arm64/pac_patch.c: RCpc SMP race already present")
+
     print("Cortex-A73 patches successfully applied!")
 
 if __name__ == "__main__":

@@ -89,6 +89,24 @@ def decode_and_patch(i):
     if (i & 0xffffffe0) == 0xd5384260:
         return 0xd2a00800 | (i & 31), 'mrs_pan'
 
+    # 9. ARMv8.3-A RCpc (LDAPR / LDAPRB / LDAPRH) -> LDAR / LDARB / LDARH (ARMv8.0)
+    if (i & 0x3ffffc00) == 0x38bfc000:
+        sz = (i >> 30) & 3
+        rn = (i >> 5) & 31
+        rt = i & 31
+        ldar = (sz << 30) | 0x08dffc00 | (rn << 5) | rt
+        return ldar, 'ldapr'
+
+    # 10. ARMv8.4-A RCpc2 (LDAPUR / LDAPURB / LDAPURH / LDAPURSW) -> LDUR (ARMv8.0)
+    if (i & 0x3fc00c00) == 0x19400000:
+        ldur = (i & ~0x3fc00000) | 0x38400000
+        return ldur, 'ldapur'
+
+    # 11. ARMv8.4-A RCpc2 (STLUR / STLURB / STLURH) -> STUR (ARMv8.0)
+    if (i & 0x3fc00c00) == 0x19000000:
+        stur = (i & ~0x3fc00000) | 0x38000000
+        return stur, 'stlur'
+
     return None, None
 
 def patch_kernel(kernel_path):

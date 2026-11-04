@@ -145,6 +145,25 @@ static inline pac_action_t pac_decode(uint32_t i, pac_result_t *r)
         }
     }
 
+    /* ---- 8. LDAPR / LDAPRB / LDAPRH (ARMv8.3-A RCpc) -> LDAR / LDARB / LDARH (ARMv8.0) ---- */
+    if ((i & 0x3ffffc00u) == 0x38bfc000u) {
+        unsigned sz = (i >> 30) & 3, rn = (i >> 5) & 31, rt = i & 31;
+        uint32_t ldar = ((uint32_t)sz << 30) | 0x08dffc00u | ((uint32_t)rn << 5) | (uint32_t)rt;
+        return pac__patch(r, "ldapr", ldar);
+    }
+
+    /* ---- 9. LDAPUR (ARMv8.4-A RCpc2) -> LDUR (ARMv8.0) ----------------------------------- */
+    if ((i & 0x3fc00c00u) == 0x19400000u) {
+        uint32_t ldur = (i & ~0x3fc00000u) | 0x38400000u;
+        return pac__patch(r, "ldapur", ldur);
+    }
+
+    /* ---- 10. STLUR (ARMv8.4-A RCpc2) -> STUR (ARMv8.0) ---------------------------------- */
+    if ((i & 0x3fc00c00u) == 0x19000000u) {
+        uint32_t stur = (i & ~0x3fc00000u) | 0x38000000u;
+        return pac__patch(r, "stlur", stur);
+    }
+
     return PAC_NOT_PAC;
 }
 

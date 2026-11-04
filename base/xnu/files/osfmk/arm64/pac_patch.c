@@ -58,24 +58,18 @@ static uint64_t pac_smp_races = 0;
 static void
 patch_memory_phys(uint64_t pa, uint64_t va, uint32_t new_insn)
 {
-	volatile uint32_t *p = (volatile uint32_t *)PHYSTOKV(pa);
+	volatile uint32_t *p = (gVirtBase != 0) ? (volatile uint32_t *)PHYSTOKV(pa) : (volatile uint32_t *)va;
 	*p = new_insn;
 
-	/*
-	 * Đồng bộ hóa cache bắt buộc trên ARMv8-A:
-	 * 1. dc cvau: đẩy dữ liệu vừa ghi từ D-Cache ra Point of Unification.
-	 * 2. dsb ish: đảm bảo lệnh ghi hoàn tất trên toàn bộ các core trong cụm SMP.
-	 * 3. ic ivau: xóa bỏ dòng lệnh tương ứng trong I-Cache.
-	 * 4. dsb ish: đảm bảo lệnh xóa I-Cache đã broadcast xong.
-	 * 5. isb    : làm rỗng instruction pipeline của core hiện tại để nạp lại lệnh mới.
-	 */
+	uintptr_t p_va = (uintptr_t)p;
 	__asm__ volatile (
 		"dc cvau, %0 \n"
+		"dc cvau, %1 \n"
 		"dsb ish     \n"
-		"ic ivau, %0 \n"
+		"ic ivau, %1 \n"
 		"dsb ish     \n"
 		"isb         \n"
-		:: "r"(va) : "memory"
+		:: "r"(p_va), "r"(va) : "memory"
 	);
 }
 
@@ -136,18 +130,25 @@ pac_patch_handle_trap(arm_saved_state_t *state, bool is_user)
 
 	/* 1. Đọc mã lệnh insn 32-bit từ vị trí PC */
 	if (is_user) {
-		if (copyin((user_addr_t)pc, &insn, sizeof(insn)) != 0) {
+		if (copyin((const void *)pc, &insn, sizeof(insn)) != 0) {
 			return false;
 		}
-		task_t task = get_threadtask(current_thread());
-		if (task && task->map) {
-			pmap = (void *)task->map->pmap;
-		}
-		if (!pmap) return false;
-		pa = pmap_find_phys(pmap, pc);
+		uint64_t par, daif;
+		__asm__ volatile("mrs %0, daif\n msr daifset, #7\n at s1e0r, %1\n isb\n" : "=&r"(daif) : "r"(pc) : "memory");
+		__asm__ volatile("mrs %0, par_el1\n msr daif, %1\n" : "=r"(par) : "r"(daif));
+		if (par & 1ULL) return false;
+		pa = (par & 0x0000FFFFFFFFF000ULL) | (pc & 0xFFFULL);
 	} else {
 		insn = *(volatile uint32_t *)pc;
-		pa = kvtophys(pc);
+		pa = (gVirtBase != 0) ? kvtophys(pc) : pc;
+		if (!pa) {
+			uint64_t par, daif;
+			__asm__ volatile("mrs %0, daif\n msr daifset, #7\n at s1e1r, %1\n isb\n" : "=&r"(daif) : "r"(pc) : "memory");
+			__asm__ volatile("mrs %0, par_el1\n msr daif, %1\n" : "=r"(par) : "r"(daif));
+			if (!(par & 1ULL)) {
+				pa = (par & 0x0000FFFFFFFFF000ULL) | (pc & 0xFFFULL);
+			}
+		}
 	}
 
 	if (!pa) return false;
@@ -155,13 +156,16 @@ pac_patch_handle_trap(arm_saved_state_t *state, bool is_user)
 	/*
 	 * 2. SMP RACE DEFENSE:
 	 * Nếu core khác vừa vá xong lệnh này tại RAM, opcode đọc được tại thời điểm này
-	 * đã không còn là lệnh PAC nữa. Ta coi như đã xử lý và quay về để CPU nạp lại!
+	 * đã không còn là lệnh PAC / RCpc nữa. Ta coi như đã xử lý và quay về để CPU nạp lại!
 	 */
 	if (insn == A64_NOP || insn == A64_RET || insn == A64_ERET || 
 	    (insn & 0xfffffc1fu) == A64_BR_BASE || (insn & 0xfffffc1fu) == A64_BLR_BASE ||
 	    (insn & 0xffffffe0u) == A64_MOV_X_XZR ||
 	    (insn & 0xffc00000u) == A64_LDR_UIMM ||
-	    (insn & 0xffe00000u) == 0xf8400000u) {
+	    (insn & 0xffe00000u) == 0xf8400000u ||
+	    (insn & 0x3ffffc00u) == 0x08dffc00u || /* LDAR (ARMv8.0) */
+	    (insn & 0x3fc00c00u) == 0x38400000u || /* LDUR (ARMv8.0) */
+	    (insn & 0x3fc00c00u) == 0x38000000u) { /* STUR (ARMv8.0) */
 		pac_smp_races++;
 		return true;
 	}

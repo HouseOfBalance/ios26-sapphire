@@ -1,9 +1,9 @@
 diff --git a/osfmk/arm64/pac_decode.h b/osfmk/arm64/pac_decode.h
 new file mode 100644
-index 0000000..ad49fc8
+index 0000000..1111111
 --- /dev/null
 +++ b/osfmk/arm64/pac_decode.h
-@@ -0,0 +1,157 @@
+@@ -0,0 +1,170 @@
 +/*
 + * pac_decode.h  (HakiOS v2) - bo giai ma lenh PAC cho CPU ARMv8.0 (khong FEAT_PAuth)
 + *
@@ -141,13 +141,7 @@ index 0000000..ad49fc8
 +        return PAC_EMULATE_LDRA;
 +    }
 +
-+    /* ---- 7. MSR/MRS khoa PAC: S3_0_C2_C{1..3}_op2 & ARMv8.1 PAN ---------------------- */
-+    if ((i & 0xfffff0ffu) == 0xd500409fu)
-+        return pac__patch(r, "msr PAN,#imm", A64_NOP);
-+    if ((i & 0xffffffe0u) == 0xd5184260u)
-+        return pac__patch(r, "msr PAN,Xt", A64_NOP);
-+    if ((i & 0xffffffe0u) == 0xd5384260u)
-+        return pac__patch(r, "mrs Xt,PAN", A64_MOV_X_XZR | (i & 31u));
++    /* ---- 7. MSR/MRS khoa PAC: S3_0_C2_C{1..3}_op2 ------------------------------------ */
 +    if ((i & 0xffdff000u) == 0xd5182000u) {
 +        unsigned crm = (i >> 8) & 15, op2 = (i >> 5) & 7;
 +        bool ok = ((crm == 1 || crm == 2) && op2 < 4) || (crm == 3 && op2 < 2);
@@ -157,16 +151,35 @@ index 0000000..ad49fc8
 +        }
 +    }
 +
++    /* ---- 8. LDAPR / LDAPRB / LDAPRH (ARMv8.3-A RCpc) -> LDAR / LDARB / LDARH (ARMv8.0) ---- */
++    if ((i & 0x3ffffc00u) == 0x38bfc000u) {
++        unsigned sz = (i >> 30) & 3, rn = (i >> 5) & 31, rt = i & 31;
++        uint32_t ldar = ((uint32_t)sz << 30) | 0x08dffc00u | ((uint32_t)rn << 5) | (uint32_t)rt;
++        return pac__patch(r, "ldapr", ldar);
++    }
++
++    /* ---- 9. LDAPUR (ARMv8.4-A RCpc2) -> LDUR (ARMv8.0) ----------------------------------- */
++    if ((i & 0x3fc00c00u) == 0x19400000u) {
++        uint32_t ldur = (i & ~0x3fc00000u) | 0x38400000u;
++        return pac__patch(r, "ldapur", ldur);
++    }
++
++    /* ---- 10. STLUR (ARMv8.4-A RCpc2) -> STUR (ARMv8.0) ---------------------------------- */
++    if ((i & 0x3fc00c00u) == 0x19000000u) {
++        uint32_t stur = (i & ~0x3fc00000u) | 0x38000000u;
++        return pac__patch(r, "stlur", stur);
++    }
++
 +    return PAC_NOT_PAC;
 +}
 +
 +#endif /* PAC_DECODE_H */
 diff --git a/osfmk/arm64/pac_patch.c b/osfmk/arm64/pac_patch.c
 new file mode 100644
-index 0000000..f98642a
+index 0000000..1111111
 --- /dev/null
 +++ b/osfmk/arm64/pac_patch.c
-@@ -0,0 +1,196 @@
+@@ -0,0 +1,203 @@
 +/*
 + * pac_patch.c - Runtime Trap-and-Self-Patch Engine for ARMv8.0 (No FEAT_PAuth)
 + * Part 1 Implementation for HakiOS / XNU-12377 on Snapdragon 685 (Cortex-A73/A53)
@@ -182,37 +195,39 @@ index 0000000..f98642a
 +#include <stdbool.h>
 +#include <stddef.h>
 +
-+#include "pac_decode.h"
-+
-+/* Forward declarations of XNU kernel types and functions */
++#if defined(__has_include) && __has_include(<arm/thread.h>)
++#include <arm/thread.h>
++#include <mach/machine/thread_status.h>
++#include <kern/thread.h>
++#include <kern/task.h>
++#include <vm/vm_map.h>
++#else
 +typedef struct arm_saved_state arm_saved_state_t;
-+typedef struct arm_saved_state64 arm_saved_state64_t;
-+
-+extern arm_saved_state64_t *saved_state64(arm_saved_state_t *state);
++typedef void *thread_t;
++typedef struct task { char pad[32]; struct vm_map *map; } *task_t;
++typedef struct vm_map { char pad[40]; void *pmap; } *vm_map_t;
++extern thread_t current_thread(void);
++extern task_t get_threadtask(thread_t th);
 +extern uint64_t get_saved_state_reg(arm_saved_state_t *state, unsigned int reg);
 +extern void set_saved_state_reg(arm_saved_state_t *state, unsigned int reg, uint64_t val);
 +extern uint64_t get_saved_state_sp(arm_saved_state_t *state);
 +extern void set_saved_state_sp(arm_saved_state_t *state, uint64_t sp);
 +extern uint64_t get_saved_state_pc(arm_saved_state_t *state);
 +extern void set_saved_state_pc(arm_saved_state_t *state, uint64_t pc);
++typedef uint64_t user_addr_t;
++typedef uint64_t vm_size_t;
++typedef uint64_t vm_offset_t;
++#endif
 +
-+extern int copyin(const void *uaddr, void *kaddr, size_t len);
-+extern uintptr_t pmap_find_phys(void *pmap, uintptr_t va);
-+extern uint64_t kvtophys(uintptr_t va);
-+extern void *current_task(void);
-+
-+typedef struct task {
-+	char pad[32];
-+	struct vm_map *map;
-+} *task_t;
-+
-+typedef struct vm_map {
-+	char pad[40];
-+	void *pmap;
-+} *vm_map_t;
++#include "pac_decode.h"
 +
 +extern unsigned long gVirtBase, gPhysBase;
 +#define PHYSTOKV(pa) ((uint64_t)(pa) + (gVirtBase - gPhysBase))
++
++extern uint64_t kvtophys(vm_offset_t va);
++extern uint64_t pmap_find_phys(void *pmap, uint64_t va);
++extern int copyin(const user_addr_t user_addr, void *kernel_addr, vm_size_t nbytes);
++extern void loader_log_line(const char *line);
 +
 +/* Thống kê hiệu năng runtime */
 +static uint64_t pac_patch_count = 0;
@@ -228,21 +243,15 @@ index 0000000..f98642a
 +	volatile uint32_t *p = (gVirtBase != 0) ? (volatile uint32_t *)PHYSTOKV(pa) : (volatile uint32_t *)va;
 +	*p = new_insn;
 +
-+	/*
-+	 * Đồng bộ hóa cache bắt buộc trên ARMv8-A:
-+	 * 1. dc cvau: đẩy dữ liệu vừa ghi từ D-Cache ra Point of Unification.
-+	 * 2. dsb ish: đảm bảo lệnh ghi hoàn tất trên toàn bộ các core trong cụm SMP.
-+	 * 3. ic ivau: xóa bỏ dòng lệnh tương ứng trong I-Cache.
-+	 * 4. dsb ish: đảm bảo lệnh xóa I-Cache đã broadcast xong.
-+	 * 5. isb    : làm rỗng instruction pipeline của core hiện tại để nạp lại lệnh mới.
-+	 */
++	uintptr_t p_va = (uintptr_t)p;
 +	__asm__ volatile (
 +		"dc cvau, %0 \n"
++		"dc cvau, %1 \n"
 +		"dsb ish     \n"
-+		"ic ivau, %0 \n"
++		"ic ivau, %1 \n"
 +		"dsb ish     \n"
 +		"isb         \n"
-+		:: "r"(va) : "memory"
++		:: "r"(p_va), "r"(va) : "memory"
 +	);
 +}
 +
@@ -260,7 +269,7 @@ index 0000000..f98642a
 +	uint64_t loaded_val = 0;
 +
 +	if (is_user) {
-+		if (copyin((const void *)target_addr, &loaded_val, sizeof(loaded_val)) != 0) {
++		if (copyin((user_addr_t)target_addr, &loaded_val, sizeof(loaded_val)) != 0) {
 +			/* Lỗi truy cập bộ nhớ userland: trả về false để kernel xử lý */
 +			return false;
 +		}
@@ -314,6 +323,14 @@ index 0000000..f98642a
 +	} else {
 +		insn = *(volatile uint32_t *)pc;
 +		pa = (gVirtBase != 0) ? kvtophys(pc) : pc;
++		if (!pa) {
++			uint64_t par, daif;
++			__asm__ volatile("mrs %0, daif\n msr daifset, #7\n at s1e1r, %1\n isb\n" : "=&r"(daif) : "r"(pc) : "memory");
++			__asm__ volatile("mrs %0, par_el1\n msr daif, %1\n" : "=r"(par) : "r"(daif));
++			if (!(par & 1ULL)) {
++				pa = (par & 0x0000FFFFFFFFF000ULL) | (pc & 0xFFFULL);
++			}
++		}
 +	}
 +
 +	if (!pa) return false;
@@ -321,13 +338,16 @@ index 0000000..f98642a
 +	/*
 +	 * 2. SMP RACE DEFENSE:
 +	 * Nếu core khác vừa vá xong lệnh này tại RAM, opcode đọc được tại thời điểm này
-+	 * đã không còn là lệnh PAC nữa. Ta coi như đã xử lý và quay về để CPU nạp lại!
++	 * đã không còn là lệnh PAC / RCpc nữa. Ta coi như đã xử lý và quay về để CPU nạp lại!
 +	 */
 +	if (insn == A64_NOP || insn == A64_RET || insn == A64_ERET || 
 +	    (insn & 0xfffffc1fu) == A64_BR_BASE || (insn & 0xfffffc1fu) == A64_BLR_BASE ||
 +	    (insn & 0xffffffe0u) == A64_MOV_X_XZR ||
 +	    (insn & 0xffc00000u) == A64_LDR_UIMM ||
-+	    (insn & 0xffe00000u) == 0xf8400000u) {
++	    (insn & 0xffe00000u) == 0xf8400000u ||
++	    (insn & 0x3ffffc00u) == 0x08dffc00u || /* LDAR (ARMv8.0) */
++	    (insn & 0x3fc00c00u) == 0x38400000u || /* LDUR (ARMv8.0) */
++	    (insn & 0x3fc00c00u) == 0x38000000u) { /* STUR (ARMv8.0) */
 +		pac_smp_races++;
 +		return true;
 +	}
