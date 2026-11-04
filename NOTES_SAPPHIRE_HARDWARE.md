@@ -1,8 +1,33 @@
 # iOS 16 / iOS 26 on sweet & sapphire (Redmi Note 13 4G, SM6225 Bengal) - working notes
 
-## Agent handoff / active work (2026-11-03, latest)
+## Agent handoff / active work (2026-11-04, latest)
 
 ### >>> COMPLETE STATUS HANDOFF FOR SAPPHIRE (HakiOS XNU 12377 / iOS 26 ARM64E) <<<
+* **Current Status (2026-11-04): CI RUN 41778519368 BOOTED PAST `ml_parse_cpu_topology`, `cpu_bootstrap`, `rtclock_early_init`, & `kernel_startup_bootstrap`; FIXED `cpu_init` LSE `ldsetab` TRAP, `FEAT_PAN`, & JOP HASH CHECK**
+  - **Hardware Verification of CI Run `41778519368` (Commit `688e97d`, Photo `media_1793770087922_b24bf04a.jpg`):**
+    - Setting `MAX_CPU_CLUSTERS = 4` and `MAX_CPU_CLUSTER_PHY_ID = 4` in `board_config.h` completely resolved the `ml_parse_cpu_topology()` cluster assertion panic!
+    - Four new color bands rendered on the physical AMOLED display:
+      * **Pink** (rows 130–134, `0x00FF69B4`): past `ml_parse_cpu_topology()`, `master_cpu` check, and `preemption_count = 0` (CP44).
+      * **Gold** (rows 135–139, `0x00FFD700`): past `cpu_bootstrap()` (CP13).
+      * **Sky Blue** (rows 140–144, `0x0087CEEB`): past `rtclock_early_init()` (CP14).
+      * **White** (rows 145–149, `0x00FFFFFF`): past `kernel_startup_bootstrap()` (CP15).
+    - Execution halted between **White** (rows 145–149) and **Lavender** (rows 150–154, past `cpu_init()`).
+  - **Root Causes Discovered & Fixed:**
+    1. **LSE Atomic Acquire Bit 23 Mask Bug & 8/16-bit Emulation in `0002-lse-branch-islands.patch`:**
+       * Inside `cpu_init()` -> `do_cacheid()` (`0x51cb20`), the kernel executes its first ARMv8.1 LSE atomic instruction at `0x51cb60`: `0x38e93156` (`ldsetab w9, w22, [x10]`, 8-bit atomic bit-set with Acquire `A=1`, Bit 23 = 1).
+       * `osfmk/arm64/lse_decode.h` line 118 checked `(inst & 0x3F800C00) == 0x38000000`, which required Bit 23 (`A`) == 0 and rejected every LSE atomic op with `A=1`! Fixed mask to `(inst & 0x3F200C00) == 0x38200000` with `acquire = bit 23`, `release = bit 22`.
+       * Added 8-bit (`ldaxrb`/`stlxrb`) and 16-bit (`ldaxrh`/`stlxrh`) implementations for `LDCLR`, `LDSET`, and `LDEOR` in `lse_hooks.h` and `lse_patch.c`.
+       * Fixed `lse_emulate_atomic()` in kernel mode (`!is_user`) to operate directly on `(void *)addr` instead of `PHYSTOKV(kvtophys(addr))` (since `gVirtBase` is 0 before `arm_vm_init()`), and disabled `.bss` branch island patching for kernel mode (since `.bss` is mapped `PXN` after `arm_vm_init()`).
+       * Replaced `pmap_find_phys()` (which returns `ppnum_t`, not byte PA) in `pac_patch.c` and `lse_patch.c` with hardware `at s1e0r` + `par_el1`.
+    2. **ARMv8.1 `FEAT_PAN` Trap (`MSR PAN, #1` at `0xc350d4` in `arm_init`):**
+       * `pexpert/pexpert/arm64/BCM2837.h` defined `#define __ARM_PAN_AVAILABLE__ 1` and `makedefs/MakeInc.def` passed `+pan`, causing `MSR PAN, #0/#1` and `MRS Xt, PAN` instructions to be compiled into `arm_init.c`, `copyio.c`, and `machine_routines.c`.
+       * Cortex-A73/A53 (ARMv8.0-A) lacks `FEAT_PAN`. Disabled `__ARM_PAN_AVAILABLE__` in `BCM2837.h`, replaced `+pan` with `-pan` in `MakeInc.def`, and added binary patching for any residual `MSR/MRS PAN` instructions in `kernel/patch_kernel_pac.py`.
+    3. **JOP Hash Check in `ml_check_signed_state` (`osfmk/arm64/locore.s`):**
+       * Stubbed `ml_sign_thread_state` and `ml_check_signed_state` in `locore.s` so modifying `PC` (`set_saved_state_pc(state, elr + 4)`) or `LR` inside `sleh_synchronous` never triggers a false `JOP Hash Mismatch` panic on exception return.
+    4. **Visual Fault & Progress Bands (`osfmk/arm64/sleh.c` & `osfmk/arm/arm_init.c`):**
+       * Instrumented `sleh_synchronous()` to draw **Red** (rows 200–209) on unhandled early kernel UNDEF and **Magenta** (rows 210–219) on early kernel abort/panic.
+       * Added visual bands for `processor_bootstrap()` (rows 155–159, Orange-Red), `STARTUP_SUB_KPRINTF` (rows 165–169, Chartreuse), `PE_create_console()` (rows 170–174, Deep Sky Blue), and `machine_startup()` (rows 175–179, Yellow).
+
 * **Current Status (2026-11-03 22:57): LIVE HARDWARE FLASHED & BOOT TRIGGERED ON SAPPHIRE (REDMI NOTE 13 4G)**
   - **Flash Execution Details:**
     - Device: `92d1151e` (`sapphire`, fastboot mode, `is-userspace: no`, buffer: 736MB).

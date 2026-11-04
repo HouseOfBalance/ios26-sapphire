@@ -71,6 +71,24 @@ def decode_and_patch(i):
             if -256 <= off <= 255:
                 return A64_LDR_PRE | ((off & 0x1ff) << 12) | (rn << 5) | rt, 'ldr_pre'
 
+    # 7. MSR/MRS AP*Key*_EL1 (S3_0_C2_C{1..3}_op2)
+    if (i & 0xffdff000) == 0xd5182000:
+        crm = (i >> 8) & 15
+        op2 = (i >> 5) & 7
+        if ((crm in (1, 2)) and op2 < 4) or (crm == 3 and op2 < 2):
+            if (i >> 21) & 1:
+                return A64_MOV_X_XZR | (i & 31), 'mrs_apkey'
+            else:
+                return A64_NOP, 'msr_apkey'
+
+    # 8. ARMv8.1 FEAT_PAN (MSR PAN, #imm / MSR PAN, Xt / MRS Xt, PAN)
+    if (i & 0xfffff0ff) == 0xd500409f:
+        return A64_NOP, 'msr_pan_imm'
+    if (i & 0xffffffe0) == 0xd5184260:
+        return A64_NOP, 'msr_pan_reg'
+    if (i & 0xffffffe0) == 0xd5384260:
+        return 0xd2a00800 | (i & 31), 'mrs_pan'
+
     return None, None
 
 def patch_kernel(kernel_path):

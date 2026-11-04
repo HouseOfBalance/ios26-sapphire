@@ -121,18 +121,42 @@ def main():
 \thk_draw_band(0x00FFFFFF, 145, 5);  /* hakios visual marker: White at rows 145-149 (past kernel_startup_bootstrap) */"""
 
         target_cpu_init = """\tcpu_init();
-\tloader_checkpoint(16);"""
+\tloader_checkpoint(16);
+
+\tprocessor_bootstrap();"""
 
         replacement_cpu_init = """\tcpu_init();
 \tloader_checkpoint(16);
-\thk_draw_band(0x00E6E6FA, 150, 5);  /* hakios visual marker: Lavender at rows 150-154 (past cpu_init) */"""
+\thk_draw_band(0x00E6E6FA, 150, 5);  /* hakios visual marker: Lavender at rows 150-154 (past cpu_init) */
+
+\tprocessor_bootstrap();
+\thk_draw_band(0x00FF4500, 155, 5);  /* hakios visual marker: Orange-Red at rows 155-159 (past processor_bootstrap) */"""
 
         target_serial = """\tconst unsigned int serial_exists = serial_init();
-\tloader_checkpoint(18);"""
+\tloader_checkpoint(18);
+\tkernel_startup_initialize_upto(STARTUP_SUB_KPRINTF);
+\tloader_checkpoint(19);"""
 
         replacement_serial = """\tconst unsigned int serial_exists = serial_init();
 \tloader_checkpoint(18);
-\thk_draw_band(0x00DC143C, 160, 5);  /* hakios visual marker: Crimson at rows 160-164 (past serial_init) */"""
+\thk_draw_band(0x00DC143C, 160, 5);  /* hakios visual marker: Crimson at rows 160-164 (past serial_init) */
+\tkernel_startup_initialize_upto(STARTUP_SUB_KPRINTF);
+\tloader_checkpoint(19);
+\thk_draw_band(0x007FFF00, 165, 5);  /* hakios visual marker: Chartreuse at rows 165-169 (past STARTUP_SUB_KPRINTF) */"""
+
+        target_console = """\tPE_create_console();
+\tloader_checkpoint(20);"""
+
+        replacement_console = """\tPE_create_console();
+\tloader_checkpoint(20);
+\thk_draw_band(0x0000BFFF, 170, 5);  /* hakios visual marker: Deep Sky Blue at rows 170-174 (past PE_create_console) */"""
+
+        target_mstart = """\tloader_checkpoint(21);
+\tmachine_startup(args);"""
+
+        replacement_mstart = """\tloader_checkpoint(21);
+\thk_draw_band(0x00FFFF00, 175, 5);  /* hakios visual marker: Yellow at rows 175-179 (entering machine_startup) */
+\tmachine_startup(args);"""
 
         if target_init in c_norm:
             c_norm = c_norm.replace(target_init, replacement_init)
@@ -187,6 +211,18 @@ def main():
             print("  [OK] osfmk/arm/arm_init.c: serial_init visual markers instrumented")
         else:
             print("  [WARN] target_serial not found in arm_init.c")
+
+        if target_console in c_norm:
+            c_norm = c_norm.replace(target_console, replacement_console)
+            print("  [OK] osfmk/arm/arm_init.c: PE_create_console visual markers instrumented")
+        else:
+            print("  [WARN] target_console not found in arm_init.c")
+
+        if target_mstart in c_norm:
+            c_norm = c_norm.replace(target_mstart, replacement_mstart)
+            print("  [OK] osfmk/arm/arm_init.c: machine_startup visual markers instrumented")
+        else:
+            print("  [WARN] target_mstart not found in arm_init.c")
 
         with open(p1, "w", encoding="utf-8", newline="\n") as f:
             f.write(c_norm)
@@ -270,11 +306,41 @@ def main():
         c_norm = c.replace("\r\n", "\n")
         if sleh_old in c_norm:
             c_norm = c_norm.replace(sleh_old, sleh_new)
-            with open(p3, "w", encoding="utf-8", newline="\n") as f:
-                f.write(c_norm)
-            print("  [OK] osfmk/arm64/sleh.c")
+            print("  [OK] osfmk/arm64/sleh.c: APIAKeyLo_EL1/APGAKeyLo_EL1 stubbed")
         else:
             print("  [WARN] sleh target not found in sleh.c")
+
+        sleh_hook_old = """\tif (class == 0) {
+\t\tif (pac_patch_handle_trap(state, is_user)) {
+\t\t\treturn;
+\t\t}
+\t\tif (lse_patch_handle_trap(state, is_user)) {
+\t\t\treturn;
+\t\t}
+\t}"""
+        sleh_hook_new = """\textern void hk_draw_band(uint32_t color, uint32_t row_start, uint32_t row_count);
+\textern unsigned long gVirtBase;
+\tif (class == 0) {
+\t\tif (pac_patch_handle_trap(state, is_user)) {
+\t\t\treturn;
+\t\t}
+\t\tif (lse_patch_handle_trap(state, is_user)) {
+\t\t\treturn;
+\t\t}
+\t\tif (!is_user && gVirtBase == 0) {
+\t\t\thk_draw_band(0x00FF0000, 200, 10); /* Red band: unhandled early kernel UNDEF */
+\t\t}
+\t} else if (!is_user && gVirtBase == 0) {
+\t\thk_draw_band(0x00FF00FF, 210, 10); /* Magenta band: early kernel fault/panic */
+\t}"""
+        if sleh_hook_old in c_norm:
+            c_norm = c_norm.replace(sleh_hook_old, sleh_hook_new)
+            print("  [OK] osfmk/arm64/sleh.c: early kernel fault visual bands installed")
+        else:
+            print("  [WARN] sleh_hook_old not found in sleh.c")
+
+        with open(p3, "w", encoding="utf-8", newline="\n") as f:
+            f.write(c_norm)
 
     # 4. osfmk/arm64/start.s
     p4 = os.path.join(src, "osfmk", "arm64", "start.s")
@@ -562,6 +628,51 @@ LEXT(hk_draw_band)
             print("  [OK] pexpert/pexpert/arm64/board_config.h: already has MAX_CPU_CLUSTERS 4")
         else:
             print("  [WARN] MAX_CPU_CLUSTERS not found in board_config.h")
+
+    # 6. pexpert/pexpert/arm64/BCM2837.h (Cortex-A73/A53 is ARMv8.0-A: lacks ARMv8.1 FEAT_PAN)
+    p6 = os.path.join(src, "pexpert", "pexpert", "arm64", "BCM2837.h")
+    if os.path.isfile(p6):
+        with open(p6, "r", encoding="utf-8", errors="replace") as f:
+            c6 = f.read().replace("\r\n", "\n")
+        if "#define __ARM_PAN_AVAILABLE__     1" in c6:
+            c6 = c6.replace("#define __ARM_PAN_AVAILABLE__     1", "// #define __ARM_PAN_AVAILABLE__     1")
+            with open(p6, "w", encoding="utf-8", newline="\n") as f:
+                f.write(c6)
+            print("  [OK] pexpert/pexpert/arm64/BCM2837.h: __ARM_PAN_AVAILABLE__ disabled for Cortex-A73")
+        else:
+            print("  [WARN] __ARM_PAN_AVAILABLE__ not found in BCM2837.h")
+
+    # 7. makedefs/MakeInc.def (replace +pan with -pan for BCM2837)
+    p7 = os.path.join(src, "makedefs", "MakeInc.def")
+    if os.path.isfile(p7):
+        with open(p7, "r", encoding="utf-8", errors="replace") as f:
+            c7 = f.read().replace("\r\n", "\n")
+        if "-Xclang -target-feature -Xclang +pan" in c7:
+            c7 = c7.replace("-Xclang -target-feature -Xclang +pan", "-Xclang -target-feature -Xclang -pan")
+            with open(p7, "w", encoding="utf-8", newline="\n") as f:
+                f.write(c7)
+            print("  [OK] makedefs/MakeInc.def: +pan replaced with -pan")
+        else:
+            print("  [WARN] +pan not found in MakeInc.def")
+
+    # 8. osfmk/arm64/locore.s (stub ml_sign_thread_state & ml_check_signed_state so trap PC/LR updates never panic)
+    p8 = os.path.join(src, "osfmk", "arm64", "locore.s")
+    if os.path.isfile(p8):
+        with open(p8, "r", encoding="utf-8", errors="replace") as f:
+            c8 = f.read().replace("\r\n", "\n")
+        changed_locore = False
+        if "LEXT(ml_sign_thread_state)\n" in c8 and "LEXT(ml_sign_thread_state)\n\tret\n" not in c8:
+            c8 = c8.replace("LEXT(ml_sign_thread_state)\n", "LEXT(ml_sign_thread_state)\n\tret\n", 1)
+            changed_locore = True
+        if "LEXT(ml_check_signed_state)\n" in c8 and "LEXT(ml_check_signed_state)\n\tret\n" not in c8:
+            c8 = c8.replace("LEXT(ml_check_signed_state)\n", "LEXT(ml_check_signed_state)\n\tret\n", 1)
+            changed_locore = True
+        if changed_locore:
+            with open(p8, "w", encoding="utf-8", newline="\n") as f:
+                f.write(c8)
+            print("  [OK] osfmk/arm64/locore.s: ml_sign_thread_state and ml_check_signed_state stubbed")
+        else:
+            print("  [WARN] ml_sign_thread_state / ml_check_signed_state not found in locore.s")
 
     print("Cortex-A73 patches successfully applied!")
 

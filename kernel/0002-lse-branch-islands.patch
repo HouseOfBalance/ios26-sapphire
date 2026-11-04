@@ -115,9 +115,9 @@ index 0000000..1111111
 +     * Bits [29:23] == 0b1110000 (0x38 << 24, bit 23 = 0)
 +     * Bits [11:10] == 0b00
 +     */
-+    if ((inst & 0x3F800C00) == 0x38000000) {
-+        out->acquire = (inst & (1U << 22)) != 0;
-+        out->release = (inst & (1U << 21)) != 0;
++    if ((inst & 0x3F200C00) == 0x38200000) {
++        out->acquire = (inst & (1U << 23)) != 0;
++        out->release = (inst & (1U << 22)) != 0;
 +
 +        uint32_t o3 = (inst >> 15) & 0x1;
 +        uint32_t opc = (inst >> 12) & 0x7;
@@ -220,7 +220,7 @@ new file mode 100644
 index 0000000..2222222
 --- /dev/null
 +++ b/osfmk/arm64/lse_hooks.h
-@@ -0,0 +1,536 @@
+@@ -0,0 +1,626 @@
 +/*
 + * lse_hooks.h - Pure ARMv8.0 Freestanding LL/SC Atomic Primitives
 + * Target: Cortex-A73/A53 (Snapdragon 685 SM6225, baseline ARMv8.0-A)
@@ -527,8 +527,98 @@ index 0000000..2222222
 +}
 +
 +/* -------------------------------------------------------------------------
-+ * Atomic Bitwise Operations (LDCLR, LDSET, LDEOR)
++ * Atomic Bitwise Operations (LDCLR, LDSET, LDEOR - 8, 16, 32, 64-bit)
 + * ------------------------------------------------------------------------- */
++
++static inline uint8_t atomic_ldclr8_llsc(volatile uint8_t *ptr, uint8_t val) {
++    uint32_t old, tmp;
++    int failed;
++    __asm__ volatile (
++        "1: ldaxrb  %w0, [%3]       \n"
++        "   bic     %w1, %w0, %w4   \n"
++        "   stlxrb  %w2, %w1, [%3]  \n"
++        "   cbnz    %w2, 1b         \n"
++        : "=&r"(old), "=&r"(tmp), "=&r"(failed)
++        : "r"(ptr), "r"((uint32_t)val)
++        : "cc", "memory"
++    );
++    return (uint8_t)old;
++}
++
++static inline uint16_t atomic_ldclr16_llsc(volatile uint16_t *ptr, uint16_t val) {
++    uint32_t old, tmp;
++    int failed;
++    __asm__ volatile (
++        "1: ldaxrh  %w0, [%3]       \n"
++        "   bic     %w1, %w0, %w4   \n"
++        "   stlxrh  %w2, %w1, [%3]  \n"
++        "   cbnz    %w2, 1b         \n"
++        : "=&r"(old), "=&r"(tmp), "=&r"(failed)
++        : "r"(ptr), "r"((uint32_t)val)
++        : "cc", "memory"
++    );
++    return (uint16_t)old;
++}
++
++static inline uint8_t atomic_ldset8_llsc(volatile uint8_t *ptr, uint8_t val) {
++    uint32_t old, tmp;
++    int failed;
++    __asm__ volatile (
++        "1: ldaxrb  %w0, [%3]       \n"
++        "   orr     %w1, %w0, %w4   \n"
++        "   stlxrb  %w2, %w1, [%3]  \n"
++        "   cbnz    %w2, 1b         \n"
++        : "=&r"(old), "=&r"(tmp), "=&r"(failed)
++        : "r"(ptr), "r"((uint32_t)val)
++        : "cc", "memory"
++    );
++    return (uint8_t)old;
++}
++
++static inline uint16_t atomic_ldset16_llsc(volatile uint16_t *ptr, uint16_t val) {
++    uint32_t old, tmp;
++    int failed;
++    __asm__ volatile (
++        "1: ldaxrh  %w0, [%3]       \n"
++        "   orr     %w1, %w0, %w4   \n"
++        "   stlxrh  %w2, %w1, [%3]  \n"
++        "   cbnz    %w2, 1b         \n"
++        : "=&r"(old), "=&r"(tmp), "=&r"(failed)
++        : "r"(ptr), "r"((uint32_t)val)
++        : "cc", "memory"
++    );
++    return (uint16_t)old;
++}
++
++static inline uint8_t atomic_ldeor8_llsc(volatile uint8_t *ptr, uint8_t val) {
++    uint32_t old, tmp;
++    int failed;
++    __asm__ volatile (
++        "1: ldaxrb  %w0, [%3]       \n"
++        "   eor     %w1, %w0, %w4   \n"
++        "   stlxrb  %w2, %w1, [%3]  \n"
++        "   cbnz    %w2, 1b         \n"
++        : "=&r"(old), "=&r"(tmp), "=&r"(failed)
++        : "r"(ptr), "r"((uint32_t)val)
++        : "cc", "memory"
++    );
++    return (uint8_t)old;
++}
++
++static inline uint16_t atomic_ldeor16_llsc(volatile uint16_t *ptr, uint16_t val) {
++    uint32_t old, tmp;
++    int failed;
++    __asm__ volatile (
++        "1: ldaxrh  %w0, [%3]       \n"
++        "   eor     %w1, %w0, %w4   \n"
++        "   stlxrh  %w2, %w1, [%3]  \n"
++        "   cbnz    %w2, 1b         \n"
++        : "=&r"(old), "=&r"(tmp), "=&r"(failed)
++        : "r"(ptr), "r"((uint32_t)val)
++        : "cc", "memory"
++    );
++    return (uint16_t)old;
++}
 +
 +static inline uint32_t atomic_ldclr32_llsc(volatile uint32_t *ptr, uint32_t val) {
 +    uint32_t old, tmp;
@@ -762,7 +852,7 @@ new file mode 100644
 index 0000000..3333333
 --- /dev/null
 +++ b/osfmk/arm64/lse_patch.c
-@@ -0,0 +1,703 @@
+@@ -0,0 +1,710 @@
 +/*
 + * lse_patch.c - XNU Kernel LSE Atomic Trap Handler & Branch Island Engine
 + * Target: Cortex-A73/A53 (ARMv8.0-A baseline, Snapdragon 685 SM6225)
@@ -903,17 +993,18 @@ index 0000000..3333333
 +    uint64_t rs_val = lse_get_reg(state, dec->rs);
 +    uint64_t rt_val = lse_get_reg(state, dec->rt);
 +
-+    uint64_t pa = 0;
++    void *kptr = NULL;
 +    if (is_user) {
-+        task_t t = (task_t)current_task();
-+        if (!t || !t->map || !t->map->pmap) return false;
-+        pa = pmap_find_phys(t->map->pmap, addr);
++        uint64_t par, daif;
++        __asm__ volatile("mrs %0, daif\n msr daifset, #7\n at s1e0r, %1\n isb\n" : "=&r"(daif) : "r"(addr) : "memory");
++        __asm__ volatile("mrs %0, par_el1\n msr daif, %1\n" : "=r"(par) : "r"(daif));
++        if (par & 1ULL) return false;
++        uint64_t pa = (par & 0x0000FFFFFFFFF000ULL) | (addr & 0xFFFULL);
++        kptr = (void *)PHYSTOKV(pa);
 +    } else {
-+        pa = kvtophys(addr);
++        kptr = (void *)addr;
 +    }
-+    if (!pa) return false;
-+
-+    void *kptr = (void *)PHYSTOKV(pa);
++    if (!kptr) return false;
 +
 +    if (dec->type == LSE_TYPE_CAS) {
 +        if (dec->size == LSE_SIZE_64) {
@@ -980,15 +1071,21 @@ index 0000000..3333333
 +            break;
 +        case LSE_TYPE_LDCLR:
 +            if (is_64) old_val = atomic_ldclr64_llsc((volatile uint64_t *)kptr, rs_val);
-+            else old_val = atomic_ldclr32_llsc((volatile uint32_t *)kptr, (uint32_t)rs_val);
++            else if (dec->size == LSE_SIZE_32) old_val = atomic_ldclr32_llsc((volatile uint32_t *)kptr, (uint32_t)rs_val);
++            else if (dec->size == LSE_SIZE_16) old_val = atomic_ldclr16_llsc((volatile uint16_t *)kptr, (uint16_t)rs_val);
++            else old_val = atomic_ldclr8_llsc((volatile uint8_t *)kptr, (uint8_t)rs_val);
 +            break;
 +        case LSE_TYPE_LDSET:
 +            if (is_64) old_val = atomic_ldset64_llsc((volatile uint64_t *)kptr, rs_val);
-+            else old_val = atomic_ldset32_llsc((volatile uint32_t *)kptr, (uint32_t)rs_val);
++            else if (dec->size == LSE_SIZE_32) old_val = atomic_ldset32_llsc((volatile uint32_t *)kptr, (uint32_t)rs_val);
++            else if (dec->size == LSE_SIZE_16) old_val = atomic_ldset16_llsc((volatile uint16_t *)kptr, (uint16_t)rs_val);
++            else old_val = atomic_ldset8_llsc((volatile uint8_t *)kptr, (uint8_t)rs_val);
 +            break;
 +        case LSE_TYPE_LDEOR:
 +            if (is_64) old_val = atomic_ldeor64_llsc((volatile uint64_t *)kptr, rs_val);
-+            else old_val = atomic_ldeor32_llsc((volatile uint32_t *)kptr, (uint32_t)rs_val);
++            else if (dec->size == LSE_SIZE_32) old_val = atomic_ldeor32_llsc((volatile uint32_t *)kptr, (uint32_t)rs_val);
++            else if (dec->size == LSE_SIZE_16) old_val = atomic_ldeor16_llsc((volatile uint16_t *)kptr, (uint16_t)rs_val);
++            else old_val = atomic_ldeor8_llsc((volatile uint8_t *)kptr, (uint8_t)rs_val);
 +            break;
 +        case LSE_TYPE_LDSMAX:
 +            if (is_64) old_val = atomic_ldsmax64_llsc((volatile uint64_t *)kptr, (int64_t)rs_val);
@@ -1446,8 +1543,8 @@ index 0000000..3333333
 +        return false;
 +    }
 +
-+    /* Attempt branch island trampoline installation */
-+    if (lse_try_patch_island(elr, &dec, is_user)) {
++    /* Attempt branch island trampoline installation (EL0 only; kernel emulates directly on VA) */
++    if (is_user && lse_try_patch_island(elr, &dec, is_user)) {
 +        /* Island installed! Emulate first trap atomically via direct LL/SC */
 +        lse_emulate_atomic(state, &dec, is_user);
 +        set_saved_state_pc(state, elr + 4);
