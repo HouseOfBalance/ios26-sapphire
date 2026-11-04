@@ -1096,7 +1096,6 @@ loader_return(void)
             c12 = f.read()
         target_seed = "Expected %u seed bytes from boot loader"
         if target_seed in c12:
-            import re
             c12 = re.sub(r'panic\s*\(\s*"Expected %u seed bytes from boot loader',
                          r'printf("HAKIOS: Expected %u seed bytes from boot loader', c12)
             with open(p12, "w", encoding="utf-8", newline="\n") as f:
