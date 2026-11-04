@@ -712,7 +712,7 @@ LEXT(hk_render_screen_asm)
 \tmsr\t\tSCTLR_EL1, x10
 \tisb
 
-\tmov\t\tx25, #1040
+\tmov\t\tx25, #20
 \tmov\t\tx26, #250
 
 \tmovz\tw14, #0xffff
@@ -729,7 +729,7 @@ LEXT(hk_render_screen_asm)
 
 \tcmp\t\tw0, #10
 \tb.ne\t3f
-\tmov\t\tx25, #1040
+\tmov\t\tx25, #20
 \tadd\t\tx26, x26, #32
 \tcmp\t\tx26, #2360
 \tb.ge\t7f
@@ -778,10 +778,10 @@ LEXT(hk_render_screen_asm)
 \tcmp\t\tw4, #16
 \tb.lt\t6b
 
-\tsubs\tx25, x25, #16
-\tcmp\t\tx25, #20
-\tb.ge\t2b
-\tmov\t\tx25, #1040
+\tadd\t\tx25, x25, #16
+\tcmp\t\tx25, #1060
+\tb.lt\t2b
+\tmov\t\tx25, #20
 \tadd\t\tx26, x26, #32
 \tcmp\t\tx26, #2360
 \tb.lt\t2b
@@ -989,6 +989,22 @@ loader_return(void)
             print("  [OK] osfmk/ipc/ipc_policy.c: ipc_sec_policy_configs_validate bypassed")
         else:
             print("  [WARN] ipc_sec_policy_configs_validate target not found in ipc_policy.c")
+
+    # 12. osfmk/prng/prng_random.c (relax entropy seed check for bootloaders passing < 256 bytes)
+    p12 = os.path.join(src, "osfmk", "prng", "prng_random.c")
+    if os.path.isfile(p12):
+        with open(p12, "r", encoding="utf-8", errors="replace") as f:
+            c12 = f.read()
+        target_seed = "Expected %u seed bytes from boot loader"
+        if target_seed in c12:
+            import re
+            c12 = re.sub(r'panic\s*\(\s*"Expected %u seed bytes from boot loader',
+                         r'printf("HAKIOS: Expected %u seed bytes from boot loader', c12)
+            with open(p12, "w", encoding="utf-8", newline="\n") as f:
+                f.write(c12)
+            print("  [OK] osfmk/prng/prng_random.c: relaxed seed length panic to warning")
+        else:
+            print("  [WARN] Expected %u seed bytes target not found in prng_random.c")
 
     print("Cortex-A73 patches successfully applied!")
 

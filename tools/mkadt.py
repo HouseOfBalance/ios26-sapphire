@@ -233,7 +233,7 @@ def build(seed=None, qemu=False, highmem=False, board='sweet', display_scale=Non
         gicd, gicd_sz, gicr, gicr_sz, timebase = GICD, GICD_SIZE, GICR, GICR_SIZE, TIMEBASE
     ufs_base, ufs_size = b.get('ufs', (UFS, UFS_SIZE))
     ecid = b.get('ecid', SWEET_ECID)
-    seed = seed if seed is not None else os.urandom(64)
+    seed = seed if seed is not None else os.urandom(256)
     phandle = iter(range(1, 1000))
     ph = lambda: ('AAPL,phandle', u32(next(phandle)))
 
