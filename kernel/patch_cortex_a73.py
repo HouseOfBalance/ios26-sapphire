@@ -669,6 +669,15 @@ LEXT(hk_render_screen_asm)
 \tmov\t\tw20, w1
 \tmov\t\tx21, x2
 
+\t// Clean D-cache for text buffer to Point of Coherency before MMU is disabled
+\tmov\t\tx10, x19
+\tmov\t\tw12, w20
+11:\tdc\t\tcvac, x10
+\tadd\t\tx10, x10, #64
+\tsubs\tw12, w12, #64
+\tb.gt\t11b
+\tdsb\t\tsy
+
 \tmrs\t\tx23, DAIF
 \tmsr\t\tDAIFSet, #0xf
 
@@ -865,29 +874,41 @@ LEXT(hk_render_screen_asm)
         else:
             print("  [WARN] ml_sign_thread_state / ml_check_signed_state not found in locore.s")
 
-    # 9. osfmk/arm64/loader_return.c (draw Dark Orange band and render panic text to screen)
+    # 9. osfmk/arm64/loader_return.c (render panic text directly to screen at entry of loader_return)
     p9 = os.path.join(src, "osfmk", "arm64", "loader_return.c")
     if os.path.isfile(p9):
         with open(p9, "r", encoding="utf-8", errors="replace") as f:
             c9 = f.read().replace("\r\n", "\n")
         lr_old = "void\nloader_return(void)\n{\n\tredwood_ufs_close();"
-        lr_new = "void\nloader_return(void)\n{\n\textern void hk_draw_band(uint32_t color, uint32_t row_start, uint32_t row_count);\n\thk_draw_band(0x00FF8C00, 220, 10); /* Dark Orange band: loader_return / panic */\n\tredwood_ufs_close();"
-        if lr_old in c9:
-            c9 = c9.replace(lr_old, lr_new, 1)
-            print("  [OK] osfmk/arm64/loader_return.c: Dark Orange band added to loader_return()")
-        else:
-            print("  [WARN] loader_return target not found in loader_return.c")
+        lr_new = """void
+loader_return(void)
+{
+\textern void hk_draw_band(uint32_t color, uint32_t row_start, uint32_t row_count);
+\thk_draw_band(0x00FF8C00, 220, 10); /* Dark Orange band: loader_return / panic */
 
-        dump_target = "\tloader_jump(0, 0);"
-        dump_code = """\t/* hakios: on-screen panic dump directly to display */
+\t/* hakios: on-screen panic dump directly to display BEFORE any quiesce */
 \t{
 \t\textern void hk_render_screen_asm(const char *str, uint32_t len, const unsigned char *font);
 \t\textern const unsigned char iso_font[];
+\t\textern char *debug_buf_base, *debug_buf_ptr;
+\t\textern const char *debugger_panic_str;
+\t\textern char loader_log[];
+\t\textern uint32_t loader_log_len;
 \t\tstatic char panic_onscreen[3500];
 \t\tuint32_t n = 0;
+\t\tconst char header[] = "=== HAKIOS PANIC CONSOLE ===\\n";
+\t\tfor (const char *h = header; *h && n < 100; h++) {
+\t\t\tpanic_onscreen[n++] = *h;
+\t\t}
+
 \t\tif (debug_buf_base != NULL && debug_buf_ptr > debug_buf_base) {
 \t\t\tconst char *p = debug_buf_base;
 \t\t\twhile (p < debug_buf_ptr && n < 3400) {
+\t\t\t\tpanic_onscreen[n++] = *p++;
+\t\t\t}
+\t\t} else if (debugger_panic_str != NULL) {
+\t\t\tconst char *p = debugger_panic_str;
+\t\t\twhile (*p && n < 3400) {
 \t\t\t\tpanic_onscreen[n++] = *p++;
 \t\t\t}
 \t\t} else if (loader_log_len > 0) {
@@ -895,21 +916,38 @@ LEXT(hk_render_screen_asm)
 \t\t\twhile (start < loader_log_len && n < 3400) {
 \t\t\t\tpanic_onscreen[n++] = loader_log[start++];
 \t\t\t}
+\t\t} else {
+\t\t\tconst char *msg = "loader_return() entered, but log buffers empty.\\n";
+\t\t\twhile (*msg && n < 3400) {
+\t\t\t\tpanic_onscreen[n++] = *msg++;
+\t\t\t}
 \t\t}
-\t\tif (n > 0) {
-\t\t\tpanic_onscreen[n] = '\\0';
-\t\t\thk_render_screen_asm(panic_onscreen, n, iso_font);
+
+\t\tpanic_onscreen[n] = '\\0';
+
+\t\t/* Clean data cache to DRAM before MMU-off read */
+\t\tfor (uintptr_t p = (uintptr_t)panic_onscreen; p < (uintptr_t)panic_onscreen + n + 64; p += 64) {
+\t\t\t__asm__ volatile ("dc cvac, %0" : : "r" (p));
+\t\t}
+\t\t__asm__ volatile ("dsb sy");
+
+\t\thk_render_screen_asm(panic_onscreen, n, iso_font);
+\t\thk_draw_band(0x0000FF00, 230, 10); /* Lime band: screen dump completed successfully */
+
+\t\t/* Spin forever so screen remains visible */
+\t\tfor (;;) {
+\t\t\t__asm__ volatile ("wfe");
 \t\t}
 \t}
-\tloader_jump(0, 0);"""
-        if dump_target in c9:
-            c9 = c9.replace(dump_target, dump_code, 1)
-            print("  [OK] osfmk/arm64/loader_return.c: on-screen panic dump added before loader_jump")
-        else:
-            print("  [WARN] loader_jump target not found in loader_return.c")
 
-        with open(p9, "w", encoding="utf-8", newline="\n") as f:
-            f.write(c9)
+\tredwood_ufs_close();"""
+        if lr_old in c9:
+            c9 = c9.replace(lr_old, lr_new, 1)
+            with open(p9, "w", encoding="utf-8", newline="\n") as f:
+                f.write(c9)
+            print("  [OK] osfmk/arm64/loader_return.c: early on-screen panic dump installed")
+        else:
+            print("  [WARN] loader_return target not found in loader_return.c")
 
     # 10. osfmk/kern/startup.c (trace startup entries with visual markers)
     p10 = os.path.join(src, "osfmk", "kern", "startup.c")
