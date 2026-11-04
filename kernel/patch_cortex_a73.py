@@ -132,10 +132,10 @@ def main():
 \tprocessor_bootstrap();
 \thk_draw_band(0x00FF4500, 155, 5);  /* hakios visual marker: Orange-Red at rows 155-159 (past processor_bootstrap) */"""
 
-        target_vm = """\tarm_vm_init(mem_size, args);"""
+        target_vm = """\tarm_vm_init(xmaxmem, args);"""
 
         replacement_vm = """\thk_draw_band(0x0000FA9A, 158, 2);  /* hakios visual marker: Medium Spring Green at rows 158-159 (before arm_vm_init) */
-\tarm_vm_init(mem_size, args);
+\tarm_vm_init(xmaxmem, args);
 \thk_draw_band(0x00FF007F, 160, 3);  /* hakios visual marker: Rose at rows 160-162 (past arm_vm_init) */"""
 
         target_serial = """\tconst unsigned int serial_exists = serial_init();
@@ -157,9 +157,9 @@ def main():
 \tloader_checkpoint(20);
 \thk_draw_band(0x0000BFFF, 170, 5);  /* hakios visual marker: Deep Sky Blue at rows 170-174 (past PE_create_console) */"""
 
-        target_pe_true = """\tPE_init_platform(TRUE, args);"""
+        target_pe_true = """\tPE_init_platform(TRUE, &BootCpuData);"""
 
-        replacement_pe_true = """\tPE_init_platform(TRUE, args);
+        replacement_pe_true = """\tPE_init_platform(TRUE, &BootCpuData);
 \thk_draw_band(0x0000FF7F, 175, 5);  /* hakios visual marker: Spring Green at rows 175-179 (past PE_init_platform TRUE) */"""
 
         target_mstart = """\tloader_checkpoint(21);
@@ -649,11 +649,160 @@ LEXT(hk_draw_band)
 \tldp\t\tx29, x30, [sp], #64
 \tret
 """
-        c_norm = c_norm + hk_draw_band_code
+        hk_render_screen_asm_code = """
+/*
+ * hakios: on-screen panic text renderer
+ * void hk_render_screen_asm(const char *str, uint32_t len, const unsigned char *font);
+ * Renders 2x scaled ASCII text directly to physical framebuffer at 0x5c000000.
+ */
+\t.text
+\t.align 2
+\t.globl EXT(hk_render_screen_asm)
+LEXT(hk_render_screen_asm)
+\tstp\t\tx29, x30, [sp, #-80]!
+\tstp\t\tx19, x20, [sp, #16]
+\tstp\t\tx21, x22, [sp, #32]
+\tstp\t\tx23, x24, [sp, #48]
+\tstp\t\tx25, x26, [sp, #64]
+
+\tmov\t\tx19, x0
+\tmov\t\tw20, w1
+\tmov\t\tx21, x2
+
+\tmrs\t\tx23, DAIF
+\tmsr\t\tDAIFSet, #0xf
+
+\tadrp\tx11, EXT(loader_stub_slot)@page
+\tadd\t\tx11, x11, EXT(loader_stub_slot)@pageoff
+\tldr\t\tx11, [x11, #24]
+
+\tsub\t\tx19, x19, x11
+\tsub\t\tx21, x21, x11
+
+\tmrs\t\tx22, SCTLR_EL1
+\ttbz\t\tx22, #0, 1f
+
+\tmrs\t\tx24, TTBR0_EL1
+\tadrp\tx12, EXT(bootstrap_pagetables)@page
+\tadd\t\tx12, x12, EXT(bootstrap_pagetables)@pageoff
+\tsub\t\tx12, x12, x11
+\tmsr\t\tTTBR0_EL1, x12
+\tisb
+\ttlbi\tvmalle1
+\tdsb\t\tsy
+\tisb
+
+\tadr\t\tx13, 8f
+\tadr\t\tx10, 1f
+\tsub\t\tx10, x10, x11
+\tbr\t\tx10
+
+1:
+\tmrs\t\tx9, SCTLR_EL1
+\tbic\t\tx10, x9, #1
+\tmsr\t\tSCTLR_EL1, x10
+\tisb
+
+\tmov\t\tx25, #20
+\tmov\t\tx26, #250
+
+\tmovz\tw14, #0xffff
+\tmovk\tw14, #0x00ff, lsl #16
+\tmov\t\tx15, #4320
+
+2:\tcbz\t\tw20, 7f
+\tldrb\tw0, [x19], #1
+\tsub\t\tw20, w20, #1
+\tcbz\t\tw0, 7f
+
+\tcmp\t\tw0, #13
+\tb.eq\t2b
+
+\tcmp\t\tw0, #10
+\tb.ne\t3f
+\tmov\t\tx25, #20
+\tadd\t\tx26, x26, #32
+\tcmp\t\tx26, #2360
+\tb.ge\t7f
+\tb\t\t2b
+
+3:\tcmp\t\tw0, #32
+\tb.lt\t4f
+\tcmp\t\tw0, #126
+\tb.le\t5f
+4:\tmov\t\tw0, #32
+
+5:\tand\t\tx1, x0, #0xff
+\tlsl\t\tx1, x1, #4
+\tadd\t\tx1, x21, x1
+
+\tmul\t\tx2, x26, x15
+\tmovz\tx3, #0x5c00, lsl #16
+\tadd\t\tx2, x2, x3
+\tadd\t\tx2, x2, x25, lsl #2
+
+\tmov\t\tw4, #0
+6:\tldrb\tw5, [x1, x4]
+
+\tmov\t\tw6, #7
+\tmov\t\tx7, x2
+\tadd\t\tx8, x2, x15
+
+61:\tlsr\t\tw10, w5, w6
+\ttbz\t\tw10, #0, 62f
+\tstr\t\tw14, [x7], #4
+\tstr\t\tw14, [x7], #4
+\tstr\t\tw14, [x8], #4
+\tstr\t\tw14, [x8], #4
+\tb\t\t63f
+62:\tstr\t\twzr, [x7], #4
+\tstr\t\twzr, [x7], #4
+\tstr\t\twzr, [x8], #4
+\tstr\t\twzr, [x8], #4
+63:\tsubs\tw6, w6, #1
+\tb.ge\t61b
+
+\tadd\t\tx2, x2, x15
+\tadd\t\tx2, x2, x15
+\tadd\t\tw4, w4, #1
+\tcmp\t\tw4, #16
+\tb.lt\t6b
+
+\tadd\t\tx25, x25, #16
+\tcmp\t\tx25, #1060
+\tb.lt\t2b
+\tmov\t\tx25, #20
+\tadd\t\tx26, x26, #32
+\tcmp\t\tx26, #2360
+\tb.lt\t2b
+
+7:\tdsb\t\tsy
+
+\tmsr\t\tSCTLR_EL1, x9
+\tisb
+
+\ttbz\t\tx22, #0, 9f
+\tbr\t\tx13
+
+8:\tmsr\t\tTTBR0_EL1, x24
+\tisb
+\ttlbi\tvmalle1
+\tdsb\t\tsy
+\tisb
+
+9:\tmsr\t\tDAIF, x23
+\tldp\t\tx25, x26, [sp, #64]
+\tldp\t\tx23, x24, [sp, #48]
+\tldp\t\tx21, x22, [sp, #32]
+\tldp\t\tx19, x20, [sp, #16]
+\tldp\t\tx29, x30, [sp], #80
+\tret
+"""
+        c_norm = c_norm + hk_draw_band_code + hk_render_screen_asm_code
 
         with open(p4, "w", encoding="utf-8", newline="\n") as f:
             f.write(c_norm)
-        print("  [OK] osfmk/arm64/start.s: visual markers and hk_draw_band installed")
+        print("  [OK] osfmk/arm64/start.s: visual markers, hk_draw_band, and hk_render_screen_asm installed")
 
     # 5. pexpert/pexpert/arm64/board_config.h (SM6225 Bengal has 2 clusters: Gold A73 + Silver A53)
     p5 = os.path.join(src, "pexpert", "pexpert", "arm64", "board_config.h")
@@ -716,7 +865,7 @@ LEXT(hk_draw_band)
         else:
             print("  [WARN] ml_sign_thread_state / ml_check_signed_state not found in locore.s")
 
-    # 9. osfmk/arm64/loader_return.c (draw Dark Orange band at rows 220-229 on loader_return / panic)
+    # 9. osfmk/arm64/loader_return.c (draw Dark Orange band and render panic text to screen)
     p9 = os.path.join(src, "osfmk", "arm64", "loader_return.c")
     if os.path.isfile(p9):
         with open(p9, "r", encoding="utf-8", errors="replace") as f:
@@ -725,11 +874,66 @@ LEXT(hk_draw_band)
         lr_new = "void\nloader_return(void)\n{\n\textern void hk_draw_band(uint32_t color, uint32_t row_start, uint32_t row_count);\n\thk_draw_band(0x00FF8C00, 220, 10); /* Dark Orange band: loader_return / panic */\n\tredwood_ufs_close();"
         if lr_old in c9:
             c9 = c9.replace(lr_old, lr_new, 1)
-            with open(p9, "w", encoding="utf-8", newline="\n") as f:
-                f.write(c9)
             print("  [OK] osfmk/arm64/loader_return.c: Dark Orange band added to loader_return()")
         else:
             print("  [WARN] loader_return target not found in loader_return.c")
+
+        dump_target = "\tloader_jump(0, 0);"
+        dump_code = """\t/* hakios: on-screen panic dump directly to display */
+\t{
+\t\textern void hk_render_screen_asm(const char *str, uint32_t len, const unsigned char *font);
+\t\textern const unsigned char iso_font[];
+\t\tstatic char panic_onscreen[3500];
+\t\tuint32_t n = 0;
+\t\tif (debug_buf_base != NULL && debug_buf_ptr > debug_buf_base) {
+\t\t\tconst char *p = debug_buf_base;
+\t\t\twhile (p < debug_buf_ptr && n < 3400) {
+\t\t\t\tpanic_onscreen[n++] = *p++;
+\t\t\t}
+\t\t} else if (loader_log_len > 0) {
+\t\t\tuint32_t start = (loader_log_len > 3000) ? (loader_log_len - 3000) : 0;
+\t\t\twhile (start < loader_log_len && n < 3400) {
+\t\t\t\tpanic_onscreen[n++] = loader_log[start++];
+\t\t\t}
+\t\t}
+\t\tif (n > 0) {
+\t\t\tpanic_onscreen[n] = '\\0';
+\t\t\thk_render_screen_asm(panic_onscreen, n, iso_font);
+\t\t}
+\t}
+\tloader_jump(0, 0);"""
+        if dump_target in c9:
+            c9 = c9.replace(dump_target, dump_code, 1)
+            print("  [OK] osfmk/arm64/loader_return.c: on-screen panic dump added before loader_jump")
+        else:
+            print("  [WARN] loader_jump target not found in loader_return.c")
+
+        with open(p9, "w", encoding="utf-8", newline="\n") as f:
+            f.write(c9)
+
+    # 10. osfmk/kern/startup.c (trace startup entries with visual markers)
+    p10 = os.path.join(src, "osfmk", "kern", "startup.c")
+    if os.path.isfile(p10):
+        with open(p10, "r", encoding="utf-8", errors="replace") as f:
+            c10 = f.read().replace("\r\n", "\n")
+        t_startup = """\t\tstartup_phase = cur->subsystem - 1;
+\t\tkernel_startup_log(cur->subsystem);
+\t\tcur->func(cur->arg);"""
+        r_startup = """\t\tstartup_phase = cur->subsystem - 1;
+\t\tkernel_startup_log(cur->subsystem);
+\t\t/* hakios: trace startup subsystem */
+\t\t{
+\t\t\textern void hk_draw_band(uint32_t color, uint32_t row_start, uint32_t row_count);
+\t\t\thk_draw_band(0x00FFD700, 164 + (cur->subsystem & 3), 1);
+\t\t}
+\t\tcur->func(cur->arg);"""
+        if t_startup in c10:
+            c10 = c10.replace(t_startup, r_startup, 1)
+            with open(p10, "w", encoding="utf-8", newline="\n") as f:
+                f.write(c10)
+            print("  [OK] osfmk/kern/startup.c: startup subsystem visual trace installed")
+        else:
+            print("  [WARN] t_startup not found in startup.c")
 
     print("Cortex-A73 patches successfully applied!")
 
