@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import os, sys
+import os, sys, re
 
 def main():
     if len(sys.argv) < 2:
@@ -1015,19 +1015,63 @@ loader_return(void)
 \t\tcur->func(cur->arg);"""
         r_startup = """\t\tstartup_phase = cur->subsystem - 1;
 \t\tkernel_startup_log(cur->subsystem);
-\t\t/* hakios: trace startup subsystem */
+\t\t/* hakios: visual progress ladder for startup subsystem */
 \t\t{
 \t\t\textern void hk_draw_band(uint32_t color, uint32_t row_start, uint32_t row_count);
-\t\t\thk_draw_band(0x00FFD700, 164 + (cur->subsystem & 3), 1);
+\t\t\t/* Draw 2-pixel band in Lime Green (0x0000FF00) when subsystem starts */
+\t\t\thk_draw_band(0x0000FF00, 188 + ((cur->subsystem & 0x3f) * 2), 2);
 \t\t}
-\t\tcur->func(cur->arg);"""
+\t\tcur->func(cur->arg);
+\t\t{
+\t\t\textern void hk_draw_band(uint32_t color, uint32_t row_start, uint32_t row_count);
+\t\t\t/* Turn Cyan (0x0000FFFF) when subsystem completes successfully */
+\t\t\thk_draw_band(0x0000FFFF, 188 + ((cur->subsystem & 0x3f) * 2), 2);
+\t\t}"""
         if t_startup in c10:
             c10 = c10.replace(t_startup, r_startup, 1)
-            with open(p10, "w", encoding="utf-8", newline="\n") as f:
-                f.write(c10)
             print("  [OK] osfmk/kern/startup.c: startup subsystem visual trace installed")
         else:
             print("  [WARN] t_startup not found in startup.c")
+
+        # Instrument kernel_bootstrap(void) entry
+        m_kb = re.search(r'(void\s+kernel_bootstrap\s*\(\s*void\s*\)\s*\{)', c10)
+        if m_kb:
+            c10 = c10.replace(m_kb.group(0), m_kb.group(0) + """
+\t{
+\t\textern void hk_draw_band(uint32_t color, uint32_t row_start, uint32_t row_count);
+\t\thk_draw_band(0x0000FFFF, 184, 2); /* Cyan band at row 184-185: entered kernel_bootstrap */
+\t}""", 1)
+            print("  [OK] osfmk/kern/startup.c: kernel_bootstrap visual marker installed")
+        else:
+            print("  [WARN] kernel_bootstrap not found in startup.c")
+
+        # Instrument kernel_bootstrap_thread(void) entry
+        m_kbt = re.search(r'(void\s+kernel_bootstrap_thread\s*\(\s*void\s*\)\s*\{)', c10)
+        if m_kbt:
+            c10 = c10.replace(m_kbt.group(0), m_kbt.group(0) + """
+\t{
+\t\textern void hk_draw_band(uint32_t color, uint32_t row_start, uint32_t row_count);
+\t\thk_draw_band(0x00FF1493, 186, 2); /* Hot Pink band at row 186-187: entered kernel_bootstrap_thread */
+\t}""", 1)
+            print("  [OK] osfmk/kern/startup.c: kernel_bootstrap_thread visual marker installed")
+        else:
+            print("  [WARN] kernel_bootstrap_thread not found in startup.c")
+
+        # Instrument kernel_bootstrap_log
+        m_log = re.search(r'(kernel_bootstrap_log\s*\(\s*const\s+char\s*\*\s*\w+\s*\)\s*\{)', c10)
+        if m_log:
+            c10 = c10.replace(m_log.group(0), m_log.group(0) + """
+\t{
+\t\textern void hk_draw_band(uint32_t color, uint32_t row_start, uint32_t row_count);
+\t\tstatic uint32_t hk_bstep = 0;
+\t\thk_draw_band(0x00FF8C00, 240 + ((hk_bstep++ & 0x3f) * 2), 2); /* Dark Orange line for each milestone */
+\t}""", 1)
+            print("  [OK] osfmk/kern/startup.c: kernel_bootstrap_log visual milestone ladder installed")
+        else:
+            print("  [WARN] kernel_bootstrap_log not found in startup.c")
+
+        with open(p10, "w", encoding="utf-8", newline="\n") as f:
+            f.write(c10)
 
 
     # 11. osfmk/ipc/ipc_policy.c (bypass validation panic on generic ARM bring-up)

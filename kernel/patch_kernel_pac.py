@@ -107,6 +107,14 @@ def decode_and_patch(i):
         stur = (i & ~0x3fc00000) | 0x38000000
         return stur, 'stlur'
 
+    # 12. Apple PAC failure assertion trap: BRK #0xc470 .. #0xc47f (e.g. 0xd4388e20 = brk #0xc471)
+    # Clang emits software PAC checks (eor x16, x30, x30, lsl #1; tbz x16, #62; brk #0xc471).
+    # Since Cortex-A73 has no PAC keys, neutralizing BRK #0xc47x to NOP prevents software PAC traps.
+    if (i & 0xffe0001f) == 0xd4200000:
+        imm16 = (i >> 5) & 0xffff
+        if 0xc470 <= imm16 <= 0xc47f:
+            return A64_NOP, 'brk_pac_fail'
+
     return None, None
 
 def patch_kernel(kernel_path):
