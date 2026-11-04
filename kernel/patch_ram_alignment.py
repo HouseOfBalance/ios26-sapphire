@@ -9,15 +9,13 @@ Ensures:
    high-bit truncation and assertion failures before handoff to pmap_bootstrap()
    and initialize_ram_ranges().
 
-2. In osfmk/arm/pmap/pmap.c:initialize_ram_ranges():
-   first and end are strictly aligned to 16KB PAGE_SIZE:
-     first = (first_avail + PAGE_MASK) & ~(pmap_paddr_t)PAGE_MASK;
-     end   = avail_end & ~(pmap_paddr_t)PAGE_MASK;
-   and first_avail / avail_end are synchronized, guaranteeing:
-     assert(first == (first & ~PAGE_MASK));
-     assert(end == (end & ~PAGE_MASK));
-     avail_page_count = atop(end - first);
-   calculate the exact page span without truncating or failing asserts.
+2. In osfmk/arm/pmap/pmap.c:initialize_ram_ranges() & pmap_free_pages_span():
+   - Fail-safe VA to PA normalization: if first_avail >= 0xfffffff000000000ULL,
+     translates via ml_static_vtop() and paints red band at row 284.
+   - Enforces 16KB alignment without panicking assertions.
+   - Clamps invalid ranges (first < gPhysBase || end <= first) to prevent underflow.
+   - Instruments pmap_free_pages_span() with visual diagnostic bands (rows 276, 280, 284, 288, 292, 294).
+   - Eliminates panicking asserts in pmap_next_page().
 """
 
 import os
@@ -108,56 +106,107 @@ def patch_pmap(xnu_dir):
     rel_path = os.path.relpath(target_path, xnu_dir).replace("\\", "/")
 
     # Check if already patched
-    if "/* hakios: strictly align first and end to 16KB PAGE_SIZE */" in content:
-        print(f"  [ALREADY PATCHED] {rel_path}: initialize_ram_ranges 16KB alignment already present")
+    if "/* hakios/claude: normalize first_avail if passed as kernel VA */" in content:
+        print(f"  [ALREADY PATCHED] {rel_path}: initialize_ram_ranges fail-safe patch already present")
         return True
 
     pattern = re.compile(
-        r'(static\s+void\s+initialize_ram_ranges\s*\(\s*void\s*\)\s*\{[ \t]*\r?\n)'
-        r'([ \t]*pmap_paddr_t\s+first\s*=\s*first_avail\s*;\r?\n)'
-        r'([ \t]*pmap_paddr_t\s+end\s*=\s*avail_end\s*;)'
+        r'static\s+void\s+initialize_ram_ranges\s*\(\s*void\s*\)\s*\{[\s\S]*?'
+        r'boolean_t\s+pmap_next_page\s*\(\s*ppnum_t\s*\*pnum\s*\)\s*\{[\s\S]*?'
+        r'return\s+FALSE;\s*\n\}',
+        re.MULTILINE
     )
 
-    replacement = (
-        r'\1\t/* hakios: strictly align first and end to 16KB PAGE_SIZE */\n'
-        r'\tpmap_paddr_t first = (first_avail + PAGE_MASK) & ~(pmap_paddr_t)PAGE_MASK;\n'
-        r'\tpmap_paddr_t end   = avail_end & ~(pmap_paddr_t)PAGE_MASK;\n'
-        r'\tfirst_avail = first;\n'
-        r'\tavail_end   = end;'
-    )
+    replacement = """static void
+initialize_ram_ranges(void)
+{
+	extern void hk_draw_band(uint32_t color, uint32_t row_start, uint32_t row_count);
+	hk_draw_band(0x00FFFFFF, 280, 2); /* White: entered initialize_ram_ranges */
+
+	pmap_paddr_t first = first_avail;
+	pmap_paddr_t end   = avail_end;
+
+	/* hakios/claude: normalize first_avail if passed as kernel VA */
+	if (first >= 0xfffffff000000000ULL) {
+		first = ml_static_vtop((vm_offset_t)first);
+		hk_draw_band(0x00FF0000, 284, 2); /* Red: was a kernel VA! */
+	}
+
+	first = (first + PAGE_MASK) & ~(pmap_paddr_t)PAGE_MASK;
+	end  &= ~(pmap_paddr_t)PAGE_MASK;
+
+	if (first < gPhysBase || end <= first) {
+		hk_draw_band(0x00FF0000, 288, 2); /* Red: bad range */
+		first = end;                      /* clamp: zero pages, no underflow */
+	}
+
+	first_avail      = first;
+	avail_end        = end;
+	avail_page_count = atop(end - first);
+	need_ram_ranges_init = false;
+
+	hk_draw_band(0x0000FF00, 292, 2); /* Lime: initialize_ram_ranges done */
+}
+
+unsigned int
+pmap_free_pages(
+	void)
+{
+	if (need_ram_ranges_init) {
+		initialize_ram_ranges();
+	}
+	return avail_page_count;
+}
+
+unsigned int
+pmap_free_pages_span(
+	void)
+{
+	extern void hk_draw_band(uint32_t color, uint32_t row_start, uint32_t row_count);
+	hk_draw_band(0x0000FFFF, 276, 2); /* Cyan: entered pmap_free_pages_span */
+
+	if (need_ram_ranges_init) {
+		initialize_ram_ranges();
+	}
+
+	hk_draw_band(0x00FFD700, 294, 2); /* Gold: span computed */
+	return (unsigned int)atop(avail_end - first_avail);
+}
+
+
+boolean_t
+pmap_next_page_hi(
+	ppnum_t            * pnum,
+	__unused boolean_t might_free)
+{
+	return pmap_next_page(pnum);
+}
+
+
+boolean_t
+pmap_next_page(
+	ppnum_t *pnum)
+{
+	if (need_ram_ranges_init) {
+		initialize_ram_ranges();
+	}
+
+	if (first_avail != avail_end) {
+		*pnum = (ppnum_t)atop(first_avail);
+		first_avail += PAGE_SIZE;
+		if (avail_page_count > 0) {
+			--avail_page_count;
+		}
+		return TRUE;
+	}
+	return FALSE;
+}"""
 
     if pattern.search(content):
-        content = pattern.sub(replacement, content, count=1)
+        content = pattern.sub(lambda m: replacement, content, count=1)
         with open(target_path, "w", encoding="utf-8", newline="\n") as f:
             f.write(content)
-        print(f"  [OK] {rel_path}: patched initialize_ram_ranges 16KB alignment")
-        return True
-
-    # Fallback string replacement
-    target_exact = (
-        "static void\n"
-        "initialize_ram_ranges(void)\n"
-        "{\n"
-        "\tpmap_paddr_t first = first_avail;\n"
-        "\tpmap_paddr_t end = avail_end;"
-    )
-    repl_exact = (
-        "static void\n"
-        "initialize_ram_ranges(void)\n"
-        "{\n"
-        "\t/* hakios: strictly align first and end to 16KB PAGE_SIZE */\n"
-        "\tpmap_paddr_t first = (first_avail + PAGE_MASK) & ~(pmap_paddr_t)PAGE_MASK;\n"
-        "\tpmap_paddr_t end   = avail_end & ~(pmap_paddr_t)PAGE_MASK;\n"
-        "\tfirst_avail = first;\n"
-        "\tavail_end   = end;"
-    )
-
-    norm_content = content.replace("\r\n", "\n")
-    if target_exact in norm_content:
-        norm_content = norm_content.replace(target_exact, repl_exact, 1)
-        with open(target_path, "w", encoding="utf-8", newline="\n") as f:
-            f.write(norm_content)
-        print(f"  [OK] {rel_path}: patched initialize_ram_ranges 16KB alignment (exact fallback)")
+        print(f"  [OK] {rel_path}: patched initialize_ram_ranges & pmap_free_pages_span fail-safe")
         return True
 
     print(f"  [ERROR] {rel_path}: initialize_ram_ranges target block not found")
