@@ -342,6 +342,8 @@ def main():
 \t\t}
 \t}"""
         sleh_hook_new = """\textern void hk_draw_band(uint32_t color, uint32_t row_start, uint32_t row_count);
+\textern void hk_render_screen_asm(const char *str, uint32_t len, const unsigned char *font);
+\textern const unsigned char iso_font[];
 \tif (class == 0) {
 \t\tif (pac_patch_handle_trap(state, is_user)) {
 \t\t\treturn;
@@ -351,9 +353,62 @@ def main():
 \t\t}
 \t\tif (!is_user) {
 \t\t\thk_draw_band(0x00FF0000, 200, 10); /* Red band: unhandled kernel UNDEF */
+\t\t\tstatic char umsg[512];
+\t\t\tuint64_t pc = (uint64_t)get_saved_state_pc(state);
+\t\t\tuint32_t insn = (pc >= 0xffff000000000000ULL) ? *(volatile uint32_t *)pc : 0;
+\t\t\tint n = snprintf(umsg, sizeof(umsg),
+\t\t\t\t"=== HAKIOS KERNEL UNDEF ===\\n"
+\t\t\t\t"pc  : 0x%llx\\n"
+\t\t\t\t"insn: 0x%08x\\n"
+\t\t\t\t"lr  : 0x%llx\\n"
+\t\t\t\t"sp  : 0x%llx\\n"
+\t\t\t\t"esr : 0x%llx\\n"
+\t\t\t\t"far : 0x%lx\\n"
+\t\t\t\t"x0  : 0x%llx\\n"
+\t\t\t\t"x1  : 0x%llx\\n",
+\t\t\t\tpc, insn,
+\t\t\t\t(uint64_t)get_saved_state_lr(state),
+\t\t\t\t(uint64_t)get_saved_state_sp(state),
+\t\t\t\tesr, (unsigned long)far,
+\t\t\t\t(uint64_t)get_saved_state_reg(state, 0),
+\t\t\t\t(uint64_t)get_saved_state_reg(state, 1));
+\t\t\tfor (uintptr_t p = (uintptr_t)umsg; p < (uintptr_t)umsg + n + 64; p += 64) {
+\t\t\t\t__asm__ volatile ("dc cvac, %0" : : "r" (p));
+\t\t\t}
+\t\t\t__asm__ volatile ("dsb sy");
+\t\t\thk_render_screen_asm(umsg, n, iso_font);
+\t\t\thk_draw_band(0x0000FF00, 230, 10);
+\t\t\tfor (;;) {
+\t\t\t\t__asm__ volatile ("wfe");
+\t\t\t}
 \t\t}
 \t} else if (!is_user) {
 \t\thk_draw_band(0x00FF00FF, 210, 10); /* Magenta band: kernel fault/panic */
+\t\tstatic char fmsg[512];
+\t\tint n = snprintf(fmsg, sizeof(fmsg),
+\t\t\t"=== HAKIOS KERNEL FAULT ===\\n"
+\t\t\t"class: 0x%x\\n"
+\t\t\t"pc   : 0x%llx\\n"
+\t\t\t"lr   : 0x%llx\\n"
+\t\t\t"sp   : 0x%llx\\n"
+\t\t\t"esr  : 0x%llx\\n"
+\t\t\t"far  : 0x%lx\\n"
+\t\t\t"x0   : 0x%llx\\n",
+\t\t\t(unsigned int)class,
+\t\t\t(uint64_t)get_saved_state_pc(state),
+\t\t\t(uint64_t)get_saved_state_lr(state),
+\t\t\t(uint64_t)get_saved_state_sp(state),
+\t\t\tesr, (unsigned long)far,
+\t\t\t(uint64_t)get_saved_state_reg(state, 0));
+\t\tfor (uintptr_t p = (uintptr_t)fmsg; p < (uintptr_t)fmsg + n + 64; p += 64) {
+\t\t\t__asm__ volatile ("dc cvac, %0" : : "r" (p));
+\t\t\t}
+\t\t__asm__ volatile ("dsb sy");
+\t\thk_render_screen_asm(fmsg, n, iso_font);
+\t\thk_draw_band(0x0000FF00, 230, 10);
+\t\tfor (;;) {
+\t\t\t__asm__ volatile ("wfe");
+\t\t}
 \t}"""
         if sleh_hook_old in c_norm:
             c_norm = c_norm.replace(sleh_hook_old, sleh_hook_new)
@@ -1005,6 +1060,39 @@ loader_return(void)
             print("  [OK] osfmk/prng/prng_random.c: relaxed seed length panic to warning")
         else:
             print("  [WARN] Expected %u seed bytes target not found in prng_random.c")
+
+# 13. osfmk/kern/debug.c (on-screen panic dump directly from panic_trap_to_debugger)
+    p13 = os.path.join(src, "osfmk", "kern", "debug.c")
+    if os.path.isfile(p13):
+        with open(p13, "r", encoding="utf-8", errors="replace") as f:
+            c13 = f.read().replace("\r\n", "\n")
+        target_dbg = 'loader_log_line("\\n== PANIC: ");\n\t\tloader_log_line(rbuf);\n\t\tloader_log_line(" ==\\n");\n\t}'
+        replace_dbg = '''loader_log_line("\\n== PANIC: ");
+\t\tloader_log_line(rbuf);
+\t\tloader_log_line(" ==\\n");
+\t\t/* hakios: on-screen panic dump directly to display */
+\t\t{
+\t\t\textern void hk_render_screen_asm(const char *, uint32_t, const unsigned char *);
+\t\t\textern const unsigned char iso_font[];
+\t\t\tstatic char hk_pmsg[400];
+\t\t\tint pn = snprintf(hk_pmsg, sizeof(hk_pmsg), "=== HAKIOS KERNEL PANIC ===\\n%s\\n", rbuf);
+\t\t\tfor (uintptr_t p = (uintptr_t)hk_pmsg; p < (uintptr_t)hk_pmsg + pn + 64; p += 64) {
+\t\t\t\t__asm__ volatile ("dc cvac, %0" : : "r" (p));
+\t\t\t}
+\t\t\t__asm__ volatile ("dsb sy");
+\t\t\thk_render_screen_asm(hk_pmsg, pn, iso_font);
+\t\t\tfor (;;) {
+\t\t\t\t__asm__ volatile ("wfe");
+\t\t\t}
+\t\t}
+\t}'''
+        if target_dbg in c13:
+            c13 = c13.replace(target_dbg, replace_dbg, 1)
+            with open(p13, "w", encoding="utf-8", newline="\n") as f:
+                f.write(c13)
+            print("  [OK] osfmk/kern/debug.c: on-screen panic dump installed in panic_trap_to_debugger")
+        else:
+            print("  [WARN] target_dbg not found in debug.c")
 
     print("Cortex-A73 patches successfully applied!")
 
