@@ -63,7 +63,8 @@ typedef struct vm_map {
 } *vm_map_t;
 
 extern unsigned long gVirtBase, gPhysBase;
-#define PHYSTOKV(pa) ((uint64_t)(pa) + (gVirtBase - gPhysBase))
+extern uint64_t phystokv(uint64_t pa);
+#define PHYSTOKV(pa) ((gVirtBase != 0) ? phystokv((uint64_t)(pa)) : (uint64_t)(pa))
 
 /* Register 31 Safety Helpers */
 static inline uint64_t lse_get_reg(arm_saved_state_t *state, unsigned int reg) {
@@ -140,17 +141,21 @@ static bool lse_emulate_atomic(arm_saved_state_t *state, const lse_decoded_t *de
     uint64_t rs_val = lse_get_reg(state, dec->rs);
     uint64_t rt_val = lse_get_reg(state, dec->rt);
 
-    uint64_t pa = 0;
+    void *kptr = NULL;
     if (is_user) {
         task_t t = (task_t)current_task();
         if (!t || !t->map || !t->map->pmap) return false;
-        pa = pmap_find_phys(t->map->pmap, addr);
+        uint64_t pa = pmap_find_phys(t->map->pmap, addr);
+        if (!pa) return false;
+        kptr = (void *)PHYSTOKV(pa);
     } else {
-        pa = kvtophys(addr);
+        /*
+         * In kernel mode (!is_user), addr is already a valid, writable kernel VA
+         * (whether in __DATA, stack, physical aperture avail_va, or zone map).
+         */
+        if (!addr) return false;
+        kptr = (void *)addr;
     }
-    if (!pa) return false;
-
-    void *kptr = (void *)PHYSTOKV(pa);
 
     if (dec->type == LSE_TYPE_CAS) {
         if (dec->size == LSE_SIZE_64) {
@@ -683,8 +688,13 @@ bool lse_patch_handle_trap(arm_saved_state_t *state, bool is_user) {
         return false;
     }
 
-    /* Attempt branch island trampoline installation */
-    if (lse_try_patch_island(elr, &dec, is_user)) {
+    /*
+     * Attempt branch island trampoline installation ONLY for EL0 userland.
+     * In kernel mode (!is_user), __TEXT_EXEC is Read-Only (AP=RO) after arm_vm_init()
+     * and __DATA/__bss (lse_kernel_pool) is marked PXN=1 (Privileged Execute-Never),
+     * so kernel LSE instructions must be emulated directly via lse_emulate_atomic().
+     */
+    if (is_user && lse_try_patch_island(elr, &dec, is_user)) {
         /* Island installed! Emulate first trap atomically via direct LL/SC */
         lse_emulate_atomic(state, &dec, is_user);
         set_saved_state_pc(state, elr + 4);

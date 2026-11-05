@@ -352,60 +352,76 @@ def main():
 \t\t\treturn;
 \t\t}
 \t\tif (!is_user) {
-\t\t\thk_draw_band(0x00FF0000, 200, 10); /* Red band: unhandled kernel UNDEF */
-\t\t\tstatic char umsg[512];
+\t\t\thk_draw_band(0x00FF0000, 680, 14); /* Thick Red band at Row 680: unhandled kernel UNDEF */
+\t\t\tstatic char umsg[384];
+\t\t\tint pos = 0;
+\t\t\tconst char *hdr = "=== HAKIOS KERNEL UNDEF ===\\n";
+\t\t\twhile (*hdr) umsg[pos++] = *hdr++;
 \t\t\tuint64_t pc = (uint64_t)get_saved_state_pc(state);
-\t\t\tuint32_t insn = (pc >= 0xffff000000000000ULL) ? *(volatile uint32_t *)pc : 0;
-\t\t\tint n = snprintf(umsg, sizeof(umsg),
-\t\t\t\t"=== HAKIOS KERNEL UNDEF ===\\n"
-\t\t\t\t"pc  : 0x%llx\\n"
-\t\t\t\t"insn: 0x%08x\\n"
-\t\t\t\t"lr  : 0x%llx\\n"
-\t\t\t\t"sp  : 0x%llx\\n"
-\t\t\t\t"esr : 0x%llx\\n"
-\t\t\t\t"far : 0x%lx\\n"
-\t\t\t\t"x0  : 0x%llx\\n"
-\t\t\t\t"x1  : 0x%llx\\n",
-\t\t\t\tpc, insn,
+\t\t\tuint64_t vals[7] = {
+\t\t\t\tpc,
+\t\t\t\t(pc >= 0xffff000000000000ULL) ? (uint64_t)*(volatile uint32_t *)pc : 0ULL,
 \t\t\t\t(uint64_t)get_saved_state_lr(state),
 \t\t\t\t(uint64_t)get_saved_state_sp(state),
-\t\t\t\tesr, (unsigned long)far,
-\t\t\t\t(uint64_t)get_saved_state_reg(state, 0),
-\t\t\t\t(uint64_t)get_saved_state_reg(state, 1));
-\t\t\tfor (uintptr_t p = (uintptr_t)umsg; p < (uintptr_t)umsg + n + 64; p += 64) {
+\t\t\t\t(uint64_t)esr,
+\t\t\t\t(uint64_t)far,
+\t\t\t\t(uint64_t)get_saved_state_reg(state, 0)
+\t\t\t};
+\t\t\tconst char *names[7] = { "pc  : 0x", "insn: 0x", "lr  : 0x", "sp  : 0x", "esr : 0x", "far : 0x", "x0  : 0x" };
+\t\t\tfor (int k = 0; k < 7; k++) {
+\t\t\t\tconst char *nm = names[k];
+\t\t\t\twhile (*nm) umsg[pos++] = *nm++;
+\t\t\t\tuint64_t v = vals[k];
+\t\t\t\tfor (int sh = 60; sh >= 0; sh -= 4) {
+\t\t\t\t\tuint32_t d = (uint32_t)((v >> sh) & 0xf);
+\t\t\t\t\tumsg[pos++] = (char)(d < 10 ? ('0' + d) : ('a' + d - 10));
+\t\t\t\t}
+\t\t\t\tumsg[pos++] = '\\n';
+\t\t\t}
+\t\t\tumsg[pos] = '\\0';
+\t\t\tfor (uintptr_t p = (uintptr_t)umsg; p < (uintptr_t)umsg + pos + 64; p += 64) {
 \t\t\t\t__asm__ volatile ("dc cvac, %0" : : "r" (p));
 \t\t\t}
 \t\t\t__asm__ volatile ("dsb sy");
-\t\t\thk_render_screen_asm(umsg, n, iso_font);
-\t\t\thk_draw_band(0x0000FF00, 230, 10);
+\t\t\thk_render_screen_asm(umsg, pos, iso_font);
+\t\t\thk_draw_band(0x0000FF00, 700, 10);
 \t\t\tfor (;;) {
 \t\t\t\t__asm__ volatile ("wfe");
 \t\t\t}
 \t\t}
 \t} else if (!is_user) {
-\t\thk_draw_band(0x00FF00FF, 210, 10); /* Magenta band: kernel fault/panic */
-\t\tstatic char fmsg[512];
-\t\tint n = snprintf(fmsg, sizeof(fmsg),
-\t\t\t"=== HAKIOS KERNEL FAULT ===\\n"
-\t\t\t"class: 0x%x\\n"
-\t\t\t"pc   : 0x%llx\\n"
-\t\t\t"lr   : 0x%llx\\n"
-\t\t\t"sp   : 0x%llx\\n"
-\t\t\t"esr  : 0x%llx\\n"
-\t\t\t"far  : 0x%lx\\n"
-\t\t\t"x0   : 0x%llx\\n",
-\t\t\t(unsigned int)class,
+\t\thk_draw_band(0x00FF00FF, 680, 14); /* Thick Magenta band at Row 680: kernel fault/abort */
+\t\tstatic char fmsg[384];
+\t\tint pos = 0;
+\t\tconst char *hdr = "=== HAKIOS KERNEL FAULT ===\\n";
+\t\twhile (*hdr) fmsg[pos++] = *hdr++;
+\t\tuint64_t vals[7] = {
+\t\t\t(uint64_t)class,
 \t\t\t(uint64_t)get_saved_state_pc(state),
 \t\t\t(uint64_t)get_saved_state_lr(state),
 \t\t\t(uint64_t)get_saved_state_sp(state),
-\t\t\tesr, (unsigned long)far,
-\t\t\t(uint64_t)get_saved_state_reg(state, 0));
-\t\tfor (uintptr_t p = (uintptr_t)fmsg; p < (uintptr_t)fmsg + n + 64; p += 64) {
-\t\t\t__asm__ volatile ("dc cvac, %0" : : "r" (p));
+\t\t\t(uint64_t)esr,
+\t\t\t(uint64_t)far,
+\t\t\t(uint64_t)get_saved_state_reg(state, 0)
+\t\t};
+\t\tconst char *names[7] = { "cls : 0x", "pc  : 0x", "lr  : 0x", "sp  : 0x", "esr : 0x", "far : 0x", "x0  : 0x" };
+\t\tfor (int k = 0; k < 7; k++) {
+\t\t\tconst char *nm = names[k];
+\t\t\twhile (*nm) fmsg[pos++] = *nm++;
+\t\t\tuint64_t v = vals[k];
+\t\t\tfor (int sh = 60; sh >= 0; sh -= 4) {
+\t\t\t\tuint32_t d = (uint32_t)((v >> sh) & 0xf);
+\t\t\t\tfmsg[pos++] = (char)(d < 10 ? ('0' + d) : ('a' + d - 10));
 \t\t\t}
+\t\t\tfmsg[pos++] = '\\n';
+\t\t}
+\t\tfmsg[pos] = '\\0';
+\t\tfor (uintptr_t p = (uintptr_t)fmsg; p < (uintptr_t)fmsg + pos + 64; p += 64) {
+\t\t\t__asm__ volatile ("dc cvac, %0" : : "r" (p));
+\t\t}
 \t\t__asm__ volatile ("dsb sy");
-\t\thk_render_screen_asm(fmsg, n, iso_font);
-\t\thk_draw_band(0x0000FF00, 230, 10);
+\t\thk_render_screen_asm(fmsg, pos, iso_font);
+\t\thk_draw_band(0x0000FF00, 700, 10);
 \t\tfor (;;) {
 \t\t\t__asm__ volatile ("wfe");
 \t\t}
@@ -1359,12 +1375,12 @@ kernel_debug_string_early(const char *message)
 
         # Page init loop in pmap_startup
         t16_loop = '\tvm_free_page_lock();\n\n\tfor (uint32_t i = 0; i < npages && pmap_next_page(&phys_page); i++) {'
-        r16_loop = """\t/* hakios/claude: Thick pre-lock and post-lock diagnostic bands (lock bypassed on early 1-core boot) */
+        r16_loop = """\t/* hakios/claude: Thick pre-lock and post-lock diagnostic bands */
 \t{
 \t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
 \t\thk_draw_band(0x00FFFF00, 296, 6); /* Vivid Yellow: PRE-LOCK */
-\t\t/* vm_free_page_lock(); -- Safely bypassed: 1 core, interrupts masked, no contention */
-\t\thk_draw_band(0x00FF00FF, 304, 6); /* Vivid Magenta: POST-LOCK (bypassed) */
+\t\tvm_free_page_lock();
+\t\thk_draw_band(0x00FF00FF, 304, 6); /* Vivid Magenta: POST-LOCK */
 \t}
 \tfor (uint32_t i = 0; i < npages && pmap_next_page(&phys_page); i++) {
 \t\tif (i == 0) {
@@ -1378,22 +1394,21 @@ kernel_debug_string_early(const char *message)
         if t16_loop in c16:
             c16 = c16.replace(t16_loop, r16_loop, 1)
             print("  [OK] osfmk/vm/vm_resident.c: page init loop markers installed")
-        else:
-            print("  [WARN] t16_loop not found in vm_resident.c")
-
-        # NOP unlock paired with lock bypass in pmap_startup
-        t16_unlock = '\tvm_free_page_unlock();'
-        r16_unlock = """\t/* hakios/claude: NOP unlock paired with NOP lock in early pmap_startup */
-\t/* vm_free_page_unlock(); */
+            # Anchor unlock replacement specifically to the unlock following r16_loop in pmap_startup
+            idx_loop = c16.find(r16_loop)
+            t16_unlock = '\tvm_free_page_unlock();'
+            r16_unlock = """\tvm_free_page_unlock();
 \t{
 \t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
-\t\thk_draw_band(0x0000FF00, 314, 4); /* Lime: page loop & unlock complete */
+\t\thk_draw_band(0x0000FF00, 326, 6); /* Lime: page loop & unlock complete */
 \t}"""
-        if t16_unlock in c16:
-            c16 = c16.replace(t16_unlock, r16_unlock, 1)
-            print("  [OK] osfmk/vm/vm_resident.c: page init unlock marker installed")
+            if idx_loop != -1 and t16_unlock in c16[idx_loop:]:
+                c16 = c16[:idx_loop] + c16[idx_loop:].replace(t16_unlock, r16_unlock, 1)
+                print("  [OK] osfmk/vm/vm_resident.c: page init unlock marker installed (anchored)")
+            else:
+                print("  [WARN] t16_unlock not found after r16_loop in vm_resident.c")
         else:
-            print("  [WARN] t16_unlock not found in vm_resident.c")
+            print("  [WARN] t16_loop not found in vm_resident.c")
 
         with open(p16, "w", encoding="utf-8", newline="\n") as f:
             f.write(c16)

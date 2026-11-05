@@ -42,7 +42,8 @@ extern int copyin(const user_addr_t user_addr, void *kernel_addr, vm_size_t nbyt
 #include "pac_decode.h"
 
 extern unsigned long gVirtBase, gPhysBase;
-#define PHYSTOKV(pa) ((uint64_t)(pa) + (gVirtBase - gPhysBase))
+extern uint64_t phystokv(uint64_t pa);
+#define PHYSTOKV(pa) ((gVirtBase != 0) ? phystokv((uint64_t)(pa)) : (uint64_t)(pa))
 
 extern uint64_t kvtophys(vm_offset_t va);
 extern void loader_log_line(const char *line);
@@ -53,15 +54,24 @@ static uint64_t pac_emul_count = 0;
 static uint64_t pac_smp_races = 0;
 
 /*
- * Ghi đè mã máy tại Physical Address và đồng bộ Cache toàn bộ Core
+ * Ghi đè mã máy tại Physical Address và đồng bộ Cache toàn bộ Core.
+ * Trả về false nếu trang đích là Read-Only (ví dụ __TEXT_EXEC sau arm_vm_init).
  */
-static void
+static bool
 patch_memory_phys(uint64_t pa, uint64_t va, uint32_t new_insn)
 {
 	volatile uint32_t *p = (gVirtBase != 0) ? (volatile uint32_t *)PHYSTOKV(pa) : (volatile uint32_t *)va;
+	uintptr_t p_va = (uintptr_t)p;
+	uint64_t par, daif;
+
+	__asm__ volatile("mrs %0, daif\n msr daifset, #7\n at s1e1w, %1\n isb\n" : "=&r"(daif) : "r"(p_va) : "memory");
+	__asm__ volatile("mrs %0, par_el1\n msr daif, %1\n" : "=r"(par) : "r"(daif));
+	if (par & 1ULL) {
+		return false;
+	}
+
 	*p = new_insn;
 
-	uintptr_t p_va = (uintptr_t)p;
 	__asm__ volatile (
 		"dc cvau, %0 \n"
 		"dc cvau, %1 \n"
@@ -71,6 +81,7 @@ patch_memory_phys(uint64_t pa, uint64_t va, uint32_t new_insn)
 		"isb         \n"
 		:: "r"(p_va), "r"(va) : "memory"
 	);
+	return true;
 }
 
 /*
@@ -176,14 +187,58 @@ pac_patch_handle_trap(arm_saved_state_t *state, bool is_user)
 
 	switch (act) {
 	case PAC_PATCH:
-		/* Ghi đè mã máy tại RAM qua Physical Mapping */
-		patch_memory_phys(pa, pc, res.new_insn);
-		pac_patch_count++;
+		/* Ghi đè mã máy tại RAM qua Physical Mapping (nếu trang cho phép ghi) */
+		if (patch_memory_phys(pa, pc, res.new_insn)) {
+			pac_patch_count++;
+			/*
+			 * KHÔNG tăng PC: CPU khi eret sẽ thực thi lại chính địa chỉ PC này,
+			 * nhưng lúc này lệnh đã trở thành NOP, RET, BLR, LDR... gốc ARMv8.0!
+			 */
+			return true;
+		}
 		/*
-		 * KHÔNG tăng PC: CPU khi eret sẽ thực thi lại chính địa chỉ PC này,
-		 * nhưng lúc này lệnh đã trở thành NOP, RET, BLR, LDR... gốc ARMv8.0!
+		 * Trang đích là Read-Only (ví dụ __TEXT_EXEC sau arm_vm_init):
+		 * Emulate trực tiếp lệnh thay thế res.new_insn để không bị Permission Fault!
 		 */
-		return true;
+		if (res.new_insn == A64_NOP) {
+			set_saved_state_pc(state, pc + 4);
+			pac_emul_count++;
+			return true;
+		}
+		if (res.new_insn == A64_RET) {
+			set_saved_state_pc(state, (uint64_t)get_saved_state_reg(state, 30));
+			pac_emul_count++;
+			return true;
+		}
+		if ((res.new_insn & 0xfffffc1fu) == A64_BR_BASE) {
+			unsigned int rn = (res.new_insn >> 5) & 31;
+			set_saved_state_pc(state, (uint64_t)get_saved_state_reg(state, rn));
+			pac_emul_count++;
+			return true;
+		}
+		if ((res.new_insn & 0xfffffc1fu) == A64_BLR_BASE) {
+			unsigned int rn = (res.new_insn >> 5) & 31;
+			uint64_t target = (uint64_t)get_saved_state_reg(state, rn);
+			set_saved_state_reg(state, 30, pc + 4);
+			set_saved_state_pc(state, target);
+			pac_emul_count++;
+			return true;
+		}
+		if ((res.new_insn & 0xffffffe0u) == A64_MOV_X_XZR) {
+			unsigned int rd = res.new_insn & 31;
+			if (rd != 31) set_saved_state_reg(state, rd, 0);
+			set_saved_state_pc(state, pc + 4);
+			pac_emul_count++;
+			return true;
+		}
+		if ((res.new_insn & 0xffffffe0u) == 0xd2a00800u) {
+			unsigned int rd = res.new_insn & 31;
+			if (rd != 31) set_saved_state_reg(state, rd, 0x400000ULL);
+			set_saved_state_pc(state, pc + 4);
+			pac_emul_count++;
+			return true;
+		}
+		return false;
 
 	case PAC_EMULATE_LDRA:
 		if (!emulate_ldra(state, &res, is_user)) {

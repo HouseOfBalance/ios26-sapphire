@@ -91,13 +91,13 @@ static inline bool lse_decode(uint32_t inst, lse_decoded_t *out) {
 
     /*
      * 3. Atomic memory operations (LDADD, LDCLR, LDEOR, LDSET, SWP, LDSMAX, LDSMIN, LDUMAX, LDUMIN)
-     * Pattern: size[31:30] 111000 0 A R Rs[20:16] o3[15] opc[14:12] 00 Rn[9:5] Rt[4:0]
-     * Bits [29:23] == 0b1110000 (0x38 << 24, bit 23 = 0)
+     * Pattern: size[31:30] 111000 A[23] R[22] 1[21] Rs[20:16] o3[15] opc[14:12] 00 Rn[9:5] Rt[4:0]
+     * Bits [29:24] == 0b111000 (0x38 << 24), Bit 21 == 1 (0x00200000)
      * Bits [11:10] == 0b00
      */
-    if ((inst & 0x3F800C00) == 0x38000000) {
-        out->acquire = (inst & (1U << 22)) != 0;
-        out->release = (inst & (1U << 21)) != 0;
+    if ((inst & 0x3F200C00) == 0x38200000) {
+        out->acquire = (inst & (1U << 23)) != 0;
+        out->release = (inst & (1U << 22)) != 0;
 
         uint32_t o3 = (inst >> 15) & 0x1;
         uint32_t opc = (inst >> 12) & 0x7;
