@@ -1147,10 +1147,18 @@ loader_return(void)
 \t\tloader_log_line(" ==\\n");
 \t\t/* hakios: on-screen panic dump directly to display */
 \t\t{
+\t\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
+\t\t\thk_draw_band(0x00FF0000, 660, 16); /* Thick Bright Red band: kernel panic */
 \t\t\textern void hk_render_screen_asm(const char *, uint32_t, const unsigned char *);
 \t\t\textern const unsigned char iso_font[];
 \t\t\tstatic char hk_pmsg[400];
-\t\t\tint pn = snprintf(hk_pmsg, sizeof(hk_pmsg), "=== HAKIOS KERNEL PANIC ===\\n%s\\n", rbuf);
+\t\t\tint pn = 0;
+\t\t\tconst char *p1 = "=== HAKIOS KERNEL PANIC ===\\n";
+\t\t\twhile (*p1 && pn < 300) hk_pmsg[pn++] = *p1++;
+\t\t\tconst char *p2 = rbuf;
+\t\t\twhile (*p2 && pn < 380) hk_pmsg[pn++] = *p2++;
+\t\t\thk_pmsg[pn++] = '\\n';
+\t\t\thk_pmsg[pn] = 0;
 \t\t\tfor (uintptr_t p = (uintptr_t)hk_pmsg; p < (uintptr_t)hk_pmsg + pn + 64; p += 64) {
 \t\t\t\t__asm__ volatile ("dc cvac, %0" : : "r" (p));
 \t\t\t}
@@ -1174,11 +1182,17 @@ loader_return(void)
 \t\t\t/* hakios: on-screen early panic dump directly to display */
 \t\t\t{
 \t\t\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
-\t\t\t\thk_draw_band(0x00FF0000, 210, 10); /* Bright Red band: early panic */
+\t\t\t\thk_draw_band(0x00FF0000, 660, 16); /* Thick Bright Red band: early panic */
 \t\t\t\textern void hk_render_screen_asm(const char *, uint32_t, const unsigned char *);
 \t\t\t\textern const unsigned char iso_font[];
 \t\t\t\tstatic char hk_epmsg[400];
-\t\t\t\tint epn = snprintf(hk_epmsg, sizeof(hk_epmsg), "=== EARLY PANIC ===\\n%s\\n", buf);
+\t\t\t\tint epn = 0;
+\t\t\t\tconst char *p1 = "=== EARLY PANIC ===\\n";
+\t\t\t\twhile (*p1 && epn < 300) hk_epmsg[epn++] = *p1++;
+\t\t\t\tconst char *p2 = buf;
+\t\t\t\twhile (*p2 && epn < 380) hk_epmsg[epn++] = *p2++;
+\t\t\t\thk_epmsg[epn++] = '\\n';
+\t\t\t\thk_epmsg[epn] = 0;
 \t\t\t\tfor (uintptr_t p = (uintptr_t)hk_epmsg; p < (uintptr_t)hk_epmsg + epn + 64; p += 64) {
 \t\t\t\t\t__asm__ volatile ("dc cvac, %0" : : "r" (p));
 \t\t\t\t}
@@ -1373,7 +1387,7 @@ kernel_debug_string_early(const char *message)
         else:
             print("  [WARN] t16_vmp not found in vm_resident.c")
 
-        # Page init loop in pmap_startup
+        # Page init loop in pmap_startup with fine-grained ladder markers
         t16_loop = '\tvm_free_page_lock();\n\n\tfor (uint32_t i = 0; i < npages && pmap_next_page(&phys_page); i++) {'
         r16_loop = """\t/* hakios/claude: Thick pre-lock and post-lock diagnostic bands */
 \t{
@@ -1385,30 +1399,72 @@ kernel_debug_string_early(const char *message)
 \tfor (uint32_t i = 0; i < npages && pmap_next_page(&phys_page); i++) {
 \t\tif (i == 0) {
 \t\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
-\t\t\thk_draw_band(0x0000BFFF, 312, 6); /* Deep Sky Blue: page loop started */
-\t\t}
-\t\tif (i == (npages >> 1)) {
-\t\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
-\t\t\thk_draw_band(0x001E90FF, 320, 4); /* Dodger Blue: page loop 50% */
+\t\t\thk_draw_band(0x0000BFFF, 312, 4); /* Deep Sky Blue: page loop entered */
 \t\t}"""
         if t16_loop in c16:
             c16 = c16.replace(t16_loop, r16_loop, 1)
             print("  [OK] osfmk/vm/vm_resident.c: page init loop markers installed")
-            # Anchor unlock replacement specifically to the unlock following r16_loop in pmap_startup
-            idx_loop = c16.find(r16_loop)
-            t16_unlock = '\tvm_free_page_unlock();'
-            r16_unlock = """\tvm_free_page_unlock();
+
+        t16_lowglo = '\tvm_pages_first_pnum = phys_page;\n\t\t\tpatch_low_glo_vm_page_info(vm_pages, vm_pages_end,\n\t\t\t    vm_pages_first_pnum);'
+        r16_lowglo = """\tvm_pages_first_pnum = phys_page;
+\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x0000FF00, 316, 4); } /* Lime: first_pnum set */
+\t\t\tpatch_low_glo_vm_page_info(vm_pages, vm_pages_end, vm_pages_first_pnum);
+\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FF00FF, 320, 4); } /* Magenta: low_glo patched */"""
+        if t16_lowglo in c16:
+            c16 = c16.replace(t16_lowglo, r16_lowglo, 1)
+            print("  [OK] osfmk/vm/vm_resident.c: low_glo info markers installed")
+
+        t16_init = '\t++vm_pages_count;\n\t\tvm_page_init(vm_page_get(i), phys_page);'
+        r16_init = """\t++vm_pages_count;
+\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); if (i == 0) hk_draw_band(0x00FFFF00, 324, 4); } /* Yellow: before vm_page_init(0) */
+\t\tvm_page_init(vm_page_get(i), phys_page);
+\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); if (i == 0) hk_draw_band(0x00FF8C00, 328, 4); } /* Orange: after vm_page_init(0) */"""
+        if t16_init in c16:
+            c16 = c16.replace(t16_init, r16_init, 1)
+            print("  [OK] osfmk/vm/vm_resident.c: vm_page_init markers installed")
+
+        t16_rel = '\tif (vm_himemory_mode) {\n\t\t\tvm_page_release_startup(vm_page_get(i));\n\t\t}'
+        r16_rel = """\tif (vm_himemory_mode) {
+\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); if (i == 0) hk_draw_band(0x0000FFFF, 332, 4); } /* Cyan: before vm_page_release_startup(0) */
+\t\t\tvm_page_release_startup(vm_page_get(i));
+\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); if (i == 0) hk_draw_band(0x00ADFF2F, 336, 4); } /* GreenYellow: after vm_page_release_startup(0) */
+\t\t}
+\t\tif (i == 1) {
+\t\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
+\t\t\thk_draw_band(0x00FF1493, 340, 4); /* Deep Pink: iteration 1 reached! */
+\t\t}
+\t\tif (i == (npages >> 1)) {
+\t\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
+\t\t\thk_draw_band(0x001E90FF, 344, 4); /* Dodger Blue: page loop 50% */
+\t\t}"""
+        if t16_rel in c16:
+            c16 = c16.replace(t16_rel, r16_rel, 1)
+            print("  [OK] osfmk/vm/vm_resident.c: vm_page_release markers installed")
+
+        t16_startup_lock = '\tif (opts & VMP_RELEASE_STARTUP) {\n\t\tLCK_MTX_ASSERT(&vm_page_queue_free_lock, LCK_MTX_ASSERT_OWNED);\n\t}'
+        r16_startup_lock = """\tif (opts & VMP_RELEASE_STARTUP) {
+\t\textern int startup_phase;
+\t\tif (startup_phase >= 2 /* STARTUP_SUB_KMEM */) {
+\t\t\tLCK_MTX_ASSERT(&vm_page_queue_free_lock, LCK_MTX_ASSERT_OWNED);
+\t\t}
+\t}"""
+        if t16_startup_lock in c16:
+            c16 = c16.replace(t16_startup_lock, r16_startup_lock, 1)
+            print("  [OK] osfmk/vm/vm_resident.c: early startup free queue lock assert guarded")
+
+        # Anchor unlock replacement specifically to the unlock following r16_loop in pmap_startup
+        idx_loop = c16.find(r16_loop)
+        t16_unlock = '\tvm_free_page_unlock();'
+        r16_unlock = """\tvm_free_page_unlock();
 \t{
 \t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
-\t\thk_draw_band(0x0000FF00, 326, 6); /* Lime: page loop & unlock complete */
+\t\thk_draw_band(0x0000FF00, 348, 6); /* Lime: page loop & unlock complete */
 \t}"""
-            if idx_loop != -1 and t16_unlock in c16[idx_loop:]:
-                c16 = c16[:idx_loop] + c16[idx_loop:].replace(t16_unlock, r16_unlock, 1)
-                print("  [OK] osfmk/vm/vm_resident.c: page init unlock marker installed (anchored)")
-            else:
-                print("  [WARN] t16_unlock not found after r16_loop in vm_resident.c")
+        if idx_loop != -1 and t16_unlock in c16[idx_loop:]:
+            c16 = c16[:idx_loop] + c16[idx_loop:].replace(t16_unlock, r16_unlock, 1)
+            print("  [OK] osfmk/vm/vm_resident.c: page init unlock marker installed (anchored)")
         else:
-            print("  [WARN] t16_loop not found in vm_resident.c")
+            print("  [WARN] t16_unlock not found after r16_loop in vm_resident.c")
 
         with open(p16, "w", encoding="utf-8", newline="\n") as f:
             f.write(c16)
@@ -1423,18 +1479,18 @@ kernel_debug_string_early(const char *message)
 \tvm_page_bootstrap(&start, &end);
 \t{
 \t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
-\t\thk_draw_band(0x0000FF00, 316, 2); /* Lime Green: vm_page_bootstrap returned */
+\t\thk_draw_band(0x0000FF00, 360, 2); /* Lime Green: vm_page_bootstrap returned */
 \t}"""
         if t17 in c17:
             c17 = c17.replace(t17, r17, 1)
-            c17 = c17.replace('zone_bootstrap();', 'zone_bootstrap();\n\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x0000FFFF, 320, 2); }', 1)
-            c17 = c17.replace('vm_object_bootstrap();', 'vm_object_bootstrap();\n\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FF1493, 324, 2); }', 1)
-            c17 = c17.replace('vm_retire_boot_pages();', 'vm_retire_boot_pages();\n\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FFFF00, 328, 2); }', 1)
-            c17 = c17.replace('vm_map_init();', 'vm_map_init();\n\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x009400D3, 332, 2); }', 1)
-            c17 = c17.replace('kmem_init(start, end);', 'kmem_init(start, end);\n\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x0000BFFF, 336, 2); }', 1)
-            c17 = c17.replace('kernel_startup_initialize_upto(STARTUP_SUB_KMEM);', 'kernel_startup_initialize_upto(STARTUP_SUB_KMEM);\n\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FFFFFF, 340, 2); }', 1)
-            c17 = c17.replace('vm_fault_init();', 'vm_fault_init();\n\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FFA500, 344, 2); }', 1)
-            c17 = c17.replace('kernel_startup_initialize_upto(STARTUP_SUB_ZALLOC);', 'kernel_startup_initialize_upto(STARTUP_SUB_ZALLOC);\n\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x007FFF00, 348, 2); }', 1)
+            c17 = c17.replace('zone_bootstrap();', 'zone_bootstrap();\n\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x0000FFFF, 364, 2); }', 1)
+            c17 = c17.replace('vm_object_bootstrap();', 'vm_object_bootstrap();\n\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FF1493, 368, 2); }', 1)
+            c17 = c17.replace('vm_retire_boot_pages();', 'vm_retire_boot_pages();\n\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FFFF00, 372, 2); }', 1)
+            c17 = c17.replace('vm_map_init();', 'vm_map_init();\n\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x009400D3, 376, 2); }', 1)
+            c17 = c17.replace('kmem_init(start, end);', 'kmem_init(start, end);\n\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x0000BFFF, 380, 2); }', 1)
+            c17 = c17.replace('kernel_startup_initialize_upto(STARTUP_SUB_KMEM);', 'kernel_startup_initialize_upto(STARTUP_SUB_KMEM);\n\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FFFFFF, 384, 2); }', 1)
+            c17 = c17.replace('vm_fault_init();', 'vm_fault_init();\n\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FFA500, 388, 2); }', 1)
+            c17 = c17.replace('kernel_startup_initialize_upto(STARTUP_SUB_ZALLOC);', 'kernel_startup_initialize_upto(STARTUP_SUB_ZALLOC);\n\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x007FFF00, 392, 2); }', 1)
             with open(p17, "w", encoding="utf-8", newline="\n") as f:
                 f.write(c17)
             print("  [OK] osfmk/vm/vm_init.c: vm_mem_bootstrap milestone bands installed")
@@ -1586,6 +1642,27 @@ kernel_debug_string_early(const char *message)
             print("  [OK] osfmk/console/video_console.c: dual-region framebuffer partition installed (rows 0..719 ladder, rows 720..2399 console)")
         else:
             print("  [WARN] vc_target not found in video_console.c")
+
+    # 22. osfmk/kern/lock_mtx.c (bypass mutex ownership assert during early single-core boot)
+    p22 = os.path.join(src, "osfmk", "kern", "lock_mtx.c")
+    if os.path.isfile(p22):
+        with open(p22, "r", encoding="utf-8", errors="replace") as f:
+            c22 = f.read().replace("\r\n", "\n")
+        t22 = "void\nlck_mtx_assert(lck_mtx_t *lock, unsigned int type)\n{"
+        r22 = """void
+lck_mtx_assert(lck_mtx_t *lock, unsigned int type)
+{
+\textern int startup_phase;
+\tif (startup_phase < 2 /* STARTUP_SUB_KMEM */) {
+\t\treturn;
+\t}"""
+        if t22 in c22:
+            c22 = c22.replace(t22, r22, 1)
+            with open(p22, "w", encoding="utf-8", newline="\n") as f:
+                f.write(c22)
+            print("  [OK] osfmk/kern/lock_mtx.c: early boot mutex assert bypass installed")
+        else:
+            print("  [WARN] t22 not found in lock_mtx.c")
 
     print("Cortex-A73 patches successfully applied!")
 
