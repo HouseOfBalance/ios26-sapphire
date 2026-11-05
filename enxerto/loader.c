@@ -167,8 +167,6 @@ const char *loader_check(uintptr_t rd_start, uintptr_t rd_end)
 	uint64_t dram_hi = dram_lo + DRAM_SIZE;
 	if (p->mem_size == 0 || p->phys_base < dram_lo || p->phys_base >= dram_hi || p->mem_size > dram_hi - p->phys_base)
 		return "RAM window outside sapphire DRAM";
-	if (rd_start < dram_lo || rd_start >= dram_hi || rd_end > dram_hi)
-		return "payload source outside sapphire DRAM";
 #endif
 	uint64_t ram_lo = p->phys_base;
 	if (p->mem_size == 0 || p->mem_size > UINT64_MAX - ram_lo)
