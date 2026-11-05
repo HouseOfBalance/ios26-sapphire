@@ -84,15 +84,17 @@ static inline uintptr_t lse_get_addr(arm_saved_state_t *state, unsigned int rn) 
 }
 
 /* Hardware Cache Maintenance */
-static inline void lse_flush_caches(uintptr_t va, size_t len) {
-    uintptr_t cur = va & ~((uintptr_t)63);
-    uintptr_t end = (va + len + 63) & ~((uintptr_t)63);
-    for (; cur < end; cur += 64) {
-        __asm__ volatile("dc cvau, %0" : : "r"(cur) : "memory");
+static inline void lse_flush_caches(uintptr_t data_va, uintptr_t exec_va, size_t len) {
+    uintptr_t data_cur = data_va & ~((uintptr_t)63);
+    uintptr_t data_end = (data_va + len + 63) & ~((uintptr_t)63);
+    uintptr_t exec_cur = exec_va & ~((uintptr_t)63);
+    uintptr_t exec_end = (exec_va + len + 63) & ~((uintptr_t)63);
+    for (; data_cur < data_end; data_cur += 64) {
+        __asm__ volatile("dc cvau, %0" : : "r"(data_cur) : "memory");
     }
     __asm__ volatile("dsb ish" : : : "memory");
-    for (cur = va & ~((uintptr_t)63); cur < end; cur += 64) {
-        __asm__ volatile("ic ivau, %0" : : "r"(cur) : "memory");
+    for (; exec_cur < exec_end; exec_cur += 64) {
+        __asm__ volatile("ic ivau, %0" : : "r"(exec_cur) : "memory");
     }
     __asm__ volatile("dsb ish" : : : "memory");
     __asm__ volatile("isb" : : : "memory");
@@ -102,7 +104,7 @@ static inline void lse_flush_caches(uintptr_t va, size_t len) {
 static inline void patch_memory_phys(uint64_t pa, uint64_t va, uint32_t new_insn) {
     volatile uint32_t *p = (volatile uint32_t *)PHYSTOKV(pa);
     *p = new_insn;
-    lse_flush_caches(va, 4);
+    lse_flush_caches((uintptr_t)PHYSTOKV(pa), va, 4);
 }
 
 /* Branch encoding: B <target> (±128MB range check) */
@@ -672,7 +674,7 @@ bool lse_patch_handle_trap(arm_saved_state_t *state, bool is_user) {
 
     /* Check if already patched by another core (SMP race) */
     if ((inst & 0xFC000000) == 0x14000000) {
-        lse_flush_caches(elr, 4);
+        lse_flush_caches(elr, elr, 4);
         return true;
     }
 

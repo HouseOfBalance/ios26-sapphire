@@ -784,7 +784,7 @@ LEXT(hk_render_screen_asm)
 \tisb
 
 \tmov\t\tx25, #20
-\tmov\t\tx26, #250
+\tmov\t\tx26, #720
 
 \tmovz\tw14, #0xffff
 \tmovk\tw14, #0x00ff, lsl #16
@@ -1530,6 +1530,31 @@ kernel_debug_string_early(const char *message)
 
         with open(p20, "w", encoding="utf-8", newline="\n") as f:
             f.write(c20)
+
+
+    # 21. osfmk/console/video_console.c (reserve rows 0..719 for diagnostic ladder, start console text at row 720)
+    p21 = os.path.join(src, "osfmk", "console", "video_console.c")
+    if os.path.isfile(p21):
+        with open(p21, "r", encoding="utf-8", errors="replace") as f:
+            c21 = f.read().replace("\r\n", "\n")
+        vc_target = "new_vinfo.v_baseaddr = newVideoVirt + boot_vinfo->v_offset;"
+        vc_repl = (
+            "new_vinfo.v_baseaddr = newVideoVirt + boot_vinfo->v_offset;\n"
+            "\t\t\t/* hakios: reserve rows 0..719 for diagnostic ladder bands, clamp console to row 720..2399 */\n"
+            "\t\t\tif (new_vinfo.v_height > 720) {\n"
+            "\t\t\t\tnew_vinfo.v_baseaddr += 720 * new_vinfo.v_rowbytes;\n"
+            "\t\t\t\tnew_vinfo.v_height -= 720;\n"
+            "\t\t\t}"
+        )
+        if "/* hakios: reserve rows 0..719 for diagnostic ladder bands" in c21:
+            print("  [ALREADY PATCHED] osfmk/console/video_console.c: dual-region framebuffer partition already present")
+        elif vc_target in c21:
+            c21 = c21.replace(vc_target, vc_repl, 1)
+            with open(p21, "w", encoding="utf-8", newline="\n") as f:
+                f.write(c21)
+            print("  [OK] osfmk/console/video_console.c: dual-region framebuffer partition installed (rows 0..719 ladder, rows 720..2399 console)")
+        else:
+            print("  [WARN] vc_target not found in video_console.c")
 
     print("Cortex-A73 patches successfully applied!")
 

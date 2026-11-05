@@ -62,6 +62,7 @@
 #include <sys/systm.h>
 #include <sys/sysctl.h>
 #include <vm/vm_kern.h>
+#include <vm/vm_kern_xnu.h>  /* xnu-12377: KMA_*/kmem_alloc moved to the internal header */
 #include <vm/memory_types.h>
 #include "redwood_ufshc.h"
 
@@ -73,8 +74,11 @@ extern void FlushPoC_DcacheRegion(vm_offset_t va, size_t length);
 extern void IOSleep(unsigned int milliseconds);
 extern boolean_t ml_set_interrupts_enabled(boolean_t enable);
 
-#define UFSHC_PHYS          0x1d84000ULL        /* ufshc@1d84000, "ufs_mem", in the phone's Android device tree */
-#define UFSHC_SIZE          0x3000
+/* Qualcomm Snapdragon 685 (SM6225 Bengal) UFS Host Controller (ufshc@4804000) */
+#define UFSHC_PHYS          0x04804000ULL
+#define UFSHC_SIZE          0x3000ULL
+#define UFSHC_PHY_PHYS      0x04807000ULL
+#define UFSHC_ICE_PHYS      0x04810000ULL
 
 /* UFSHCI registers (JESD223). 0x38..0x48, the UIC error codes, clear when read: never read here. */
 #define UFSHC_CAP           0x00

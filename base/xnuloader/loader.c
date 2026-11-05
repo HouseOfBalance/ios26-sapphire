@@ -1858,7 +1858,8 @@ device_path_print(uint64_t unit, const efi_device_path *dp)
  * touches the storage; it reads for the kernel (block_poll) and writes the log (write_logs) only
  * while UEFI's list is the one in the controller.
  */
-#define HC_PA              0x1d84000ULL        /* ufshc@1d84000, "ufs_mem", in this phone's Android device tree */
+/* Qualcomm Snapdragon 685 (SM6225 Bengal) UFS Host Controller (ufshc@4804000) */
+#define HC_PA              0x04804000ULL        /* ufshc@4804000, "ufs_mem", in sapphire Android device tree */
 #define HC_CAP             0x00
 #define HC_VER             0x08
 #define HC_IS              0x20

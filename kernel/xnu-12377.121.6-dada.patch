@@ -47677,7 +47677,7 @@ new file mode 100644
 index 0000000..54c3b4e
 --- /dev/null
 +++ b/bsd/dev/redwood_ufshc.c
-@@ -0,0 +1,1334 @@
+@@ -0,0 +1,1337 @@
 +/*
 + * The phone's UFS host controller, driven from this kernel -- read only, next to UEFI's driver.
 + *
@@ -47754,8 +47754,11 @@ index 0000000..54c3b4e
 +extern void IOSleep(unsigned int milliseconds);
 +extern boolean_t ml_set_interrupts_enabled(boolean_t enable);
 +
-+#define UFSHC_PHYS          0x1d84000ULL        /* ufshc@1d84000, "ufs_mem", in the phone's Android device tree */
-+#define UFSHC_SIZE          0x3000
++/* Qualcomm Snapdragon 685 (SM6225 Bengal) UFS Host Controller (ufshc@4804000) */
++#define UFSHC_PHYS          0x04804000ULL
++#define UFSHC_SIZE          0x3000ULL
++#define UFSHC_PHY_PHYS      0x04807000ULL
++#define UFSHC_ICE_PHYS      0x04810000ULL
 +
 +/* UFSHCI registers (JESD223). 0x38..0x48, the UIC error codes, clear when read: never read here. */
 +#define UFSHC_CAP           0x00
@@ -49017,7 +49020,7 @@ new file mode 100644
 index 0000000..404448f
 --- /dev/null
 +++ b/bsd/dev/redwood_ufshc.h
-@@ -0,0 +1,32 @@
+@@ -0,0 +1,38 @@
 +/*
 + * The kernel's own UFS driver (redwood_ufshc.c), as redwood_ufs.c uses it.
 + */
@@ -49026,6 +49029,12 @@ index 0000000..404448f
 +
 +#include <stdbool.h>
 +#include <stdint.h>
++
++/* Qualcomm Snapdragon 685 (SM6225 Bengal) UFS Hardware Registers */
++#define SM6225_UFSHC_PHYS       0x04804000ULL       /* ufshc@4804000 */
++#define SM6225_UFSHC_SIZE       0x3000ULL
++#define SM6225_UFS_PHY_PHYS     0x04807000ULL       /* ufsphy@4807000 */
++#define SM6225_UFS_ICE_PHYS     0x04810000ULL       /* ufsice@4810000 */
 +
 +/* what the loader's page says about it (struct loader_block's native sections) */
 +struct ufshc_loader {
@@ -84923,7 +84932,7 @@ new file mode 100644
 index 0000000..d4d75ad
 --- /dev/null
 +++ b/osfmk/arm64/gic_v3_irq.c
-@@ -0,0 +1,597 @@
+@@ -0,0 +1,605 @@
 +/*
 + * Minimal GICv3 support for generic (non-Apple) ARMv8 boards.
 + *
@@ -85004,7 +85013,9 @@ index 0000000..d4d75ad
 +
 +#define GIC_SGI_SIGNAL          0           /* cpu_signal(): another processor wants this one's attention */
 +#define GIC_SGI_STOP            1           /* psci_smp_stop_here(): the system is going back to the boot loader */
-+#define GIC_INTID_VTIMER        27          /* EL1 virtual timer PPI */
++#define GIC_INTID_PTIMER        18          /* SM6225 EL1 physical timer PPI */
++#define GIC_INTID_VTIMER        19          /* SM6225 EL1 virtual timer PPI */
++#define GIC_INTID_VTIMER_LEGACY 27          /* QEMU / standard ARM virt fallback */
 +#define GIC_INTID_SPI_MIN       32
 +#define GIC_INTID_SPURIOUS_MIN  1020
 +#define GIC_SPI_MOST            48          /* attached at a time */
@@ -85293,7 +85304,7 @@ index 0000000..d4d75ad
 +		}
 +		gic_active_iar[cpu] = iar | GIC_IAR_TAKEN;
 +
-+		if (intid == GIC_INTID_VTIMER) {
++		if (intid == GIC_INTID_VTIMER || intid == GIC_INTID_PTIMER || intid == GIC_INTID_VTIMER_LEGACY) {
 +			/* same sequence as the FIQ path in sleh_fiq() */
 +			getCpuDatap()->cpu_decrementer = -1; /* Large */
 +			rtclock_intr(TRUE);
@@ -85405,7 +85416,7 @@ index 0000000..d4d75ad
 +{
 +	int cpu = cpu_number();
 +	vm_offset_t gicr;
-+	uint32_t mine = 1u << GIC_INTID_VTIMER;
++	uint32_t mine = (1u << GIC_INTID_VTIMER) | (1u << GIC_INTID_PTIMER) | (1u << GIC_INTID_VTIMER_LEGACY);
 +
 +	if (gicd_base == 0) {
 +		DTEntry entry;
@@ -85484,10 +85495,16 @@ index 0000000..d4d75ad
 +		mine |= sgis;
 +	}
 +
-+	/* Virtual timer PPI (and those): Group 1 (IRQ), default priority, enabled */
++	/* Clear any pending PPIs/SGIs from previous bootloaders (spurious 27, 21, etc.) */
++	gic_write32(gicr + GICR_ICPENDR0, 0xffffffff);
++	gic_write32(gicr + GICR_ICACTIVER0, 0xffffffff);
++
++	/* Virtual and physical timer PPIs (and SGIs): Group 1 (IRQ), default priority, enabled */
 +	gic_write32(gicr + GICR_IGROUPR0, gic_read32(gicr + GICR_IGROUPR0) | mine);
 +	gic_write32(gicr + GICR_IGRPMODR0, gic_read32(gicr + GICR_IGRPMODR0) & ~mine);
 +	*(volatile uint8_t *)(gicr + GICR_IPRIORITYR(GIC_INTID_VTIMER)) = GIC_PRIORITY_DEFAULT;
++	*(volatile uint8_t *)(gicr + GICR_IPRIORITYR(GIC_INTID_PTIMER)) = GIC_PRIORITY_DEFAULT;
++	*(volatile uint8_t *)(gicr + GICR_IPRIORITYR(GIC_INTID_VTIMER_LEGACY)) = GIC_PRIORITY_DEFAULT;
 +
 +	/* Distributor: affinity routing, Group 1 enabled (normally already so) */
 +	uint32_t ctlr = gic_read32(gicd_base + GICD_CTLR);
@@ -87984,7 +88001,7 @@ new file mode 100644
 index 0000000..a7c4ab0
 --- /dev/null
 +++ b/osfmk/arm64/psci_smp.c
-@@ -0,0 +1,438 @@
+@@ -0,0 +1,444 @@
 +/*
 + * More than one processor on generic (non-Apple) ARMv8 boards.
 + *
@@ -88190,6 +88207,12 @@ index 0000000..a7c4ab0
 +	if (!psci_smp_init_done) {
 +		psci_smp_init_done = true;
 +		psci_smp_init();
++	}
++
++	/* hakios SM6225: Only Gold Cortex-A73 cluster (MPIDR 0x100..0x103) is supported; Silver (0x0..0x3) is kept parked */
++	if ((phys_id & 0xff00) == 0) {
++		printf("psci: cpu %d (MPIDR 0x%x) is a Silver core -- keeping parked\n", cpu, phys_id);
++		return KERN_NOT_SUPPORTED;
 +	}
 +
 +	/*

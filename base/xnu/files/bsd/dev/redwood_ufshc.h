@@ -7,6 +7,12 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+/* Qualcomm Snapdragon 685 (SM6225 Bengal) UFS Hardware Registers */
+#define SM6225_UFSHC_PHYS       0x04804000ULL       /* ufshc@4804000 */
+#define SM6225_UFSHC_SIZE       0x3000ULL
+#define SM6225_UFS_PHY_PHYS     0x04807000ULL       /* ufsphy@4807000 */
+#define SM6225_UFS_ICE_PHYS     0x04810000ULL       /* ufsice@4810000 */
+
 /* what the loader's page says about it (struct loader_block's native sections) */
 struct ufshc_loader {
 	uint64_t hc_pa;                         /* the controller's registers; 0: not offered */

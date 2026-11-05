@@ -286,8 +286,12 @@ const char *loader_boot(uintptr_t dtb)
 	uintptr_t emb = ((uintptr_t)_end + 0xfff) & ~0xfffUL;
 
 	if (magic_ok((const char *)emb)) {
+		const struct payload *p = (const struct payload *)emb;
 		rd_start = emb;
-		rd_end = emb + 0x8000000;
+		uint64_t plen = (p->adt_off + p->adt_size + 15) & ~15ULL;
+		if (plen < sizeof(struct payload))
+			plen = 0x8000000;
+		rd_end = emb + plen;
 		con_hex("EMBED", emb);
 		return loader_boot_payload(rd_start, rd_end, 0);
 	}

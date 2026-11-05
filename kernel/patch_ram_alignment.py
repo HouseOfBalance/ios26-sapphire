@@ -85,6 +85,7 @@ def patch_arm_vm_init(xnu_dir):
         indent = re.match(r'[ \t]*', body[line_start:first_match.start()]).group(0)
         replacement = (
             f"{indent}{marker}\n"
+            f"{indent}if (avail_start >= 0xffff000000000000ULL) avail_start = ml_static_vtop(avail_start);\n"
             f"{indent}avail_start = (avail_start + PAGE_MASK) & ~(pmap_paddr_t)PAGE_MASK;\n"
             f"{indent}first_avail = avail_start;"
         )
@@ -392,13 +393,18 @@ initialize_ram_ranges(void)
 	pmap_paddr_t end   = avail_end;
 
 	/* hakios/claude: normalize first_avail if passed as kernel VA */
-	if (first >= 0xfffffff000000000ULL) {
+	if (first >= 0xffff000000000000ULL) {
 		first = ml_static_vtop((vm_offset_t)first);
 		hk_draw_band(0x00FF0000, 284, 2); /* Red: was a kernel VA! */
 	}
 
 	first = (first + PAGE_MASK) & ~(pmap_paddr_t)PAGE_MASK;
 	end  &= ~(pmap_paddr_t)PAGE_MASK;
+
+	/* hakios: SM6225 Qualcomm firmware carve-outs (TZ/Hyp/SMEM ~0x85800000..0x86400000) */
+	if (first < 0x85800000ULL && end > 0x85800000ULL) {
+		end = 0x85800000ULL; /* Protect TZ/Hyp firmware carve-out from SError */
+	}
 
 	if (first < gPhysBase || end <= first) {
 		hk_draw_band(0x00FF0000, 288, 2); /* Red: bad range */

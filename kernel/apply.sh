@@ -40,6 +40,12 @@ if [ -f "$K/0004-pmap-4kb-quad-pte.patch" ]; then
 	echo "applied 0004-pmap-4kb-quad-pte.patch (XNU 4KB Quad-PTE Emulation Engine)"
 fi
 
+# Synchronize base/xnu/files overlay if present
+if [ -d "$K/../base/xnu/files" ]; then
+	cp -a "$K/../base/xnu/files/." "$D/"
+	echo "synchronized base/xnu/files overlay into $D"
+fi
+
 # Apply Part 5a: Cortex-A73 PAC sysreg stub and early FB markers
 if [ -f "$K/patch_cortex_a73.py" ]; then
 	python3 "$K/patch_cortex_a73.py" "$D"
@@ -63,6 +69,16 @@ fi
 # Apply Part 5e: Aperture-Based Early Memory Steal
 if [ -f "$K/patch_aperture_steal.py" ]; then
 	python3 "$K/patch_aperture_steal.py" "$D"
+fi
+
+# Apply Part 5f: BSD Subsystem Lifecycle Ladder
+if [ -f "$K/patch_bsd_init.py" ]; then
+	python3 "$K/patch_bsd_init.py" "$D"
+fi
+
+# Apply Part 5g: IOKit Root Device Resolver
+if [ -f "$K/patch_iokit_root.py" ]; then
+	python3 "$K/patch_iokit_root.py" "$D"
 fi
 
 # Fix kasan-denylist regex for older/host Clang parser

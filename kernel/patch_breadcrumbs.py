@@ -123,6 +123,76 @@ def patch_vm_resident(src_dir):
     print("  [OK] osfmk/vm/vm_resident.c successfully patched with Claude breadcrumbs")
     return True
 
+
+def patch_startup(src_dir):
+    startup_path = os.path.join(src_dir, "osfmk", "kern", "startup.c")
+    if not os.path.isfile(startup_path):
+        print(f"[-] Error: file not found: {startup_path}")
+        return False
+
+    with open(startup_path, "r", encoding="utf-8", errors="replace") as f:
+        content = f.read()
+
+    c = content.replace("\r\n", "\n")
+
+    m1 = "hk_draw_band(0x00FF7F50, 360, 4)"
+    m2 = "hk_draw_band(0x0040E0D0, 376, 4)"
+    m3 = "hk_draw_band(0x0098FF98, 380, 4)"
+
+    if m1 in c and m2 in c and m3 in c:
+        print("  [ALREADY PATCHED] osfmk/kern/startup.c: all startup milestone bands already present")
+        return True
+
+    # 1. Band after minimac_policy_init
+    t1 = "minimac_policy_init();"
+    r1 = (
+        "minimac_policy_init();\n"
+        "\t/* hakios: startup milestone visual ladder bands */\n"
+        "\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FF7F50, 360, 4); } /* Coral: minimac_policy */"
+    )
+    if m1 in c:
+        print("  [ALREADY PATCHED] osfmk/kern/startup.c: minimac_policy band already present (row 360)")
+    elif t1 in c:
+        c = c.replace(t1, r1, 1)
+        print("  [OK] osfmk/kern/startup.c: minimac_policy band installed (row 360)")
+    else:
+        print("  [WARN] osfmk/kern/startup.c: minimac_policy_init() target not found")
+
+    # 2. Band after STARTUP_SUB_LOCKDOWN
+    t2 = "kernel_startup_initialize_upto(STARTUP_SUB_LOCKDOWN);"
+    r2 = (
+        "kernel_startup_initialize_upto(STARTUP_SUB_LOCKDOWN);\n"
+        "\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x0040E0D0, 376, 4); } /* Turquoise: past lockdown */"
+    )
+    if m2 in c:
+        print("  [ALREADY PATCHED] osfmk/kern/startup.c: lockdown band already present (row 376)")
+    elif t2 in c:
+        c = c.replace(t2, r2, 1)
+        print("  [OK] osfmk/kern/startup.c: lockdown band installed (row 376)")
+    else:
+        print("  [WARN] osfmk/kern/startup.c: STARTUP_SUB_LOCKDOWN target not found")
+
+    # 3. Band around scale_setup()
+    t3 = "scale_setup();"
+    r3 = (
+        "{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x0098FF98, 380, 4); } /* Mint: scale_setup */\n"
+        "\tscale_setup();\n"
+        "\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x0000FF7F, 384, 4); } /* Spring Green: past scale_setup, to bsd_init */"
+    )
+    if m3 in c:
+        print("  [ALREADY PATCHED] osfmk/kern/startup.c: scale_setup bands already present (rows 380, 384)")
+    elif t3 in c:
+        c = c.replace(t3, r3, 1)
+        print("  [OK] osfmk/kern/startup.c: scale_setup bands installed (rows 380, 384)")
+    else:
+        print("  [WARN] osfmk/kern/startup.c: scale_setup() target not found")
+
+    with open(startup_path, "w", encoding="utf-8", newline="\n") as f:
+        f.write(c)
+
+    print("  [OK] osfmk/kern/startup.c successfully patched with startup phase ladder")
+    return True
+
 def confirm_kdebug_visual(src_dir):
     kdebug_path = os.path.join(src_dir, "bsd", "kern", "kdebug.c")
     if os.path.isfile(kdebug_path):
@@ -146,7 +216,7 @@ def main():
         sys.exit(1)
 
     print(f"=== Applying Early Breadcrumb Visual Instrumentation to {src_dir} ===")
-    success = patch_vm_resident(src_dir)
+    success = patch_vm_resident(src_dir) and patch_startup(src_dir)
     if not success:
         sys.exit(1)
 

@@ -37,6 +37,18 @@
 #include <kern/misc_protos.h>
 #include <libkern/kernel_mach_header.h>
 #include <machine/atomic.h>
+
+#include <kern/processor.h>
+
+/*
+ * The boot processor's number. (Not redwood's master_cpu: nothing sets it in this kernel, it stays -1,
+ * and with it the boot processor took itself for another core at the return to the loader.)
+ */
+static inline int
+psci_smp_boot_cpu(void)
+{
+	return master_processor->cpu_id;
+}
 #include <arm/caches_internal.h>
 #include <arm/cpu_data_internal.h>
 #include <arm/cpu_internal.h>
@@ -64,6 +76,14 @@ extern unsigned long gVirtBase, gPhysBase;
 
 /* The firmware is called with HVC, not SMC. (start.s reads this too, at its physical address.) */
 uint32_t psci_smp_hvc;
+
+/*
+ * hakios: where the loader wants the other cores started (/chosen/hakios,secondary-entry), 0 if
+ * nowhere in particular. Its code puts the pointer-authentication keys in place first -- under
+ * Qualcomm's hypervisor the kernel's own writes to those registers do not take -- and goes on to the
+ * address given as the CPU_ON context, the kernel's reset vector.
+ */
+static uint64_t psci_smp_loader_entry;
 
 /*
  * Left by a core that took an exception between its first instruction and the kernel's vectors
@@ -124,6 +144,19 @@ psci_smp_init(void)
 	    size >= 3 && strncmp((const char *)prop, "hvc", 3) == 0) {
 		psci_smp_hvc = 1;
 	}
+	{
+		extern void loader_log_line(const char *line);
+		char line[120];
+		int found = SecureDTLookupEntry(NULL, "/chosen", &chosen) == kSuccess &&
+		    SecureDTGetProperty(chosen, "hakios,secondary-entry", &prop, &size) == kSuccess;
+
+		if (found && size == sizeof(uint64_t)) {
+			memcpy(&psci_smp_loader_entry, prop, sizeof(psci_smp_loader_entry));
+		}
+		snprintf(line, sizeof(line), "hakios: psci_smp_init: secondary-entry %s, size %u, 0x%llx\n",
+		    found ? "found" : "not found", found ? size : 0, psci_smp_loader_entry);
+		loader_log_line(line);
+	}
 }
 
 /* A processor other than the boot processor says how far it has come. */
@@ -164,6 +197,19 @@ psci_smp_start_cpu(int cpu)
 	uint64_t entry = ml_static_vtop((vm_offset_t)&LowResetVectorBase);
 	uint64_t now, deadline;
 	int64_t status;
+	static bool psci_smp_init_done;
+
+	/* (psci_smp_init() is not on every way here: read /chosen once, whoever starts the first core) */
+	if (!psci_smp_init_done) {
+		psci_smp_init_done = true;
+		psci_smp_init();
+	}
+
+	/* hakios SM6225: Only Gold Cortex-A73 cluster (MPIDR 0x100..0x103) is supported; Silver (0x0..0x3) is kept parked */
+	if ((phys_id & 0xff00) == 0) {
+		printf("psci: cpu %d (MPIDR 0x%x) is a Silver core -- keeping parked\n", cpu, phys_id);
+		return KERN_NOT_SUPPORTED;
+	}
 
 	/*
 	 * What that core reads with its MMU off: the code and the page tables of start.s, and what
@@ -186,7 +232,18 @@ psci_smp_start_cpu(int cpu)
 	__builtin_arm_dsb(DSB_SY);
 
 	os_atomic_store(&psci_smp_cpu_stage[cpu], PSCI_SMP_CPU_ASKED, release);
-	status = psci_call(PSCI_CPU_ON, phys_id, entry, 0);
+	{
+		extern void loader_log_line(const char *line);
+		char line[120];
+		snprintf(line, sizeof(line), "hakios: psci CPU_ON cpu %d (MPIDR 0x%x) at 0x%llx, kernel entry 0x%llx\n", cpu,
+		    phys_id, psci_smp_loader_entry ? psci_smp_loader_entry : entry, entry);
+		loader_log_line(line);
+	}
+	if (psci_smp_loader_entry != 0) {
+		status = psci_call(PSCI_CPU_ON, phys_id, psci_smp_loader_entry, entry);
+	} else {
+		status = psci_call(PSCI_CPU_ON, phys_id, entry, 0);
+	}
 	if (status != 0) {
 		os_atomic_store(&psci_smp_cpu_stage[cpu], 0, release);
 		printf("psci: cpu %d (MPIDR 0x%x) was not started: the firmware answers %lld (%s)\n",
@@ -271,7 +328,7 @@ psci_smp_stop_rest(void)
 	for (int cpu = 0; cpu <= max_cpu; cpu++) {
 		cpu_data_t *cdp = cpu_datap(cpu);
 
-		if (cpu != me && cdp != NULL && (cpu == master_cpu || (psci_smp_started & (1u << cpu)))) {
+		if (cpu != me && cdp != NULL && (cpu == psci_smp_boot_cpu() || (psci_smp_started & (1u << cpu)))) {
 			gic_v3_irq_signal_stop(cdp->cpu_phys_id);
 		}
 	}
@@ -297,11 +354,11 @@ psci_smp_stop_others(void)
 	__builtin_arm_wsr("DAIFSet", DAIFSC_ALL);
 	me = cpu_number();
 	max_cpu = ml_get_max_cpu_number();
-	if (!os_atomic_cmpxchg(&psci_smp_stop_owner, -1, me, acq_rel) && psci_smp_stop_owner != me && me != master_cpu) {
+	if (!os_atomic_cmpxchg(&psci_smp_stop_owner, -1, me, acq_rel) && psci_smp_stop_owner != me && me != psci_smp_boot_cpu()) {
 		psci_smp_cpu_off();     /* another processor is at it already */
 	}
 
-	if (me != master_cpu) {
+	if (me != psci_smp_boot_cpu()) {
 		/*
 		 * Nobody is stopped before the boot processor has answered: a core that is switched
 		 * off while it holds a lock the boot processor is waiting for would take the return
@@ -310,7 +367,7 @@ psci_smp_stop_others(void)
 		psci_smp_note(" ends the system: the return to the boot loader is the boot processor's to make\n", me);
 		os_atomic_store(&psci_smp_boot_wanted, true, release);
 		__builtin_arm_dsb(DSB_SY);
-		gic_v3_irq_signal_stop(cpu_datap(master_cpu)->cpu_phys_id);
+		gic_v3_irq_signal_stop(cpu_datap(psci_smp_boot_cpu())->cpu_phys_id);
 		__builtin_arm_sev();
 		now = mach_absolute_time();
 		nanoseconds_to_absolutetime(PSCI_SMP_STOP_SECONDS * NSEC_PER_SEC, &deadline);
@@ -369,7 +426,7 @@ psci_smp_stop_here(void)
 	if (psci_smp_started == 0) {
 		return;
 	}
-	if (cpu_number() != master_cpu) {
+	if (cpu_number() != psci_smp_boot_cpu()) {
 		if (os_atomic_load(&psci_smp_stopping, acquire)) {
 			psci_smp_cpu_off();
 		}
