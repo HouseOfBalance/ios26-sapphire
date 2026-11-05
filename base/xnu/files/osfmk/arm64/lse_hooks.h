@@ -82,19 +82,26 @@ static inline bool atomic_cas16_llsc(volatile uint16_t *ptr, uint16_t *expected,
 static inline bool atomic_cas32_llsc(volatile uint32_t *ptr, uint32_t *expected, uint32_t desired) {
     uint32_t old;
     int failed;
+    uint32_t retries = 1000;
     __asm__ volatile (
         "1: ldaxr   %w0, [%2]       \n"
         "   cmp     %w0, %w3        \n"
         "   b.ne    2f              \n"
         "   stlxr   %w1, %w4, [%2]  \n"
-        "   cbnz    %w1, 1b         \n"
+        "   cbz     %w1, 4f         \n"
+        "   subs    %w5, %w5, #1    \n"
+        "   b.ne    1b              \n"
+        "   /* Exclusives retry limit reached: fallback to direct store */ \n"
+        "   str     %w4, [%2]       \n"
         "   mov     %w1, #0         \n"
         "   b       3f              \n"
         "2: clrex                   \n"
         "   mov     %w1, #1         \n"
+        "   b       3f              \n"
+        "4: mov     %w1, #0         \n"
         "3:                         \n"
-        : "=&r"(old), "=&r"(failed)
-        : "r"(ptr), "r"(*expected), "r"(desired)
+        : "=&r"(old), "=&r"(failed), "+r"(ptr), "+r"(*expected), "+r"(desired), "+r"(retries)
+        :
         : "cc", "memory"
     );
     *expected = old;
@@ -104,19 +111,26 @@ static inline bool atomic_cas32_llsc(volatile uint32_t *ptr, uint32_t *expected,
 static inline bool atomic_cas64_llsc(volatile uint64_t *ptr, uint64_t *expected, uint64_t desired) {
     uint64_t old;
     int failed;
+    uint32_t retries = 1000;
     __asm__ volatile (
         "1: ldaxr   %0, [%2]        \n"
         "   cmp     %0, %3          \n"
         "   b.ne    2f              \n"
         "   stlxr   %w1, %4, [%2]   \n"
-        "   cbnz    %w1, 1b         \n"
+        "   cbz     %w1, 4f         \n"
+        "   subs    %w5, %w5, #1    \n"
+        "   b.ne    1b              \n"
+        "   /* Exclusives retry limit reached: fallback to direct store */ \n"
+        "   str     %4, [%2]        \n"
         "   mov     %w1, #0         \n"
         "   b       3f              \n"
         "2: clrex                   \n"
         "   mov     %w1, #1         \n"
+        "   b       3f              \n"
+        "4: mov     %w1, #0         \n"
         "3:                         \n"
-        : "=&r"(old), "=&r"(failed)
-        : "r"(ptr), "r"(*expected), "r"(desired)
+        : "=&r"(old), "=&r"(failed), "+r"(ptr), "+r"(*expected), "+r"(desired), "+r"(retries)
+        :
         : "cc", "memory"
     );
     *expected = old;
@@ -213,12 +227,18 @@ static inline uint16_t atomic_swp16_llsc(volatile uint16_t *ptr, uint16_t val) {
 static inline uint32_t atomic_swp32_llsc(volatile uint32_t *ptr, uint32_t val) {
     uint32_t old;
     int failed;
+    uint32_t retries = 1000;
     __asm__ volatile (
         "1: ldaxr   %w0, [%2]       \n"
         "   stlxr   %w1, %w3, [%2]  \n"
-        "   cbnz    %w1, 1b         \n"
-        : "=&r"(old), "=&r"(failed)
-        : "r"(ptr), "r"(val)
+        "   cbz     %w1, 2f         \n"
+        "   subs    %w4, %w4, #1    \n"
+        "   b.ne    1b              \n"
+        "   /* Exclusives retry limit reached: fallback to direct store */ \n"
+        "   str     %w3, [%2]       \n"
+        "2:                         \n"
+        : "=&r"(old), "=&r"(failed), "+r"(ptr), "+r"(val), "+r"(retries)
+        :
         : "cc", "memory"
     );
     return old;
@@ -227,12 +247,18 @@ static inline uint32_t atomic_swp32_llsc(volatile uint32_t *ptr, uint32_t val) {
 static inline uint64_t atomic_swp64_llsc(volatile uint64_t *ptr, uint64_t val) {
     uint64_t old;
     int failed;
+    uint32_t retries = 1000;
     __asm__ volatile (
         "1: ldaxr   %0, [%2]        \n"
         "   stlxr   %w1, %3, [%2]   \n"
-        "   cbnz    %w1, 1b         \n"
-        : "=&r"(old), "=&r"(failed)
-        : "r"(ptr), "r"(val)
+        "   cbz     %w1, 2f         \n"
+        "   subs    %w4, %w4, #1    \n"
+        "   b.ne    1b              \n"
+        "   /* Exclusives retry limit reached: fallback to direct store */ \n"
+        "   str     %3, [%2]        \n"
+        "2:                         \n"
+        : "=&r"(old), "=&r"(failed), "+r"(ptr), "+r"(val), "+r"(retries)
+        :
         : "cc", "memory"
     );
     return old;
@@ -276,13 +302,19 @@ static inline uint16_t atomic_ldadd16_llsc(volatile uint16_t *ptr, uint16_t val)
 static inline uint32_t atomic_ldadd32_llsc(volatile uint32_t *ptr, uint32_t val) {
     uint32_t old, tmp;
     int failed;
+    uint32_t retries = 1000;
     __asm__ volatile (
         "1: ldaxr   %w0, [%3]       \n"
         "   add     %w1, %w0, %w4   \n"
         "   stlxr   %w2, %w1, [%3]  \n"
-        "   cbnz    %w2, 1b         \n"
-        : "=&r"(old), "=&r"(tmp), "=&r"(failed)
-        : "r"(ptr), "r"(val)
+        "   cbz     %w2, 2f         \n"
+        "   subs    %w5, %w5, #1    \n"
+        "   b.ne    1b              \n"
+        "   /* Exclusives retry limit reached: fallback to direct store */ \n"
+        "   str     %w1, [%3]       \n"
+        "2:                         \n"
+        : "=&r"(old), "=&r"(tmp), "=&r"(failed), "+r"(ptr), "+r"(val), "+r"(retries)
+        :
         : "cc", "memory"
     );
     return old;
@@ -291,13 +323,19 @@ static inline uint32_t atomic_ldadd32_llsc(volatile uint32_t *ptr, uint32_t val)
 static inline uint64_t atomic_ldadd64_llsc(volatile uint64_t *ptr, uint64_t val) {
     uint64_t old, tmp;
     int failed;
+    uint32_t retries = 1000;
     __asm__ volatile (
         "1: ldaxr   %0, [%3]        \n"
         "   add     %1, %0, %4      \n"
         "   stlxr   %w2, %1, [%3]   \n"
-        "   cbnz    %w2, 1b         \n"
-        : "=&r"(old), "=&r"(tmp), "=&r"(failed)
-        : "r"(ptr), "r"(val)
+        "   cbz     %w2, 2f         \n"
+        "   subs    %w5, %w5, #1    \n"
+        "   b.ne    1b              \n"
+        "   /* Exclusives retry limit reached: fallback to direct store */ \n"
+        "   str     %1, [%3]        \n"
+        "2:                         \n"
+        : "=&r"(old), "=&r"(tmp), "=&r"(failed), "+r"(ptr), "+r"(val), "+r"(retries)
+        :
         : "cc", "memory"
     );
     return old;

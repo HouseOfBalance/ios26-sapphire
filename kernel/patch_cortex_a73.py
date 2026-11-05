@@ -1359,15 +1359,12 @@ kernel_debug_string_early(const char *message)
 
         # Page init loop in pmap_startup
         t16_loop = '\tvm_free_page_lock();\n\n\tfor (uint32_t i = 0; i < npages && pmap_next_page(&phys_page); i++) {'
-        r16_loop = """\t/* hakios/claude: Thick pre-lock and post-lock diagnostic bands */
+        r16_loop = """\t/* hakios/claude: Thick pre-lock and post-lock diagnostic bands (lock bypassed on early 1-core boot) */
 \t{
 \t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
-\t\thk_draw_band(0x00FFFF00, 296, 6); /* Vivid Yellow: PRE-LOCK (immediately before vm_free_page_lock) */
-\t}
-\tvm_free_page_lock();
-\t{
-\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
-\t\thk_draw_band(0x00FF00FF, 304, 6); /* Vivid Magenta: POST-LOCK (vm_free_page_lock completed!) */
+\t\thk_draw_band(0x00FFFF00, 296, 6); /* Vivid Yellow: PRE-LOCK */
+\t\t/* vm_free_page_lock(); -- Safely bypassed: 1 core, interrupts masked, no contention */
+\t\thk_draw_band(0x00FF00FF, 304, 6); /* Vivid Magenta: POST-LOCK (bypassed) */
 \t}
 \tfor (uint32_t i = 0; i < npages && pmap_next_page(&phys_page); i++) {
 \t\tif (i == 0) {
@@ -1383,6 +1380,20 @@ kernel_debug_string_early(const char *message)
             print("  [OK] osfmk/vm/vm_resident.c: page init loop markers installed")
         else:
             print("  [WARN] t16_loop not found in vm_resident.c")
+
+        # NOP unlock paired with lock bypass in pmap_startup
+        t16_unlock = '\tvm_free_page_unlock();'
+        r16_unlock = """\t/* hakios/claude: NOP unlock paired with NOP lock in early pmap_startup */
+\t/* vm_free_page_unlock(); */
+\t{
+\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
+\t\thk_draw_band(0x0000FF00, 314, 4); /* Lime: page loop & unlock complete */
+\t}"""
+        if t16_unlock in c16:
+            c16 = c16.replace(t16_unlock, r16_unlock, 1)
+            print("  [OK] osfmk/vm/vm_resident.c: page init unlock marker installed")
+        else:
+            print("  [WARN] t16_unlock not found in vm_resident.c")
 
         with open(p16, "w", encoding="utf-8", newline="\n") as f:
             f.write(c16)
