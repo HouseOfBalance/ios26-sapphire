@@ -591,3 +591,13 @@ hv_wdt_pet_init(void)
 	hv_wdt_pet(NULL, NULL);
 }
 STARTUP(EARLY_BOOT, STARTUP_RANK_LAST, hv_wdt_pet_init);
+
+void hk_crash_report(const char *name, int pid, int sig);
+
+void
+hk_crash_report(const char *name, int pid, int sig)
+{
+	(void)name;
+	(void)pid;
+	(void)sig;
+}

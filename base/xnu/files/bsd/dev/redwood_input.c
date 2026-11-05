@@ -16,6 +16,8 @@
 
 #define TOUCH_QUEUE     512             /* records; a power of two */
 
+uint64_t redwood_touch_last = 0;
+
 /*
  * Boot-arg touch_lat=1: for measuring how long a touch takes to reach the panel, a line for every
  * sample posted ("tl: p TYPE FINGER X Y at US", the time in microseconds of mach_absolute_time),

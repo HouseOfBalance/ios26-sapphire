@@ -68,3 +68,50 @@ redwood_adsp_quiesce(void)
 {
 	/* Unused on physical hardware (sapphire) */
 }
+
+/* HakiOS Bengal RPMh / ADSP / MPSS / AOP stubs */
+bool
+hakios_adsp_gpr(uint32_t port, uint32_t opcode, const void *payload, uint32_t length, bool with_header, uint32_t ms, uint32_t *answer_opcode, uint32_t *words, uint32_t answer_words)
+{
+	(void)port; (void)opcode; (void)payload; (void)length; (void)with_header; (void)ms; (void)answer_opcode; (void)words; (void)answer_words;
+	return false;
+}
+
+bool
+hakios_adsp_gpr_raw(const void *packet, uint32_t length, uint32_t ms, uint32_t *answer_opcode, uint32_t *words, uint32_t answer_words)
+{
+	(void)packet; (void)length; (void)ms; (void)answer_opcode; (void)words; (void)answer_words;
+	return false;
+}
+
+void (*hakios_adsp_gpr_event)(uint32_t opcode, uint32_t token, const uint32_t *words, uint32_t length) = NULL;
+
+bool
+hakios_aop_send(const char *text)
+{
+	(void)text;
+	return false;
+}
+
+volatile int hakios_mpss_state = 0;
+
+bool
+hakios_rpmh_level(const char *name, uint32_t level)
+{
+	(void)name; (void)level;
+	return true;
+}
+
+bool
+hakios_rpmh_regulator(const char *name, uint32_t mv, bool enable, uint32_t mode)
+{
+	(void)name; (void)mv; (void)enable; (void)mode;
+	return true;
+}
+
+bool
+hakios_rpmh_write(const char *name, uint32_t value)
+{
+	(void)name; (void)value;
+	return true;
+}
