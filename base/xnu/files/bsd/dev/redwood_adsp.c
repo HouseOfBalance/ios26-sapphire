@@ -2,6 +2,7 @@
  * redwood_adsp.c - Stub for physical hardware targets (sapphire)
  */
 #include <sys/types.h>
+#include <stddef.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <sys/redwood_audio.h>
