@@ -194,20 +194,22 @@ ramfs_node_alloc(struct ramfs_mount *rm, enum vtype type, struct vnode_attr *vap
  * of kernel_map each, as the contents of a RAM disk are. wait=false: never wait for memory (the
  * page-out path, which may be the pageout daemon looking for some).
  */
+extern void *kalloc_data(vm_size_t size, zalloc_flags_t flags);
+extern void kfree_data(void *data, vm_size_t size);
+
 static void *
 ramfs_page_alloc(bool wait)
 {
-	vm_offset_t addr = 0;
-	kma_flags_t flags = KMA_KOBJECT | KMA_DATA | KMA_ZERO | (wait ? KMA_NONE : KMA_NOPAGEWAIT);
-
-	return kmem_alloc(kernel_map, &addr, PAGE_SIZE, flags, VM_KERN_MEMORY_FILE) == KERN_SUCCESS ?
-	       (void *)addr : NULL;
+	(void)wait;
+	return kalloc_data(PAGE_SIZE, Z_WAITOK | Z_ZERO);
 }
 
 static void
 ramfs_page_free(void *page)
 {
-	kmem_free(kernel_map, (vm_offset_t)page, PAGE_SIZE);
+	if (page) {
+		kfree_data(page, PAGE_SIZE);
+	}
 }
 
 /*

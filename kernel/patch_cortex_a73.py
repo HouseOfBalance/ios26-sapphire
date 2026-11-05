@@ -1344,12 +1344,12 @@ kernel_debug_string_early(const char *message)
         r16_vmp = """\tvm_pages     = pmap_steal_freeable_memory(npages * sizeof(struct vm_page));
 \t{
 \t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
-\t\thk_draw_band(0x0000FF00, 284, 2); /* Lime: vm_pages stolen successfully */
+\t\thk_draw_band(0x0000FF00, 280, 6); /* Lime: vm_pages stolen successfully (thick 6 rows) */
 \t}
 \tvm_pages_end = vm_page_get(npages);
 \t{
 \t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
-\t\thk_draw_band(0x00FF8C00, 288, 2); /* Dark Orange: vm_pages_end computed */
+\t\thk_draw_band(0x00FF8C00, 288, 6); /* Dark Orange: vm_pages_end computed (thick 6 rows) */
 \t}"""
         if t16_vmp in c16:
             c16 = c16.replace(t16_vmp, r16_vmp, 1)
@@ -1359,19 +1359,24 @@ kernel_debug_string_early(const char *message)
 
         # Page init loop in pmap_startup
         t16_loop = '\tvm_free_page_lock();\n\n\tfor (uint32_t i = 0; i < npages && pmap_next_page(&phys_page); i++) {'
-        r16_loop = """\tvm_free_page_lock();
+        r16_loop = """\t/* hakios/claude: Thick pre-lock and post-lock diagnostic bands */
 \t{
 \t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
-\t\thk_draw_band(0x0087CEEB, 300, 2); /* Sky Blue: before page init loop */
+\t\thk_draw_band(0x00FFFF00, 296, 6); /* Vivid Yellow: PRE-LOCK (immediately before vm_free_page_lock) */
+\t}
+\tvm_free_page_lock();
+\t{
+\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
+\t\thk_draw_band(0x00FF00FF, 304, 6); /* Vivid Magenta: POST-LOCK (vm_free_page_lock completed!) */
 \t}
 \tfor (uint32_t i = 0; i < npages && pmap_next_page(&phys_page); i++) {
 \t\tif (i == 0) {
 \t\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
-\t\t\thk_draw_band(0x004682B4, 304, 2); /* Steel Blue: page loop started */
+\t\t\thk_draw_band(0x0000BFFF, 312, 6); /* Deep Sky Blue: page loop started */
 \t\t}
 \t\tif (i == (npages >> 1)) {
 \t\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
-\t\t\thk_draw_band(0x001E90FF, 308, 2); /* Dodger Blue: page loop 50% */
+\t\t\thk_draw_band(0x001E90FF, 320, 4); /* Dodger Blue: page loop 50% */
 \t\t}"""
         if t16_loop in c16:
             c16 = c16.replace(t16_loop, r16_loop, 1)

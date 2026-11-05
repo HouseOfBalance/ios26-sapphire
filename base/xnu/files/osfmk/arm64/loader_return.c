@@ -25,7 +25,7 @@
 #include <pexpert/pexpert.h>
 #include <pexpert/arm64/board_config.h>
 #include <vm/vm_page.h>
-#include <vm/vm_compressor.h>
+/* #include <vm/vm_compressor.h> removed: panic/exception path must not depend on VM internals */
 
 /*
  * The console log handed back to the loader. A long session writes more than fits, and both

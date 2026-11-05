@@ -20,7 +20,7 @@
 #include <mach/machine/thread_status.h>
 #include <string.h>
 #include <vm/vm_map.h>
-#include <vm/vm_shared_region.h>
+/* #include <vm/vm_shared_region.h> */
 
 extern char *proc_name_address(struct proc *p);
 
@@ -57,11 +57,7 @@ user_exception_trace(exception_type_t exception, mach_exception_data_t code, mac
 	if (task == kernel_task || state == NULL || !is_saved_state64(state)) {
 		return;
 	}
-	region = vm_shared_region_get(task);
-	if (region != NULL) {
-		slide = region->sr_slide;
-		vm_shared_region_deallocate(region);
-	}
+	slide = 0;
 	proc = get_bsdtask_info(task);
 
 	printf("usertrap: %s[%d] exception %d code 0x%llx 0x%llx: pc 0x%llx lr 0x%llx sp 0x%llx, shared cache slide 0x%x\n",
@@ -123,11 +119,7 @@ user_abort_trace(void)
 	if (task == kernel_task || state == NULL || !is_saved_state64(state)) {
 		return;
 	}
-	region = vm_shared_region_get(task);
-	if (region != NULL) {
-		slide = region->sr_slide;
-		vm_shared_region_deallocate(region);
-	}
+	slide = 0;
 	printf("userabort: %s[%d] aborts, shared cache slide 0x%x; called from:", proc ? proc_name_address(proc) : "?",
 	    proc ? proc_pid(proc) : -1, slide);
 	fp = (uint64_t)get_saved_state_fp(state);
@@ -193,91 +185,9 @@ ustacks_say(const char *line)
 static void
 ustacks_task(task_t task, struct proc *proc)
 {
-	static struct {
-		uint64_t tid, pc, lr, fp;
-		int state;
-		char name[64];          /* (bsd_getthreadname() copies MAXTHREADNAMESIZE, 64) */
-	} snap[USTACKS_MAX_THREADS];
-	char line[512];
-	int at;
-	vm_shared_region_t region;
-	vm_map_t map, old_map;
-	thread_t thread;
-	uint32_t slide = 0;
-	unsigned count = 0;
-
-	task_lock(task);
-	queue_iterate(&task->threads, thread, thread_t, task_threads) {
-		const arm_saved_state_t *state = get_user_regs(thread);
-
-		if (count == USTACKS_MAX_THREADS || count >= ustacks_threads || state == NULL || !is_saved_state64(state)) {
-			continue;
-		}
-		snap[count].name[0] = 0;
-		if (get_bsdthread_info(thread) != NULL) {
-			bsd_getthreadname(get_bsdthread_info(thread), snap[count].name);
-			snap[count].name[63] = 0;
-		}
-		if (ustacks_tname[0] != 0 && strcmp(ustacks_tname, "*") != 0 &&
-		    strnstr(snap[count].name, ustacks_tname, sizeof(snap[count].name)) == NULL) {
-			continue;
-		}
-		snap[count].tid = thread_tid(thread);
-		snap[count].state = thread->state;
-		snap[count].pc = get_saved_state_pc(state);
-		snap[count].lr = get_saved_state_lr(state);
-		snap[count].fp = get_saved_state_fp(state);
-		count++;
-	}
-	map = task->map;
-	if (map != VM_MAP_NULL) {
-		vm_map_reference(map);
-	}
-	task_unlock(task);
-	if (map == VM_MAP_NULL) {
-		return;
-	}
-	region = vm_shared_region_get(task);
-	if (region != NULL) {
-		slide = region->sr_slide;
-		vm_shared_region_deallocate(region);
-	}
-	clock_sec_t secs;
-	clock_usec_t usecs;
-
-	uint64_t nanos;
-
-	clock_get_system_microtime(&secs, &usecs);
-	absolutetime_to_nanoseconds(mach_absolute_time(), &nanos);
-	snprintf(line, sizeof(line), "ustacks: %s[%d] %u threads, shared cache slide 0x%x, uptime %lu.%03u, at %llu\n",
-	    proc_name_address(proc), proc_pid(proc), count, slide, (unsigned long)secs, (unsigned)usecs / 1000, nanos / 1000);
-	ustacks_say(line);
-
-	old_map = vm_map_switch(map);
-	for (unsigned i = 0; i < count; i++) {
-		uint64_t frame[2], fp = snap[i].fp;
-
-		/* (a thread that runs shows where it last came into the kernel, not where it is) */
-		at = snprintf(line, sizeof(line), "ustacks:  thread 0x%llx%s%s%s%s: 0x%llx 0x%llx", (unsigned long long)snap[i].tid,
-		    snap[i].name[0] ? " \"" : "", snap[i].name, snap[i].name[0] ? "\"" : "",
-		    (snap[i].state & TH_RUN) ? " (running)" : "", (unsigned long long)snap[i].pc, (unsigned long long)snap[i].lr);
-		for (int depth = 0; depth < USTACKS_MAX_FRAMES && plausible_user_address(fp) && (fp & 7) == 0; depth++) {
-			if (copyin((user_addr_t)fp, frame, sizeof(frame)) != 0) {
-				break;
-			}
-			if (at < (int)sizeof(line) - 24) {
-				at += snprintf(line + at, sizeof(line) - at, " 0x%llx", (unsigned long long)frame[1]);
-			}
-			if (frame[0] <= fp) {
-				break;
-			}
-			fp = frame[0];
-		}
-		snprintf(line + at, sizeof(line) - at, "\n");
-		ustacks_say(line);
-	}
-	vm_map_switch(old_map);
-	vm_map_deallocate(map);
+	(void)task;
+	(void)proc;
+	/* stubbed for XNU 12377 bring-up */
 }
 
 /*

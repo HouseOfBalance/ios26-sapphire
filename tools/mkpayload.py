@@ -40,6 +40,7 @@ PAGE = 0x4000
 BOOT_LINE_LENGTH = 1024
 CMDLINE = 0x48
 SEG_TABLE = CMDLINE + BOOT_LINE_LENGTH	# 0x448
+DEFAULT_CMDLINE = 'debug=0xc serial=3 cpus=1 keepsyms=1 -enable_kprintf_spam sweetearlyfb=1 sweethidtest=3 ipc_legacy=1 cs_enforcement_disable=1 amfi_get_out_of_my_way=1 rootless=0 rd=md0'
 
 
 def parse_macho(buf):
@@ -195,7 +196,11 @@ def adt_dram(adt_blob):
             struct.unpack('<Q', chosen.prop('dram-size'))[0])
 
 
-def build(kernel_path, adt_path, cmdline, ramdisk_path=None, compress=False, img4_nodes=True):
+def build(kernel_path, adt_path, cmdline=DEFAULT_CMDLINE, ramdisk_path=None, compress=False, img4_nodes=True):
+    if cmdline is None:
+        cmdline = DEFAULT_CMDLINE
+    if ramdisk_path and 'rd=md0' not in cmdline.split():
+        cmdline = f"{cmdline.strip()} rd=md0".strip()
     buf = bytearray(open(kernel_path, 'rb').read())
     m = parse_macho(buf)
     nfix = apply_chained_fixups(buf, m)
@@ -260,7 +265,7 @@ def build(kernel_path, adt_path, cmdline, ramdisk_path=None, compress=False, img
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument('kernel'); ap.add_argument('adt'); ap.add_argument('out')
-    ap.add_argument('--cmdline', default='debug=0xc serial=3 cpus=1 keepsyms=1')
+    ap.add_argument('--cmdline', default=DEFAULT_CMDLINE)
     ap.add_argument('--ramdisk', help='root image for md0 (boot with rd=md0)')
     ap.add_argument('--compress', action='store_true', help='deflate big segments (payload v2)')
     ap.add_argument('--no-img4-nodes', action='store_true',

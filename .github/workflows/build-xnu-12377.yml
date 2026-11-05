@@ -106,7 +106,7 @@ jobs:
             python3 kernel/patch_kernel_pac.py "$KERNEL"
             cp "$KERNEL" out/mach.development.bcm2837
             python3 tools/mkpayload.py --compress \
-              --cmdline "debug=0xc serial=3 cpus=1 keepsyms=1 -enable_kprintf_spam sweetearlyfb=1 sweethidtest=3 ipc_legacy=1" \
+              --cmdline "debug=0xc serial=3 cpus=1 keepsyms=1 -enable_kprintf_spam sweetearlyfb=1 sweethidtest=3 ipc_legacy=1 cs_enforcement_disable=1 amfi_get_out_of_my_way=1 rootless=0 rd=md0" \
               "$KERNEL" sapphire.adt out/payload.bin
             python3 enxerto/build.py --board sapphire --payload out/payload.bin --skip-host-tests
             if [ -f enxerto/out/enxerto-boot.img ]; then

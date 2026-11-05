@@ -387,7 +387,7 @@ def patch_pmap(xnu_dir):
 initialize_ram_ranges(void)
 {
 	extern void hk_draw_band(uint32_t color, uint32_t row_start, uint32_t row_count);
-	hk_draw_band(0x00FFFFFF, 280, 2); /* White: entered initialize_ram_ranges */
+	hk_draw_band(0x00FFFFFF, 250, 2); /* White: entered initialize_ram_ranges */
 
 	pmap_paddr_t first = first_avail;
 	pmap_paddr_t end   = avail_end;
@@ -395,7 +395,7 @@ initialize_ram_ranges(void)
 	/* hakios/claude: normalize first_avail if passed as kernel VA */
 	if (first >= 0xffff000000000000ULL) {
 		first = ml_static_vtop((vm_offset_t)first);
-		hk_draw_band(0x00FF0000, 284, 2); /* Red: was a kernel VA! */
+		hk_draw_band(0x00FF0000, 252, 2); /* Red: was a kernel VA! */
 	}
 
 	first = (first + PAGE_MASK) & ~(pmap_paddr_t)PAGE_MASK;
@@ -407,7 +407,7 @@ initialize_ram_ranges(void)
 	}
 
 	if (first < gPhysBase || end <= first) {
-		hk_draw_band(0x00FF0000, 288, 2); /* Red: bad range */
+		hk_draw_band(0x00FF0000, 254, 2); /* Red: bad range */
 		first = end;                      /* clamp: zero pages, no underflow */
 	}
 
@@ -416,7 +416,7 @@ initialize_ram_ranges(void)
 	avail_page_count = atop(end - first);
 	need_ram_ranges_init = false;
 
-	hk_draw_band(0x0000FF00, 292, 2); /* Lime: initialize_ram_ranges done */
+	hk_draw_band(0x0000FF00, 256, 2); /* Lime: initialize_ram_ranges done */
 }
 
 unsigned int
@@ -434,13 +434,13 @@ pmap_free_pages_span(
 	void)
 {
 	extern void hk_draw_band(uint32_t color, uint32_t row_start, uint32_t row_count);
-	hk_draw_band(0x0000FFFF, 276, 2); /* Cyan: entered pmap_free_pages_span */
+	hk_draw_band(0x0000FFFF, 258, 2); /* Cyan: entered pmap_free_pages_span */
 
 	if (need_ram_ranges_init) {
 		initialize_ram_ranges();
 	}
 
-	hk_draw_band(0x00FFD700, 294, 2); /* Gold: span computed */
+	hk_draw_band(0x00FFD700, 260, 2); /* Gold: span computed */
 	return (unsigned int)atop(avail_end - first_avail);
 }
 
@@ -495,8 +495,8 @@ pmap_next_page(
 
     if "/* hakios/claude: normalize first_avail if passed as kernel VA */" in content:
         markers = (
-            "hk_draw_band(0x0000FFFF, 276, 2)",
-            "hk_draw_band(0x00FFD700, 294, 2)",
+            "hk_draw_band(0x0000FFFF, 258, 2)",
+            "hk_draw_band(0x00FFD700, 260, 2)",
             "first_avail += PAGE_SIZE;",
         )
         if all(marker in content for marker in markers):
