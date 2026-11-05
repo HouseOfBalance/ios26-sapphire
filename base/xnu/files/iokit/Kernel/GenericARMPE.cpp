@@ -23,6 +23,7 @@ extern "C" {
 #include "MiniDrivers.h"
 
 extern "C" {
+extern int master_cpu;
 kern_return_t processor_start(processor_t processor);
 kern_return_t processor_exit(processor_t processor);
 extern uint32_t processor_avail_count;

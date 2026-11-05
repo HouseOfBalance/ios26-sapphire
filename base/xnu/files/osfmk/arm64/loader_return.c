@@ -543,7 +543,7 @@ redwood_memory_line(char *buf, size_t len)
 	    MB(vm_page_free_count), MB(vm_page_pageable_external_count), MB(vm_page_pageable_internal_count),
 	    MB(vm_page_wire_count), surfaces, (unsigned int)(surface_bytes >> 20),
 	    MB(os_atomic_load(&ramfs_pages_in_use, relaxed)),
-	    MB(VM_PAGE_COMPRESSOR_COUNT), MB(c_segment_pages_compressed),
+	    0, 0,
 	    MB(memorystatus_available_pages),
 	    MB(memorystatus_available_pages_critical), MB(memorystatus_available_pages_critical_base));
 #undef MB

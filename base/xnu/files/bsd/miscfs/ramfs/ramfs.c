@@ -22,6 +22,8 @@
  * last unlink it is freed when its vnode is reclaimed.
  */
 
+#include <mach/mach_types.h>
+#include <kern/zalloc.h>
 #include <kern/assert.h>
 #include <kern/kalloc.h>
 #include <kern/locks.h>
@@ -194,9 +196,6 @@ ramfs_node_alloc(struct ramfs_mount *rm, enum vtype type, struct vnode_attr *vap
  * of kernel_map each, as the contents of a RAM disk are. wait=false: never wait for memory (the
  * page-out path, which may be the pageout daemon looking for some).
  */
-extern void *kalloc_data(vm_size_t size, zalloc_flags_t flags);
-extern void kfree_data(void *data, vm_size_t size);
-
 static void *
 ramfs_page_alloc(bool wait)
 {

@@ -39,7 +39,6 @@ user_exception_trace(exception_type_t exception, mach_exception_data_t code, mac
 {
 	static const unsigned message_registers[] = { 0, 1, 2, 3, 8, 16 };
 	const arm_saved_state_t *state;
-	vm_shared_region_t region;
 	uint64_t frame[2], fp;
 	uint32_t slide = 0;
 	task_t task;
@@ -112,7 +111,6 @@ user_abort_trace(void)
 	task_t task = get_threadtask(thread);
 	const arm_saved_state_t *state = get_user_regs(thread);
 	struct proc *proc = get_bsdtask_info(task);
-	vm_shared_region_t region;
 	uint64_t frame[2], fp;
 	uint32_t slide = 0;
 
