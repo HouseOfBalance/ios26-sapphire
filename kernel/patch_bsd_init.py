@@ -129,10 +129,93 @@ def patch_bsd_init(src_dir):
         else:
             print("  [WARN] bsd/kern/bsd_init.c: bsd_init autoconf completion pattern not found")
 
+    # 8. vfs_mountroot succeeded band (Row 615: Spring Green)
+    t_vfsroot = "if (0 == (err = vfs_mountroot())) {"
+    r_vfsroot = (
+        "if (0 == (err = vfs_mountroot())) {\n"
+        "\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x0000FF7F, 615, 4); } /* Spring Green: vfs_mountroot succeeded */"
+    )
+    if t_vfsroot in c:
+        c = c.replace(t_vfsroot, r_vfsroot, 1)
+        print("  [OK] bsd/kern/bsd_init.c: vfs_mountroot success band installed (row 615)")
+    else:
+        print("  [WARN] bsd/kern/bsd_init.c: vfs_mountroot pattern not found")
+
+    # 9. bsd_utaskbootstrap band (Row 620: Deep Sky Blue)
+    t_utask = "bsd_utaskbootstrap();"
+    r_utask = (
+        "bsd_utaskbootstrap();\n"
+        "\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x0000BFFF, 620, 4); } /* Deep Sky Blue: PID 1 process created */"
+    )
+    if t_utask in c:
+        c = c.replace(t_utask, r_utask, 1)
+        print("  [OK] bsd/kern/bsd_init.c: bsd_utaskbootstrap band installed (row 620)")
+    else:
+        print("  [WARN] bsd/kern/bsd_init.c: bsd_utaskbootstrap pattern not found")
+
+    # 10. bsdinit_task entry band (Row 630: Dark Orange)
+    t_bsdinit = "bsdinit_task(void)\n{\n"
+    r_bsdinit = (
+        "bsdinit_task(void)\n{\n"
+        "\t/* hakios: PID 1 kernel bootstrap */\n"
+        "\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FF8C00, 630, 4); } /* Dark Orange: bsdinit_task entered */\n"
+    )
+    if t_bsdinit in c:
+        c = c.replace(t_bsdinit, r_bsdinit, 1)
+        print("  [OK] bsd/kern/bsd_init.c: bsdinit_task entry band installed (row 630)")
+    else:
+        print("  [WARN] bsd/kern/bsd_init.c: bsdinit_task entry pattern not found")
+
+    # 11. load_init_program return band (Row 640: Magenta)
+    t_loadinit = "load_init_program(p);\n"
+    r_loadinit = (
+        "load_init_program(p);\n"
+        "\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FF00FF, 640, 4); } /* Magenta: load_init_program handoff to EL0 */\n"
+    )
+    if t_loadinit in c:
+        c = c.replace(t_loadinit, r_loadinit, 1)
+        print("  [OK] bsd/kern/bsd_init.c: load_init_program band installed (row 640)")
+    else:
+        print("  [WARN] bsd/kern/bsd_init.c: load_init_program pattern not found")
+
     with open(target, "w", encoding="utf-8", newline="\n") as f:
         f.write(c)
 
     print("  [OK] bsd/kern/bsd_init.c successfully patched with BSD lifecycle ladder")
+
+    # 12. Instrument bsd/dev/arm/systemcalls.c for PID 1 userland syscall execution & heartbeat
+    target_sys = os.path.join(src_dir, "bsd", "dev", "arm", "systemcalls.c")
+    if os.path.isfile(target_sys):
+        with open(target_sys, "r", encoding="utf-8", errors="replace") as f:
+            csys = f.read().replace("\r\n", "\n")
+        if "/* hakios: monitor userland PID 1 syscall execution and heartbeat */" in csys:
+            print("  [ALREADY PATCHED] bsd/dev/arm/systemcalls.c: userland syscall monitor already installed")
+        else:
+            t_syscall = "code = arm_get_syscall_number(state);"
+            r_syscall = (
+                "code = arm_get_syscall_number(state);\n"
+                "\t/* hakios: monitor userland PID 1 syscall execution and heartbeat */\n"
+                "\tif (proc_pid(proc) == 1) {\n"
+                "\t\tstatic int pid1_first_syscall = 0;\n"
+                "\t\tif (!pid1_first_syscall) {\n"
+                "\t\t\tpid1_first_syscall = 1;\n"
+                "\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FFFF00, 650, 6); } /* Vivid Yellow: PID 1 userland syscall entered */\n"
+                "\t\t}\n"
+                "\t\tif (code == 93 /* SYS_select */) {\n"
+                "\t\t\tstatic uint32_t hb_color = 0x0000FF00;\n"
+                "\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(hb_color, 656, 4); } /* Heartbeat tick */\n"
+                "\t\t\thb_color = (hb_color == 0x0000FF00) ? 0x0000FFFF : 0x0000FF00;\n"
+                "\t\t}\n"
+                "\t}"
+            )
+            if t_syscall in csys:
+                csys = csys.replace(t_syscall, r_syscall, 1)
+                with open(target_sys, "w", encoding="utf-8", newline="\n") as f:
+                    f.write(csys)
+                print("  [OK] bsd/dev/arm/systemcalls.c: userland syscall & heartbeat monitor installed (rows 650, 656)")
+            else:
+                print("  [WARN] bsd/dev/arm/systemcalls.c: code = arm_get_syscall_number pattern not found")
+
     return True
 
 def main():

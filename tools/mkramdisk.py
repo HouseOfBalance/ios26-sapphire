@@ -126,7 +126,20 @@ def assemble_dummy_init():
         ('INST', 0xD2800002),          # movz x2, #0
         ('INST', 0xD28000B0),          # movz x16, #5 (SYS_open)
         ('INST', 0xD4001001),          # svc #0x80
-        ('B_CS', 'hang'),              # b.cs hang (if carry set, open failed)
+        ('B_CC', 'open_ok'),           # b.cc open_ok (if carry clear, success!)
+
+        # Fallback 1: try open('/dev/console', O_WRONLY=1, 0)
+        ('ADR', 0, 'path_console'),
+        ('INST', 0xD2800021),          # movz x1, #1 (O_WRONLY)
+        ('INST', 0xD2800002),          # movz x2, #0
+        ('INST', 0xD28000B0),          # movz x16, #5 (SYS_open)
+        ('INST', 0xD4001001),          # svc #0x80
+        ('B_CC', 'open_ok'),           # b.cc open_ok
+
+        # Fallback 2: fallback to fd=1 (stdout)
+        ('INST', 0xD2800020),          # movz x0, #1 (fd=1)
+
+        ('LABEL', 'open_ok'),
         ('INST', 0xAA0003F3),          # orr x19, xzr, x0 (mov x19, x0 -> fd)
 
         # write banner
@@ -240,6 +253,12 @@ def assemble_dummy_init():
             diff = labels[item[1]] - pc
             imm19 = ((diff >> 2) & 0x7FFFF) << 5
             inst = 0x54000000 | imm19 | 2     # Condition 2 = CS (Carry Set)
+            buf.extend(struct.pack('<I', inst))
+            pc += 4
+        elif op == 'B_CC':
+            diff = labels[item[1]] - pc
+            imm19 = ((diff >> 2) & 0x7FFFF) << 5
+            inst = 0x54000000 | imm19 | 3     # Condition 3 = CC (Carry Clear)
             buf.extend(struct.pack('<I', inst))
             pc += 4
         elif op == 'BL':

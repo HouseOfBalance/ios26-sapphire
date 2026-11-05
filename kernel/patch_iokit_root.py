@@ -47,16 +47,26 @@ def patch_iokit_root(src_dir):
         print("  [WARN] iokit/bsddev/IOKitBSDInit.cpp: IOFindBSDRoot function signature not found")
 
     # 2. md0 root selection band: hook directly into the rd=md fastpath
-    t_md0 = "bsdWait = kSecondScale / 10;"
+    t_md0 = "rootName[0] = 'm';"
     r_md0 = (
-        "bsdWait = kSecondScale / 10;\n"
-        "\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x0000FF00, 610, 4); } /* Lime: rd=md0 selected */"
+        "rootName[0] = 'm';\n"
+        "\t\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x0000FF00, 610, 4); } /* Lime: rd=md0 selected */"
     )
     if t_md0 in c:
         c = c.replace(t_md0, r_md0, 1)
         print("  [OK] iokit/bsddev/IOKitBSDInit.cpp: rd=md0 selection band installed (row 610)")
     else:
-        print("  [WARN] iokit/bsddev/IOKitBSDInit.cpp: bsdWait = kSecondScale / 10 not found")
+        # Fallback to alternative anchor
+        t_md0_alt = "bsdWait = kSecondScale / 10;"
+        r_md0_alt = (
+            "bsdWait = kSecondScale / 10;\n"
+            "\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x0000FF00, 610, 4); } /* Lime: rd=md0 selected */"
+        )
+        if t_md0_alt in c:
+            c = c.replace(t_md0_alt, r_md0_alt, 1)
+            print("  [OK] iokit/bsddev/IOKitBSDInit.cpp: rd=md0 selection band installed via bsdWait (row 610)")
+        else:
+            print("  [WARN] iokit/bsddev/IOKitBSDInit.cpp: rootName[0] = 'm' and bsdWait patterns not found")
 
     with open(target, "w", encoding="utf-8", newline="\n") as f:
         f.write(c)
