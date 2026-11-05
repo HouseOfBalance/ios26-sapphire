@@ -1443,8 +1443,7 @@ kernel_debug_string_early(const char *message)
 
         t16_startup_lock = '\tif (opts & VMP_RELEASE_STARTUP) {\n\t\tLCK_MTX_ASSERT(&vm_page_queue_free_lock, LCK_MTX_ASSERT_OWNED);\n\t}'
         r16_startup_lock = """\tif (opts & VMP_RELEASE_STARTUP) {
-\t\textern int startup_phase;
-\t\tif (startup_phase >= 2 /* STARTUP_SUB_KMEM */) {
+\t\tif (startup_phase >= STARTUP_SUB_KMEM) {
 \t\t\tLCK_MTX_ASSERT(&vm_page_queue_free_lock, LCK_MTX_ASSERT_OWNED);
 \t\t}
 \t}"""
@@ -1652,8 +1651,7 @@ kernel_debug_string_early(const char *message)
         r22 = """void
 lck_mtx_assert(lck_mtx_t *lock, unsigned int type)
 {
-\textern int startup_phase;
-\tif (startup_phase < 2 /* STARTUP_SUB_KMEM */) {
+\tif (startup_phase < STARTUP_SUB_KMEM) {
 \t\treturn;
 \t}"""
         if t22 in c22:
