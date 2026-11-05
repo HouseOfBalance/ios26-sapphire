@@ -1636,11 +1636,23 @@ kernel_debug_string_early(const char *message)
             print("  [ALREADY PATCHED] osfmk/console/video_console.c: dual-region framebuffer partition already present")
         elif vc_target in c21:
             c21 = c21.replace(vc_target, vc_repl, 1)
-            with open(p21, "w", encoding="utf-8", newline="\n") as f:
-                f.write(c21)
             print("  [OK] osfmk/console/video_console.c: dual-region framebuffer partition installed (rows 0..719 ladder, rows 720..2399 console)")
         else:
             print("  [WARN] vc_target not found in video_console.c")
+
+        # Force video_console always enabled (never discard character output in vcputc_options)
+        t_vcputc = "void\nvcputc_options(char c, __unused bool poll)\n{\n\tif (gc_initialized && gc_enabled) {"
+        r_vcputc = "void\nvcputc_options(char c, __unused bool poll)\n{\n\t/* hakios: force text console always active for PID 1 & kprintf */\n\tif (gc_initialized) {\n\t\tgc_enabled = TRUE;"
+        if "/* hakios: force text console always active for PID 1 & kprintf */" in c21:
+            print("  [ALREADY PATCHED] osfmk/console/video_console.c: vcputc text force already present")
+        elif t_vcputc in c21:
+            c21 = c21.replace(t_vcputc, r_vcputc, 1)
+            print("  [OK] osfmk/console/video_console.c: vcputc text force installed (always active)")
+        else:
+            print("  [WARN] t_vcputc pattern not found in video_console.c")
+
+        with open(p21, "w", encoding="utf-8", newline="\n") as f:
+            f.write(c21)
 
     # 22. osfmk/kern/lock_mtx.c (bypass mutex ownership assert during early single-core boot)
     p22 = os.path.join(src, "osfmk", "kern", "lock_mtx.c")
@@ -1661,6 +1673,23 @@ lck_mtx_assert(lck_mtx_t *lock, unsigned int type)
             print("  [OK] osfmk/kern/lock_mtx.c: early boot mutex assert bypass installed")
         else:
             print("  [WARN] t22 not found in lock_mtx.c")
+
+    # 23. pexpert/arm/pe_init.c (force text mode console on framebuffer display)
+    p23 = os.path.join(src, "pexpert", "arm", "pe_init.c")
+    if os.path.isfile(p23):
+        with open(p23, "r", encoding="utf-8", errors="replace") as f:
+            c23 = f.read().replace("\r\n", "\n")
+        t23 = "\tif (PE_state.video.v_display) {\n\t\tPE_initialize_console(&PE_state.video, kPEGraphicsMode);\n\t} else {\n\t\tPE_initialize_console(&PE_state.video, kPETextMode);\n\t}"
+        r23 = "\t/* hakios: always initialize in text mode so video_console displays PID 1 & kprintf */\n\tPE_initialize_console(&PE_state.video, kPETextMode);"
+        if "/* hakios: always initialize in text mode" in c23:
+            print("  [ALREADY PATCHED] pexpert/arm/pe_init.c: text console mode already forced")
+        elif t23 in c23:
+            c23 = c23.replace(t23, r23, 1)
+            with open(p23, "w", encoding="utf-8", newline="\n") as f:
+                f.write(c23)
+            print("  [OK] pexpert/arm/pe_init.c: forced kPETextMode for video_console display")
+        else:
+            print("  [WARN] t23 pattern not found in pe_init.c")
 
     print("Cortex-A73 patches successfully applied!")
 

@@ -40,7 +40,7 @@ PAGE = 0x4000
 BOOT_LINE_LENGTH = 1024
 CMDLINE = 0x48
 SEG_TABLE = CMDLINE + BOOT_LINE_LENGTH	# 0x448
-DEFAULT_CMDLINE = 'debug=0xc serial=0 cpus=1 keepsyms=1 -enable_kprintf_spam sweetearlyfb=1 sweethidtest=3 ipc_legacy=1 cs_enforcement_disable=1 amfi_get_out_of_my_way=1 rootless=0 rd=md0'
+DEFAULT_CMDLINE = '-v debug=0xc serial=0 cpus=1 keepsyms=1 -enable_kprintf_spam sweetearlyfb=1 sweethidtest=3 ipc_legacy=1 cs_enforcement_disable=1 amfi_get_out_of_my_way=1 rootless=0 rd=md0'
 
 
 def parse_macho(buf):
