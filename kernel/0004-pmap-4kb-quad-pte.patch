@@ -41,7 +41,7 @@ index a18749e..d222a22 100644
 +pmap_quad_tlb_invalidate(pmap_t pmap, vm_offset_t va)
 +{
 +	uint32_t asid = (pmap != NULL) ? pmap->hw_asid : 0;
-+	uint64_t v_base = ((uint64_t)asid << 48) | ((va >> 12) & 0x0000FFFFFFFFFFFFULL);
++	uint64_t v_base = ((uint64_t)asid << 48) | ((va >> 12) & 0x00000FFFFFFFFFFFULL);
 +	uint64_t v0 = v_base;
 +	uint64_t v1 = v_base + 1ULL;
 +	uint64_t v2 = v_base + 2ULL;

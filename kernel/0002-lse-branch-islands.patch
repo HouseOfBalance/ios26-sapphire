@@ -852,7 +852,7 @@ new file mode 100644
 index 0000000..3333333
 --- /dev/null
 +++ b/osfmk/arm64/lse_patch.c
-@@ -0,0 +1,724 @@
+@@ -0,0 +1,726 @@
 +/*
 + * lse_patch.c - XNU Kernel LSE Atomic Trap Handler & Branch Island Engine
 + * Target: Cortex-A73/A53 (ARMv8.0-A baseline, Snapdragon 685 SM6225)
@@ -939,15 +939,17 @@ index 0000000..3333333
 +}
 +
 +/* Hardware Cache Maintenance */
-+static inline void lse_flush_caches(uintptr_t va, size_t len) {
-+    uintptr_t cur = va & ~((uintptr_t)63);
-+    uintptr_t end = (va + len + 63) & ~((uintptr_t)63);
-+    for (; cur < end; cur += 64) {
-+        __asm__ volatile("dc cvau, %0" : : "r"(cur) : "memory");
++static inline void lse_flush_caches(uintptr_t data_va, uintptr_t exec_va, size_t len) {
++    uintptr_t data_cur = data_va & ~((uintptr_t)63);
++    uintptr_t data_end = (data_va + len + 63) & ~((uintptr_t)63);
++    uintptr_t exec_cur = exec_va & ~((uintptr_t)63);
++    uintptr_t exec_end = (exec_va + len + 63) & ~((uintptr_t)63);
++    for (; data_cur < data_end; data_cur += 64) {
++        __asm__ volatile("dc cvau, %0" : : "r"(data_cur) : "memory");
 +    }
 +    __asm__ volatile("dsb ish" : : : "memory");
-+    for (cur = va & ~((uintptr_t)63); cur < end; cur += 64) {
-+        __asm__ volatile("ic ivau, %0" : : "r"(cur) : "memory");
++    for (; exec_cur < exec_end; exec_cur += 64) {
++        __asm__ volatile("ic ivau, %0" : : "r"(exec_cur) : "memory");
 +    }
 +    __asm__ volatile("dsb ish" : : : "memory");
 +    __asm__ volatile("isb" : : : "memory");
@@ -957,7 +959,7 @@ index 0000000..3333333
 +static inline void patch_memory_phys(uint64_t pa, uint64_t va, uint32_t new_insn) {
 +    volatile uint32_t *p = (volatile uint32_t *)PHYSTOKV(pa);
 +    *p = new_insn;
-+    lse_flush_caches(va, 4);
++    lse_flush_caches((uintptr_t)PHYSTOKV(pa), va, 4);
 +}
 +
 +/* Branch encoding: B <target> (±128MB range check) */
@@ -1548,7 +1550,7 @@ index 0000000..3333333
 +
 +    /* Check if already patched by another core (SMP race) */
 +    if ((inst & 0xFC000000) == 0x14000000) {
-+        lse_flush_caches(elr, 4);
++        lse_flush_caches(elr, elr, 4);
 +        return true;
 +    }
 +

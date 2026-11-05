@@ -22,6 +22,7 @@
 #define UFS_BASE		0x04804000UL	/* ufshc@4804000 */
 #define UART_BASE		0x04a90000UL	/* SM6225 GENI UART (QUP0 SE1) */
 #define DRAM_BASE		0x80000000UL	/* lowmem DDR bank */
+#define DRAM_SIZE		0x40000000UL	/* sapphire exposes 1 GiB to this kernel */
 #define DRAM_HIGHMEM		0x100000000UL	/* highmem DDR bank */
 #elif defined(BOARD_BERYLLIUM)
 #define BOARD_NAME		"beryllium"

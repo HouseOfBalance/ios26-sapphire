@@ -38060,7 +38060,7 @@ new file mode 100644
 index 0000000..2237c74
 --- /dev/null
 +++ b/bsd/dev/redwood_lx.c
-@@ -0,0 +1,583 @@
+@@ -0,0 +1,589 @@
 +/*
 + * Darwin-on-redwood: the kernel's side of the Wi-Fi driver's object.
 + *
@@ -38430,7 +38430,7 @@ index 0000000..2237c74
 +/* ---- the radio's interrupts ------------------------------------------------------------------------------- */
 +
 +extern kern_return_t gic_v3_spi_attach(uint32_t intid, bool edge, void (*handler)(void *context, uint32_t intid), void *context);
-+extern void gic_v3_spi_mask(uint32_t intid);
++extern bool gic_v3_spi_mask(uint32_t intid);
 +extern void gic_v3_spi_unmask(uint32_t intid);
 +extern void gic_v3_spi_detach(uint32_t intid);
 +extern uint64_t gic_v3_spi_count(uint32_t intid);
@@ -38531,7 +38531,13 @@ index 0000000..2237c74
 +		lck_mtx_unlock(&lx_irq_lock);
 +		return kr == KERN_NAME_EXISTS ? EBUSY : EINVAL;
 +	}
-+	gic_v3_spi_mask(lx_irq_first + vector);
++	if (!gic_v3_spi_mask(lx_irq_first + vector)) {
++		lck_mtx_lock(&lx_irq_lock);
++		lx_vector[vector].attached = false;
++		lck_mtx_unlock(&lx_irq_lock);
++		gic_v3_spi_detach(lx_irq_first + vector);
++		return EIO;
++	}
 +	return 0;
 +}
 +
@@ -84917,7 +84923,7 @@ new file mode 100644
 index 0000000..d4d75ad
 --- /dev/null
 +++ b/osfmk/arm64/gic_v3_irq.c
-@@ -0,0 +1,572 @@
+@@ -0,0 +1,597 @@
 +/*
 + * Minimal GICv3 support for generic (non-Apple) ARMv8 boards.
 + *
@@ -84967,7 +84973,9 @@ index 0000000..d4d75ad
 +#define GICD_CTLR_ENABLE_G1NS   (1u << 1)
 +#define GICD_CTLR_ARE_NS        (1u << 4)
 +#define GICD_CTLR_RWP           (1u << 31)
-+#define GIC_POLL_LIMIT          1000000u
++#define GIC_TIMEBASE_HZ         19200000ULL
++#define GIC_RWP_TIMEOUT_TICKS   (GIC_TIMEBASE_HZ / 1000ULL)
++#define GICR_WAKE_TIMEOUT_TICKS (GIC_TIMEBASE_HZ / 100ULL)
 +#define GICD_IGROUPR(n)         (0x0080 + 4 * (n))
 +#define GICD_ISENABLER(n)       (0x0100 + 4 * (n))
 +#define GICD_ICENABLER(n)       (0x0180 + 4 * (n))
@@ -85005,6 +85013,28 @@ index 0000000..d4d75ad
 +static vm_offset_t gicd_base, gicr_base;
 +static vm_size_t   gicr_size;
 +static vm_offset_t gicr_cpu_base[MAX_CPUS]; /* each processor's redistributor frame */
++static uint32_t gic_read32(vm_offset_t addr);
++
++static uint64_t
++gic_timebase(void)
++{
++	uint64_t ticks;
++	__asm__ volatile("isb; mrs %0, cntvct_el0" : "=r"(ticks) : : "memory");
++	return ticks;
++}
++
++static bool
++gic_wait_reg_clear(vm_offset_t address, uint32_t mask, uint64_t timeout_ticks)
++{
++	uint64_t start = gic_timebase();
++	while (gic_read32(address) & mask) {
++		if (gic_timebase() - start >= timeout_ticks) {
++			return false;
++		}
++		__asm__ volatile("yield" ::: "memory");
++	}
++	return true;
++}
 +
 +/*
 + * Acknowledged, not yet EOI'd; 0: none. The signal between processors is interrupt 0 and reads
@@ -85036,7 +85066,7 @@ index 0000000..d4d75ad
 +void gic_v3_irq_cpu_init(void);
 +void gic_v3_irq_quiesce(void);
 +kern_return_t gic_v3_spi_attach(uint32_t intid, bool edge, void (*handler)(void *context, uint32_t intid), void *context);
-+void gic_v3_spi_mask(uint32_t intid);
++bool gic_v3_spi_mask(uint32_t intid);
 +void gic_v3_spi_unmask(uint32_t intid);
 +void gic_v3_spi_detach(uint32_t intid);
 +uint64_t gic_v3_spi_count(uint32_t intid);
@@ -85118,22 +85148,29 @@ index 0000000..d4d75ad
 +static bool
 +gic_distributor_settle(void)
 +{
-+	for (uint32_t poll = 0; poll < GIC_POLL_LIMIT; poll++) {
-+		if ((gic_read32(gicd_base + GICD_CTLR) & GICD_CTLR_RWP) == 0) {
-+			return true;
-+		}
++	if (gic_wait_reg_clear(gicd_base + GICD_CTLR, GICD_CTLR_RWP, GIC_RWP_TIMEOUT_TICKS)) {
++		return true;
 +	}
 +	hk_draw_band(0x00FF0000, 402, 2); /* Red: GIC distributor RWP timeout */
 +	return false;
 +}
 +
-+void
++bool
 +gic_v3_spi_mask(uint32_t intid)
 +{
-+	if (gicd_base != 0 && intid >= GIC_INTID_SPI_MIN && intid < GIC_INTID_SPURIOUS_MIN) {
-+		gic_write32(gicd_base + GICD_ICENABLER(intid / 32), 1u << (intid % 32));
-+		gic_distributor_settle();
++	if (gicd_base == 0 || intid < GIC_INTID_SPI_MIN || intid >= GIC_INTID_SPURIOUS_MIN) {
++		return false;
 +	}
++	gic_write32(gicd_base + GICD_ICENABLER(intid / 32), 1u << (intid % 32));
++	if (!gic_wait_reg_clear(gicd_base + GICD_ISENABLER(intid / 32),
++	    1u << (intid % 32), GIC_RWP_TIMEOUT_TICKS)) {
++		hk_draw_band(0x00FF0000, 402, 2); /* Red: GIC SPI mask did not take effect */
++		return false;
++	}
++	if (!gic_distributor_settle()) {
++		return false;
++	}
++	return true;
 +}
 +
 +void
@@ -85180,7 +85217,15 @@ index 0000000..d4d75ad
 +	os_atomic_store(&slot->intid, intid, release);
 +	simple_unlock(&gic_spi_lock);
 +
-+	gic_v3_spi_mask(intid);
++	if (!gic_v3_spi_mask(intid)) {
++		gic_write32(gicd_base + GICD_ICPENDR(intid / 32), 1u << (intid % 32));
++		gic_write32(gicd_base + GICD_ICACTIVER(intid / 32), 1u << (intid % 32));
++		*(volatile uint64_t *)(gicd_base + GICD_IROUTER(intid)) = 0;
++		simple_lock(&gic_spi_lock, LCK_GRP_NULL);
++		os_atomic_store(&slot->intid, 0, release);
++		simple_unlock(&gic_spi_lock);
++		return KERN_FAILURE;
++	}
 +	gic_write32(gicd_base + GICD_ICPENDR(intid / 32), 1u << (intid % 32));
 +	gic_write32(gicd_base + GICD_ICACTIVER(intid / 32), 1u << (intid % 32));
 +	gic_write32(gicd_base + GICD_IGROUPR(intid / 32), gic_read32(gicd_base + GICD_IGROUPR(intid / 32)) | 1u << (intid % 32));
@@ -85191,6 +85236,10 @@ index 0000000..d4d75ad
 +	/* GICD_IROUTER: Aff3 in [39:32], Aff2.Aff1.Aff0 in [23:0]; bit 31 (any processor) clear */
 +	*(volatile uint64_t *)(gicd_base + GICD_IROUTER(intid)) = (mpidr & 0xff00000000ull) | (mpidr & 0xffffff);
 +	if (!gic_distributor_settle()) {
++		gic_write32(gicd_base + GICD_ICENABLER(intid / 32), 1u << (intid % 32));
++		gic_write32(gicd_base + GICD_ICPENDR(intid / 32), 1u << (intid % 32));
++		gic_write32(gicd_base + GICD_ICACTIVER(intid / 32), 1u << (intid % 32));
++		*(volatile uint64_t *)(gicd_base + GICD_IROUTER(intid)) = 0;
 +		simple_lock(&gic_spi_lock, LCK_GRP_NULL);
 +		os_atomic_store(&slot->intid, 0, release);
 +		simple_unlock(&gic_spi_lock);
@@ -85328,7 +85377,6 @@ index 0000000..d4d75ad
 +
 +/* the distance between redistributors when the device tree gives one (redistributor-stride), else 0 */
 +static uint64_t gicr_stride;
-+static uint32_t gic_irq_handler_state;
 +
 +static vm_offset_t
 +gic_find_redistributor(void)
@@ -85395,6 +85443,10 @@ index 0000000..d4d75ad
 +	/* System-register CPU interface */
 +	__builtin_arm_wsr64("ICC_SRE_EL1", __builtin_arm_rsr64("ICC_SRE_EL1") | 1);
 +	__builtin_arm_isb(ISB_SY);
++	if ((__builtin_arm_rsr64("ICC_SRE_EL1") & 1ULL) == 0) {
++		hk_draw_band(0x00FF0000, 402, 2); /* Red: GIC system-register interface unavailable */
++		return;
++	}
 +	__builtin_arm_wsr64("ICC_IGRPEN1_EL1", 0);
 +	__builtin_arm_isb(ISB_SY);
 +
@@ -85408,18 +85460,14 @@ index 0000000..d4d75ad
 +	uint32_t waker = gic_read32(gicr + GICR_WAKER);
 +	if (waker & (GICR_WAKER_PROCSLEEP | GICR_WAKER_CHILDASLEEP)) {
 +		gic_write32(gicr + GICR_WAKER, waker & ~GICR_WAKER_PROCSLEEP);
-+		uint32_t poll;
-+		for (poll = 0; poll < GIC_POLL_LIMIT; poll++) {
-+			if ((gic_read32(gicr + GICR_WAKER) & GICR_WAKER_CHILDASLEEP) == 0) {
-+				break;
-+			}
-+		}
-+		if (poll == GIC_POLL_LIMIT) {
++		if (!gic_wait_reg_clear(gicr + GICR_WAKER, GICR_WAKER_CHILDASLEEP,
++		    GICR_WAKE_TIMEOUT_TICKS)) {
 +			gicr_cpu_base[cpu] = 0;
 +			hk_draw_band(0x00FF0000, 404, 2); /* Red: GIC redistributor wake timeout */
 +			return;
 +		}
 +	}
++	ml_install_interrupt_handler(NULL, 0, NULL, gic_irq_handler, NULL);
 +
 +	/*
 +	 * The interrupts between processors, where there is more than one. A core that an earlier
@@ -85434,26 +85482,6 @@ index 0000000..d4d75ad
 +		*(volatile uint8_t *)(gicr + GICR_IPRIORITYR(GIC_SGI_SIGNAL)) = GIC_PRIORITY_DEFAULT;
 +		*(volatile uint8_t *)(gicr + GICR_IPRIORITYR(GIC_SGI_STOP)) = GIC_PRIORITY_DEFAULT;
 +		mine |= sgis;
-+	}
-+
-+	/* Install the global dispatcher before enabling any Group 1 interrupt source. */
-+	uint32_t expected = 0;
-+	if (__atomic_compare_exchange_n(&gic_irq_handler_state, &expected, 1, false,
-+	    __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
-+		ml_install_interrupt_handler(NULL, 0, NULL, gic_irq_handler, NULL);
-+		__atomic_store_n(&gic_irq_handler_state, 2, __ATOMIC_RELEASE);
-+	} else {
-+		uint32_t poll;
-+		for (poll = 0; poll < GIC_POLL_LIMIT; poll++) {
-+			if (__atomic_load_n(&gic_irq_handler_state, __ATOMIC_ACQUIRE) == 2) {
-+				break;
-+			}
-+		}
-+		if (poll == GIC_POLL_LIMIT) {
-+			gicr_cpu_base[cpu] = 0;
-+			hk_draw_band(0x00FF0000, 402, 2); /* Red: GIC handler registration timeout */
-+			return;
-+		}
 +	}
 +
 +	/* Virtual timer PPI (and those): Group 1 (IRQ), default priority, enabled */
@@ -85481,6 +85509,9 @@ index 0000000..d4d75ad
 +	__builtin_arm_wsr64("ICC_AP1R0_EL1", 0);
 +	__builtin_arm_wsr64("ICC_PMR_EL1", 0xff);
 +	__builtin_arm_wsr64("ICC_BPR1_EL1", 0);
++	uint64_t icc_ctlr = __builtin_arm_rsr64("ICC_CTLR_EL1");
++	__builtin_arm_wsr64("ICC_CTLR_EL1", icc_ctlr & ~(1ULL << 1)); /* EOImode=0: EOIR also deactivates */
++	__builtin_arm_isb(ISB_SY);
 +	__asm__ volatile("dsb sy" ::: "memory");
 +	__builtin_arm_wsr64("ICC_IGRPEN1_EL1", 1);
 +	__builtin_arm_isb(ISB_SY);

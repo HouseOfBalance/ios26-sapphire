@@ -14,6 +14,7 @@
  */
 #include <stdint.h>
 #include "bootui.h"
+#include "board.h"
 #include "charger.h"
 #include "console.h"
 #include "fdt.h"
@@ -69,20 +70,53 @@ _Static_assert(__builtin_offsetof(struct boot_args, bootFlags) == 1136, "boot_ar
 _Static_assert(__builtin_offsetof(struct boot_args, memSizeActual) == 1144, "boot_args memSizeActual offset");
 _Static_assert(sizeof(struct boot_args) == 1152, "boot_args layout");
 
-/* MMU off: everything is Device memory, so copy in aligned 8-byte words. */
+extern char _head[], _end[];
+
+/* Copy in aligned 8-byte words; safely handle unaligned head and tail bytes. */
 static void copy64(uintptr_t dst, uintptr_t src, uint64_t n)
 {
-	volatile uint64_t *d = (volatile uint64_t *)dst;
-	volatile const uint64_t *s = (volatile const uint64_t *)src;
-	for (uint64_t i = 0; i < (n + 7) / 8; i++)
-		d[i] = s[i];
+	volatile uint8_t *d8 = (volatile uint8_t *)dst;
+	volatile const uint8_t *s8 = (volatile const uint8_t *)src;
+
+	if (((dst ^ src) & 7) != 0) {
+		for (uint64_t i = 0; i < n; i++)
+			d8[i] = s8[i];
+		return;
+	}
+
+	while (n != 0 && ((uintptr_t)d8 & 7) != 0) {
+		*d8++ = *s8++;
+		n--;
+	}
+	if (n == 0)
+		return;
+
+	volatile uint64_t *d64 = (volatile uint64_t *)d8;
+	volatile const uint64_t *s64 = (volatile const uint64_t *)s8;
+	for (uint64_t i = 0; i < n / 8; i++)
+		d64[i] = s64[i];
+
+	d8 = (volatile uint8_t *)(d64 + n / 8);
+	s8 = (volatile const uint8_t *)(s64 + n / 8);
+	for (uint64_t i = 0; i < (n & 7ULL); i++)
+		d8[i] = s8[i];
 }
 
 static void zero64(uintptr_t dst, uint64_t n)
 {
-	volatile uint64_t *d = (volatile uint64_t *)dst;
+	volatile uint8_t *bytes = (volatile uint8_t *)dst;
+	while (n != 0 && ((uintptr_t)bytes & 7) != 0) {
+		*bytes++ = 0;
+		n--;
+	}
+	if (n == 0)
+		return;
+	volatile uint64_t *words = (volatile uint64_t *)bytes;
 	for (uint64_t i = 0; i < n / 8; i++)
-		d[i] = 0;
+		words[i] = 0;
+	bytes = (volatile uint8_t *)(words + n / 8);
+	for (uint64_t i = 0; i < (n & 7ULL); i++)
+		bytes[i] = 0;
 }
 
 static int magic_ok(const char *m)
@@ -113,11 +147,10 @@ static void inflate_progress(uint64_t done)
  */
 const char *loader_check(uintptr_t rd_start, uintptr_t rd_end)
 {
-	const struct payload *p = (const struct payload *)rd_start;
-	uint64_t size = rd_end - rd_start;
-
-	if (rd_end < rd_start || size < sizeof(struct payload))
+	if (rd_end < rd_start || rd_end - rd_start < sizeof(struct payload))
 		return "payload too short";
+	uint64_t size = rd_end - rd_start;
+	const struct payload *p = (const struct payload *)rd_start;
 	if (rd_start & 7)
 		return "bad payload alignment";
 	if (!magic_ok(p->magic))
@@ -125,55 +158,115 @@ const char *loader_check(uintptr_t rd_start, uintptr_t rd_end)
 	if ((p->version != 1 && p->version != 2) || (p->adt_off & 7))
 		return "bad payload header";
 	const unsigned stride = p->version == 2 ? 40 : 32;
-	if (p->nsegs == 0 || p->nsegs > 64 || sizeof(struct payload) + (uint64_t)p->nsegs * stride > size)
+	if (p->nsegs == 0 || p->nsegs > 64 || (uint64_t)p->nsegs * stride > size - sizeof(struct payload))
 		return "bad segment table";
-	uint64_t ram_lo = p->phys_base, ram_hi = p->phys_base + p->mem_size;
-	if (ram_hi <= ram_lo)
+#if defined(BOARD_SAPPHIRE)
+	uint64_t dram_lo = DRAM_BASE;
+	if (DRAM_SIZE > UINT64_MAX - dram_lo)
+		return "invalid DRAM configuration";
+	uint64_t dram_hi = dram_lo + DRAM_SIZE;
+	if (p->mem_size == 0 || p->phys_base < dram_lo || p->phys_base >= dram_hi || p->mem_size > dram_hi - p->phys_base)
+		return "RAM window outside sapphire DRAM";
+	if (rd_start < dram_lo || rd_start >= dram_hi || rd_end > dram_hi)
+		return "payload source outside sapphire DRAM";
+#endif
+	uint64_t ram_lo = p->phys_base;
+	if (p->mem_size == 0 || p->mem_size > UINT64_MAX - ram_lo)
 		return "bad RAM window";
+	uint64_t ram_hi = ram_lo + p->mem_size;
 	if (p->adt_off > size || p->adt_size > size - p->adt_off)
 		return "ADT outside payload";
-	uint64_t pa_of_va_base = p->phys_base - p->virt_base;
-	uint64_t kend_pa = p->kernel_end + pa_of_va_base;
+	if (p->kernel_end < p->virt_base || p->kernel_end - p->virt_base > p->mem_size)
+		return "kernel end outside RAM";
+	uint64_t kend_offset = p->kernel_end - p->virt_base;
+	uint64_t kend_pa = ram_lo + kend_offset;
+	uint64_t loader_lo = (uintptr_t)_head;
+	uint64_t loader_hi = (uintptr_t)_end;
+	if (loader_hi <= loader_lo)
+		return "kernel end outside RAM";
 	if (kend_pa < ram_lo || kend_pa >= ram_hi || p->adt_size > ram_hi - kend_pa ||
 	    ram_hi - kend_pa - p->adt_size < 2 * PAGE_16K)
 		return "kernel end outside RAM";
+	if (rd_end > loader_lo && rd_start < loader_hi)
+		return "payload overlaps Enxerto image";
+	uint64_t hdr_end = sizeof(struct payload) + (uint64_t)p->nsegs * stride;
+	if (p->adt_size > 0 && p->adt_off < hdr_end)
+		return "ADT overlaps payload header";
 	for (uint32_t i = 0; i < p->nsegs; i++) {
 		const struct payload_seg *s = (const struct payload_seg *)(p->segs + (uint64_t)i * stride);
-		uint64_t pa = s->vmaddr + pa_of_va_base;
+		if (s->vmsize == 0)
+			return "bad segment table";
+		if (s->vmaddr < p->virt_base || s->vmaddr - p->virt_base > p->mem_size ||
+		    s->vmsize > p->mem_size - (s->vmaddr - p->virt_base))
+			return "segment outside RAM";
+		uint64_t pa = ram_lo + (s->vmaddr - p->virt_base);
 		if (s->file_off > size || s->file_size > size - s->file_off)
 			return "segment outside payload";
+		if (s->file_size > 0 && s->file_off < hdr_end)
+			return "segment overlaps payload header";
 		if (pa < ram_lo || pa > kend_pa || s->vmsize > kend_pa - pa)
 			return "segment outside RAM";
 		if (rd_end > pa && rd_start < pa + s->vmsize)
 			return "payload overlaps kernel segment destination";
+		if (pa < loader_hi && loader_lo < pa + s->vmsize)
+			return "kernel segment overlaps Enxerto image";
 		if (p->version == 2 && s->raw_size) {
+			if (s->file_size == 0)
+				return "bad compressed segment";
 			if (s->raw_size > s->vmsize)
 				return "segment inflates past its size";
 		} else if (s->file_size > s->vmsize) {
 			return "segment larger than its size";
 		}
 	}
+	for (uint32_t i = 0; i < p->nsegs; i++) {
+		const struct payload_seg *a = (const struct payload_seg *)(p->segs + (uint64_t)i * stride);
+		uint64_t a_start = ram_lo + (a->vmaddr - p->virt_base);
+		uint64_t a_end = a_start + a->vmsize;
+		for (uint32_t j = i + 1; j < p->nsegs; j++) {
+			const struct payload_seg *b = (const struct payload_seg *)(p->segs + (uint64_t)j * stride);
+			uint64_t b_start = ram_lo + (b->vmaddr - p->virt_base);
+			uint64_t b_end = b_start + b->vmsize;
+			if (a_start < b_end && b_start < a_end)
+				return "kernel segment destinations overlap";
+		}
+	}
 	uint64_t adt_end_pa = kend_pa + p->adt_size;
+	if (adt_end_pa > UINT64_MAX - (PAGE_16K - 1))
+		return "boot data range overflow";
 	uint64_t ba_pa = (adt_end_pa + PAGE_16K - 1) & ~(PAGE_16K - 1);
+	if (ba_pa > UINT64_MAX - PAGE_16K)
+		return "boot data range overflow";
 	uint64_t ba_end_pa = ba_pa + PAGE_16K;
+	if (ba_end_pa > ram_hi)
+		return "boot data outside RAM";
 	if ((p->adt_size != 0 && rd_end > kend_pa && rd_start < adt_end_pa) ||
 	    (rd_end > ba_pa && rd_start < ba_end_pa))
 		return "payload overlaps boot data destination";
+	if ((p->adt_size != 0 && kend_pa < loader_hi && loader_lo < adt_end_pa) ||
+	    (ba_pa < loader_hi && loader_lo < ba_end_pa))
+		return "boot data overlaps Enxerto image";
+	if (p->entry_va & 3)
+		return "entry point outside kernel segments";
+	if (p->entry_va < p->virt_base || p->entry_va - p->virt_base > p->mem_size ||
+	    p->mem_size - (p->entry_va - p->virt_base) < 4)
+		return "entry point outside kernel segments";
 	int entry_in_segment = 0;
 	for (uint32_t i = 0; i < p->nsegs; i++) {
 		const struct payload_seg *s = (const struct payload_seg *)(p->segs + (uint64_t)i * stride);
-		if (p->entry_va >= s->vmaddr && p->entry_va - s->vmaddr < s->vmsize) {
+		if (s->vmsize >= 4 && p->entry_va >= s->vmaddr &&
+		    (p->entry_va - s->vmaddr) <= s->vmsize - 4) {
 			entry_in_segment = 1;
 			break;
 		}
 	}
-	uint64_t entry_pa = p->entry_va + pa_of_va_base;
-	if (!entry_in_segment || entry_pa < ram_lo || entry_pa >= kend_pa)
+	if (!entry_in_segment)
+		return "entry point outside kernel segments";
+	uint64_t entry_pa = ram_lo + (p->entry_va - p->virt_base);
+	if (entry_pa < ram_lo || entry_pa >= kend_pa || kend_pa - entry_pa < 4)
 		return "entry point outside kernel segments";
 	return 0;
 }
-
-extern char _end[];
 
 int loader_has_payload(uintptr_t dtb)
 {
@@ -262,7 +355,7 @@ const char *loader_boot_payload(uintptr_t rd_start, uintptr_t rd_end, int verify
 		uintptr_t dst = s->vmaddr + pa_of_va_base;
 		uint64_t raw = s->file_size;
 		if (p->version == 2 && s->raw_size) {
-			uint64_t cap = s->vmsize;
+			uint64_t cap = s->raw_size;
 			con_hex2("INFLATE", "in=", (uint32_t)s->file_size, "out=", (uint32_t)s->raw_size);
 			int rc = inflate_raw((const uint8_t *)(rd_start + s->file_off), s->file_size,
 					     (volatile uint8_t *)dst, &cap, inflate_progress);
@@ -277,7 +370,7 @@ const char *loader_boot_payload(uintptr_t rd_start, uintptr_t rd_end, int verify
 		infl_base += raw;
 		bootui_mib("INFLATE", infl_base >> 20, infl_total >> 20, PM_MMU, PM_INFLATE_END);
 		if (s->vmsize > raw)
-			zero64(dst + ((raw + 7) & ~7UL), s->vmsize - ((raw + 7) & ~7UL));
+			zero64(dst + raw, s->vmsize - raw);
 	}
 	con_hex2("SEGS", "n=", p->nsegs, "end=", p->kernel_end + pa_of_va_base);
 	bootui_progress(920, "SEGMENTS READY");

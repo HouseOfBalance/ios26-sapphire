@@ -102,7 +102,7 @@ static int codes(struct state *s, const struct huffman *lencode, const struct hu
 		if (symbol < 0)
 			return symbol;
 		if (symbol < 256) {
-			if (s->outcnt == s->outlen)
+			if (s->outcnt >= s->outlen)
 				return -10;
 			s->out[s->outcnt++] = (uint8_t)symbol;
 		} else if (symbol > 256) {
@@ -124,7 +124,7 @@ static int codes(struct state *s, const struct huffman *lencode, const struct hu
 			uint64_t dist = dists[symbol] + e;
 			if (dist > s->outcnt)
 				return -13;
-			if (s->outcnt + len > s->outlen)
+			if (s->outcnt > s->outlen || (uint64_t)len > s->outlen - s->outcnt)
 				return -10;
 			while (len--) {
 				s->out[s->outcnt] = s->out[s->outcnt - dist];
@@ -133,7 +133,7 @@ static int codes(struct state *s, const struct huffman *lencode, const struct hu
 		}
 		if (s->progress && s->outcnt >= s->next_progress) {
 			s->progress(s->outcnt);
-			s->next_progress = s->outcnt + (1UL << 20);
+			s->next_progress = (s->outcnt <= UINT64_MAX - (1UL << 20)) ? s->outcnt + (1UL << 20) : UINT64_MAX;
 		}
 	} while (symbol != 256);
 	return 0;
@@ -143,7 +143,7 @@ static int stored(struct state *s)
 {
 	s->bitbuf = 0;
 	s->bitcnt = 0;
-	if (s->incnt + 4 > s->inlen)
+	if (s->incnt > s->inlen || s->inlen - s->incnt < 4)
 		return -1;
 	unsigned len = s->in[s->incnt++];
 	len |= (unsigned)s->in[s->incnt++] << 8;
@@ -151,9 +151,9 @@ static int stored(struct state *s)
 	nlen |= (unsigned)s->in[s->incnt++] << 8;
 	if (len != (~nlen & 0xffff))
 		return -14;
-	if (s->incnt + len > s->inlen)
+	if (s->incnt > s->inlen || len > s->inlen - s->incnt)
 		return -1;
-	if (s->outcnt + len > s->outlen)
+	if (s->outcnt > s->outlen || (uint64_t)len > s->outlen - s->outcnt)
 		return -10;
 	while (len--)
 		s->out[s->outcnt++] = s->in[s->incnt++];
@@ -252,6 +252,8 @@ static int dynamic(struct state *s)
 int inflate_raw(const uint8_t *in, uint64_t inlen, volatile uint8_t *out, uint64_t *outlen,
 		void (*progress)(uint64_t))
 {
+	if (!in || !out || !outlen)
+		return -1;
 	struct state s;
 	s.out = out;
 	s.outlen = *outlen;
