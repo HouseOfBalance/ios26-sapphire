@@ -183,6 +183,99 @@ def patch_bsd_init(src_dir):
 
     print("  [OK] bsd/kern/bsd_init.c successfully patched with BSD lifecycle ladder")
 
+    # 11b. KVA framebuffer helpers in osfmk/console/video_console.c.
+    # Draw through vinfo.v_baseaddr (XNU's own write-combine KVA mapping of the
+    # ABL framebuffer): MMU stays on, interrupts stay on, no TTBR0/SCTLR games,
+    # strings and iso_font are read through normal cached KVAs.
+    target_vc = os.path.join(src_dir, "osfmk", "console", "video_console.c")
+    if os.path.isfile(target_vc):
+        with open(target_vc, "r", encoding="utf-8", errors="replace") as f:
+            cvc = f.read().replace("\r\n", "\n")
+        if "hk_kva_fb_ready" not in cvc:
+            cvc += r'''
+
+/* hakios: framebuffer drawing through XNU's KVA mapping (no MMU-off path) */
+int hk_kva_fb_ready(void);
+void hk_kva_fill(uint32_t color, uint32_t row, uint32_t count);
+void hk_kva_text(const char *s, uint32_t len, uint32_t row);
+
+int
+hk_kva_fb_ready(void)
+{
+	return vinfo.v_baseaddr != 0 && vinfo.v_depth == 32 && vinfo.v_rowbytes != 0 &&
+	       vinfo.v_width != 0 && vinfo.v_height != 0;
+}
+
+void
+hk_kva_fill(uint32_t color, uint32_t row, uint32_t count)
+{
+	if (!hk_kva_fb_ready() || row >= vinfo.v_height) {
+		return;
+	}
+	if (count > vinfo.v_height - row) {
+		count = vinfo.v_height - row;
+	}
+	for (uint32_t y = row; y < row + count; y++) {
+		volatile uint32_t *p = (volatile uint32_t *)(vinfo.v_baseaddr + (vm_offset_t)y * vinfo.v_rowbytes);
+		for (uint32_t x = 0; x < vinfo.v_width; x++) {
+			p[x] = color;
+		}
+	}
+	__asm__ volatile ("dsb sy" ::: "memory");
+}
+
+/* 8x16 iso_font scaled 2x (16x32 cells), opaque white on opaque black. iso_font is LSB = leftmost pixel. */
+void
+hk_kva_text(const char *s, uint32_t len, uint32_t row)
+{
+	const uint32_t fg = 0xFFFFFFFFu, bg = 0xFF000000u;
+	uint32_t x0 = 20, y0 = row;
+
+	if (!hk_kva_fb_ready()) {
+		return;
+	}
+	for (uint32_t i = 0; i < len && s[i]; i++) {
+		unsigned char ch = (unsigned char)s[i];
+		if (ch == '\r') {
+			continue;
+		}
+		if (ch == '\n' || x0 + 16 > vinfo.v_width) {
+			x0 = 20;
+			y0 += 32;
+			if (ch == '\n') {
+				continue;
+			}
+		}
+		if (y0 + 32 > vinfo.v_height) {
+			break;
+		}
+		if (ch < 32 || ch > 126) {
+			ch = '?';
+		}
+		const unsigned char *g = &iso_font[ch * 16];
+		for (uint32_t gy = 0; gy < 16; gy++) {
+			unsigned char bits = g[gy];
+			for (uint32_t sy = 0; sy < 2; sy++) {
+				volatile uint32_t *p = (volatile uint32_t *)(vinfo.v_baseaddr +
+				    (vm_offset_t)(y0 + gy * 2 + sy) * vinfo.v_rowbytes) + x0;
+				for (uint32_t gx = 0; gx < 8; gx++) {
+					uint32_t c = (bits & (1u << gx)) ? fg : bg;
+					p[gx * 2] = c;
+					p[gx * 2 + 1] = c;
+				}
+			}
+		}
+		x0 += 16;
+	}
+	__asm__ volatile ("dsb sy" ::: "memory");
+}
+'''
+            with open(target_vc, "w", encoding="utf-8", newline="\n") as f:
+                f.write(cvc)
+            print("  [OK] osfmk/console/video_console.c: hk_kva_fill/hk_kva_text installed")
+    else:
+        print("  [WARN] osfmk/console/video_console.c not found")
+
     # 12. Instrument bsd/dev/arm/systemcalls.c for PID 1 userland syscall interception, banner display & heartbeat
     target_sys = os.path.join(src_dir, "bsd", "dev", "arm", "systemcalls.c")
     if os.path.isfile(target_sys):
@@ -201,7 +294,7 @@ def patch_bsd_init(src_dir):
                 "\t\t\t/* Draw diagnostic band Row 650 (Yellow) */\n"
                 "\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FFFF00, 650, 6); }\n"
                 "\t\t\t/* Clear banner box rows 720..960 to pitch black (240 rows = 64k stores, safe and instant) */\n"
-                "\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0xFF000000, 720, 240); }\n"
+                "\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); extern void hk_kva_fill(uint32_t, uint32_t, uint32_t); hk_kva_fill(0xFF000000, 720, 400); }\n"
                 "\t\t\t/* Diagnostic band Row 654 (Cyan: banner box wiped, about to render text) */\n"
                 "\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x0000FFFF, 654, 4); }\n"
                 "\t\t\t/* Draw master banner */\n"
@@ -216,15 +309,17 @@ def patch_bsd_init(src_dir):
                 '\t\t\t\t"[*] Root: Mockfs ramdisk mounted on md0\\n"\n'
                 '\t\t\t\t"[*] PID 1: /sbin/launchd running in EL0!\\n"\n'
                 '\t\t\t\t"[*] System call interface: ACTIVE\\n\\n";\n'
-                "\t\t\textern const unsigned char iso_font[];\n"
-                "\t\t\textern void hk_render_screen_asm(const char *, uint32_t, const unsigned char *, uint32_t);\n"
-                "\t\t\thk_render_screen_asm(hk_init_banner, (uint32_t)sizeof(hk_init_banner) - 1, iso_font, 720);\n"
+                "\t\t\textern int hk_kva_fb_ready(void);\n"
+                "\t\t\textern void hk_kva_text(const char *, uint32_t, uint32_t);\n"
+                "\t\t\tif (!hk_kva_fb_ready()) { extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FF0000, 670, 4); } /* Red: no KVA framebuffer */\n"
+                "\t\t\thk_kva_text(hk_init_banner, (uint32_t)sizeof(hk_init_banner) - 1, 720);\n"
                 "\t\t\t/* Diagnostic band Row 658 (Lime Green: banner rendered successfully) */\n"
                 "\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x0000FF00, 658, 4); }\n"
                 "\t\t}\n\n"
                 "\t\tif (code == 5 /* SYS_open */) {\n"
                 "\t\t\t/* Immediate success for /dev/console open: return fd 1, avoid ttyopen deadlock */\n"
                 "\t\t\tuthread->uu_rval[0] = 1;\n"
+                "\t\t\tuthread->uu_rval[1] = 0;\n"
                 "\t\t\terror = 0;\n"
                 "\t\t\tgoto hakios_pid1_handled;\n"
                 "\t\t}\n\n"
@@ -238,28 +333,24 @@ def patch_bsd_init(src_dir):
                 "\t\t\t\thk_user_write_buf[to_copy] = '\\0';\n"
                 "\t\t\t\t/* Draw Row 652 (Thick White band: SYS_write executed) */\n"
                 "\t\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FFFFFF, 652, 4); }\n"
-                "\t\t\t\t/* Clean D-cache for hk_user_write_buf so physical RAM is coherent before MMU is disabled */\n"
-                "\t\t\t\tfor (uint32_t hk_off = 0; hk_off < to_copy; hk_off += 64) {\n"
-                '\t\t\t\t\tasm volatile("dc cvac, %0" : : "r"(&hk_user_write_buf[hk_off]) : "memory");\n'
-                "\t\t\t\t}\n"
-                '\t\t\t\tasm volatile("dsb sy" : : : "memory");\n'
                 "\t\t\t\t/* Clear line background (32 rows) */\n"
-                "\t\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0xFF000000, hk_text_row, 32); }\n"
-                "\t\t\t\textern const unsigned char iso_font[];\n"
-                "\t\t\t\textern void hk_render_screen_asm(const char *, uint32_t, const unsigned char *, uint32_t);\n"
-                "\t\t\t\thk_render_screen_asm(hk_user_write_buf, to_copy, iso_font, hk_text_row);\n"
+                "\t\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); extern void hk_kva_fill(uint32_t, uint32_t, uint32_t); hk_kva_fill(0xFF000000, hk_text_row, 32); }\n"
+                "\t\t\t\textern void hk_kva_text(const char *, uint32_t, uint32_t);\n"
+                "\t\t\t\thk_kva_text(hk_user_write_buf, to_copy, hk_text_row);\n"
                 "\t\t\t\thk_text_row += 32;\n"
                 "\t\t\t\tif (hk_text_row > 2200) {\n"
                 "\t\t\t\t\thk_text_row = 1080;\n"
                 "\t\t\t\t}\n"
                 "\t\t\t}\n"
                 "\t\t\tuthread->uu_rval[0] = (int)ulen;\n"
+                "\t\t\tuthread->uu_rval[1] = 0;\n"
                 "\t\t\terror = 0;\n"
                 "\t\t\tgoto hakios_pid1_handled;\n"
                 "\t\t}\n\n"
                 "\t\tif (code == 20 /* SYS_getpid */) {\n"
                 "\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00DA70D6, 662, 4); } /* Orchid: SYS_getpid */\n"
                 "\t\t\tuthread->uu_rval[0] = 1;\n"
+                "\t\t\tuthread->uu_rval[1] = 0;\n"
                 "\t\t\terror = 0;\n"
                 "\t\t\tgoto hakios_pid1_handled;\n"
                 "\t\t}\n\n"
