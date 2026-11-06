@@ -939,16 +939,16 @@ LEXT(hk_render_screen_asm)
         else:
             print("  [WARN] __ARM_PAN_AVAILABLE__ not found in BCM2837.h")
 
-    # 7. makedefs/MakeInc.def (replace +pan with -pan and disable LSE for BCM2837 Cortex-A73/A53)
+    # 7. makedefs/MakeInc.def (replace +pan with -pan for BCM2837 Cortex-A73/A53)
     p7 = os.path.join(src, "makedefs", "MakeInc.def")
     if os.path.isfile(p7):
         with open(p7, "r", encoding="utf-8", errors="replace") as f:
             c7 = f.read().replace("\r\n", "\n")
         if "-Xclang -target-feature -Xclang +pan" in c7:
-            c7 = c7.replace("-Xclang -target-feature -Xclang +pan", "-Xclang -target-feature -Xclang -pan -Xclang -target-feature -Xclang -lse")
+            c7 = c7.replace("-Xclang -target-feature -Xclang +pan", "-Xclang -target-feature -Xclang -pan")
             with open(p7, "w", encoding="utf-8", newline="\n") as f:
                 f.write(c7)
-            print("  [OK] makedefs/MakeInc.def: +pan replaced with -pan and -lse")
+            print("  [OK] makedefs/MakeInc.def: +pan replaced with -pan")
         else:
             print("  [WARN] +pan not found in MakeInc.def")
 
