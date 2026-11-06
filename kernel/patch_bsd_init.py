@@ -192,32 +192,70 @@ def patch_bsd_init(src_dir):
         with open(target_vc, "r", encoding="utf-8", errors="replace") as f:
             cvc = f.read().replace("\r\n", "\n")
         if "hk_kva_fb_ready" not in cvc:
+            # Capture the framebuffer mapping exactly as initialize_screen built it.
+            # vinfo.v_baseaddr is NOT usable as the panel origin: patch_cortex_a73.py
+            # step 21 shifts it by +720 rows and shrinks v_height by 720 so the console
+            # starts below the ladder. The capture is written from the un-shifted
+            # expression, so it is correct whichever patch script runs first.
+            cap_decl_target = "void\ninitialize_screen(PE_Video * boot_vinfo, unsigned int op)\n{"
+            cap_decl = (
+                "/* hakios: raw framebuffer mapping captured in initialize_screen (full panel, row 0) */\n"
+                "vm_offset_t hk_fb_kva_base = 0;\n"
+                "uint32_t hk_fb_width = 0, hk_fb_height = 0, hk_fb_rowbytes = 0;\n"
+                "int hk_fb_made_mapping = -1; /* -1: never captured, 0: makeMapping FALSE, 1: TRUE */\n\n"
+            )
+            cap_target = "new_vinfo.v_baseaddr = newVideoVirt + boot_vinfo->v_offset;"
+            cap_line = (
+                "\n\t\t\t/* hakios: record mapping before any ladder shift */\n"
+                "\t\t\thk_fb_kva_base = newVideoVirt + boot_vinfo->v_offset;\n"
+                "\t\t\thk_fb_width = (uint32_t)new_vinfo.v_width;\n"
+                "\t\t\thk_fb_height = (uint32_t)boot_vinfo->v_height;\n"
+                "\t\t\thk_fb_rowbytes = (uint32_t)new_vinfo.v_rowbytes;\n"
+                "\t\t\thk_fb_made_mapping = makeMapping ? 1 : 0;"
+            )
+            if cap_decl_target in cvc and cvc.count(cap_target) == 1:
+                cvc = cvc.replace(cap_decl_target, cap_decl + cap_decl_target, 1)
+                cvc = cvc.replace(cap_target, cap_target + cap_line, 1)
+                print("  [OK] osfmk/console/video_console.c: framebuffer mapping capture installed in initialize_screen")
+            else:
+                print("  [ERROR] osfmk/console/video_console.c: initialize_screen capture anchors not found")
+                return False
             cvc += r'''
 
-/* hakios: framebuffer drawing through XNU's KVA mapping (no MMU-off path) */
+/* hakios: framebuffer drawing through XNU's KVA mapping (no MMU-off path).
+ * Rows are absolute panel rows (row 0 = top of the panel), same as hk_draw_band. */
 int hk_kva_fb_ready(void);
+int hk_fb_mapping_state(void);
 void hk_kva_fill(uint32_t color, uint32_t row, uint32_t count);
 void hk_kva_text(const char *s, uint32_t len, uint32_t row);
 
 int
+hk_fb_mapping_state(void)
+{
+	return hk_fb_made_mapping;
+}
+
+int
 hk_kva_fb_ready(void)
 {
-	return vinfo.v_baseaddr != 0 && vinfo.v_depth == 32 && vinfo.v_rowbytes != 0 &&
-	       vinfo.v_width != 0 && vinfo.v_height != 0;
+	/* Must be a kernel VA (TTBR1 range). A raw PA such as 0x5c000000 fails here. */
+	return (uint64_t)hk_fb_kva_base >= 0xffff000000000000ULL &&
+	       vinfo.v_depth == 32 && hk_fb_width != 0 && hk_fb_height != 0 &&
+	       hk_fb_rowbytes >= hk_fb_width * 4;
 }
 
 void
 hk_kva_fill(uint32_t color, uint32_t row, uint32_t count)
 {
-	if (!hk_kva_fb_ready() || row >= vinfo.v_height) {
+	if (!hk_kva_fb_ready() || row >= hk_fb_height) {
 		return;
 	}
-	if (count > vinfo.v_height - row) {
-		count = vinfo.v_height - row;
+	if (count > hk_fb_height - row) {
+		count = hk_fb_height - row;
 	}
 	for (uint32_t y = row; y < row + count; y++) {
-		volatile uint32_t *p = (volatile uint32_t *)(vinfo.v_baseaddr + (vm_offset_t)y * vinfo.v_rowbytes);
-		for (uint32_t x = 0; x < vinfo.v_width; x++) {
+		volatile uint32_t *p = (volatile uint32_t *)(hk_fb_kva_base + (vm_offset_t)y * hk_fb_rowbytes);
+		for (uint32_t x = 0; x < hk_fb_width; x++) {
 			p[x] = color;
 		}
 	}
@@ -239,14 +277,14 @@ hk_kva_text(const char *s, uint32_t len, uint32_t row)
 		if (ch == '\r') {
 			continue;
 		}
-		if (ch == '\n' || x0 + 16 > vinfo.v_width) {
+		if (ch == '\n' || x0 + 16 > hk_fb_width) {
 			x0 = 20;
 			y0 += 32;
 			if (ch == '\n') {
 				continue;
 			}
 		}
-		if (y0 + 32 > vinfo.v_height) {
+		if (y0 + 32 > hk_fb_height) {
 			break;
 		}
 		if (ch < 32 || ch > 126) {
@@ -256,8 +294,8 @@ hk_kva_text(const char *s, uint32_t len, uint32_t row)
 		for (uint32_t gy = 0; gy < 16; gy++) {
 			unsigned char bits = g[gy];
 			for (uint32_t sy = 0; sy < 2; sy++) {
-				volatile uint32_t *p = (volatile uint32_t *)(vinfo.v_baseaddr +
-				    (vm_offset_t)(y0 + gy * 2 + sy) * vinfo.v_rowbytes) + x0;
+				volatile uint32_t *p = (volatile uint32_t *)(hk_fb_kva_base +
+				    (vm_offset_t)(y0 + gy * 2 + sy) * hk_fb_rowbytes) + x0;
 				for (uint32_t gx = 0; gx < 8; gx++) {
 					uint32_t c = (bits & (1u << gx)) ? fg : bg;
 					p[gx * 2] = c;
@@ -291,30 +329,44 @@ hk_kva_text(const char *s, uint32_t len, uint32_t row)
                 "\t\tstatic int pid1_boot_banner_drawn = 0;\n"
                 "\t\tif (!pid1_boot_banner_drawn) {\n"
                 "\t\t\tpid1_boot_banner_drawn = 1;\n"
-                "\t\t\t/* Draw diagnostic band Row 650 (Yellow) */\n"
-                "\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FFFF00, 650, 6); }\n"
-                "\t\t\t/* Clear banner box rows 720..960 to pitch black (240 rows = 64k stores, safe and instant) */\n"
-                "\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); extern void hk_kva_fill(uint32_t, uint32_t, uint32_t); hk_kva_fill(0xFF000000, 720, 400); }\n"
-                "\t\t\t/* Diagnostic band Row 654 (Cyan: banner box wiped, about to render text) */\n"
-                "\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x0000FFFF, 654, 4); }\n"
-                "\t\t\t/* Draw master banner */\n"
-                "\t\t\tstatic const char hk_init_banner[] =\n"
-                '\t\t\t\t"\\n"\n'
-                '\t\t\t\t"========================================\\n"\n'
-                '\t\t\t\t"   HakiOS (iOS 26 / XNU 12377.121.6)   \\n"\n'
-                '\t\t\t\t"   Xiaomi Redmi Note 13 4G (sapphire)   \\n"\n'
-                '\t\t\t\t"========================================\\n\\n"\n'
-                '\t\t\t\t"[*] SoC: Qualcomm Snapdragon SM6225 Bengal\\n"\n'
-                '\t\t\t\t"[*] Cores: Cortex-A73 Gold (4KB Quad-PTE)\\n"\n'
-                '\t\t\t\t"[*] Root: Mockfs ramdisk mounted on md0\\n"\n'
-                '\t\t\t\t"[*] PID 1: /sbin/launchd running in EL0!\\n"\n'
-                '\t\t\t\t"[*] System call interface: ACTIVE\\n\\n";\n'
+                "\t\t\t/* Ladder (absolute panel rows). Legacy hk_draw_band = MMU-off path already proven by 650.\n"
+                "\t\t\t *   650 yellow  hk_draw_band  entered PID 1 hook\n"
+                "\t\t\t *   646 magenta hk_draw_band  initialize_screen ran with makeMapping FALSE\n"
+                "\t\t\t *   642 blue    hk_draw_band  initialize_screen never captured a mapping\n"
+                "\t\t\t *   670 red     hk_draw_band  hk_kva_fb_ready() FALSE (not a TTBR1 KVA)\n"
+                "\t\t\t *   654 cyan    hk_kva_fill   KVA path, before banner\n"
+                "\t\t\t *   658 lime    hk_kva_fill   KVA path, after banner\n"
+                "\t\t\t *   662 white   hk_draw_band  CPU still alive after the KVA writes */\n"
+                "\t\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);\n"
                 "\t\t\textern int hk_kva_fb_ready(void);\n"
+                "\t\t\textern int hk_fb_mapping_state(void);\n"
+                "\t\t\textern void hk_kva_fill(uint32_t, uint32_t, uint32_t);\n"
                 "\t\t\textern void hk_kva_text(const char *, uint32_t, uint32_t);\n"
-                "\t\t\tif (!hk_kva_fb_ready()) { extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FF0000, 670, 4); } /* Red: no KVA framebuffer */\n"
-                "\t\t\thk_kva_text(hk_init_banner, (uint32_t)sizeof(hk_init_banner) - 1, 720);\n"
-                "\t\t\t/* Diagnostic band Row 658 (Lime Green: banner rendered successfully) */\n"
-                "\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x0000FF00, 658, 4); }\n"
+                "\t\t\thk_draw_band(0x00FFFF00, 650, 4);\n"
+                "\t\t\tif (hk_fb_mapping_state() == 0) { hk_draw_band(0x00FF00FF, 646, 4); }\n"
+                "\t\t\tif (hk_fb_mapping_state() < 0) { hk_draw_band(0x000000FF, 642, 4); }\n"
+                "\t\t\tif (!hk_kva_fb_ready()) {\n"
+                "\t\t\t\thk_draw_band(0x00FF0000, 670, 4);\n"
+                "\t\t\t} else {\n"
+                "\t\t\t\thk_kva_fill(0xFF00FFFF, 654, 4);\n"
+                "\t\t\t\t/* Banner box: absolute rows 720..1119 */\n"
+                "\t\t\t\thk_kva_fill(0xFF000000, 720, 400);\n"
+                "\t\t\t\t/* Master banner. 'F' first: asymmetric glyph to catch a mirrored font. */\n"
+                "\t\t\t\tstatic const char hk_init_banner[] =\n"
+                '\t\t\t\t\t"F\\n"\n'
+                '\t\t\t\t\t"========================================\\n"\n'
+                '\t\t\t\t\t"   HakiOS (iOS 26 / XNU 12377.121.6)   \\n"\n'
+                '\t\t\t\t\t"   Xiaomi Redmi Note 13 4G (sapphire)   \\n"\n'
+                '\t\t\t\t\t"========================================\\n\\n"\n'
+                '\t\t\t\t\t"[*] SoC: Qualcomm Snapdragon SM6225 Bengal\\n"\n'
+                '\t\t\t\t\t"[*] Cores: Cortex-A73 Gold (4KB Quad-PTE)\\n"\n'
+                '\t\t\t\t\t"[*] Root: Mockfs ramdisk mounted on md0\\n"\n'
+                '\t\t\t\t\t"[*] PID 1: /sbin/launchd running in EL0!\\n"\n'
+                '\t\t\t\t\t"[*] System call interface: ACTIVE\\n\\n";\n'
+                "\t\t\t\thk_kva_text(hk_init_banner, (uint32_t)sizeof(hk_init_banner) - 1, 720);\n"
+                "\t\t\t\thk_kva_fill(0xFF00FF00, 658, 4);\n"
+                "\t\t\t\thk_draw_band(0x00FFFFFF, 662, 4);\n"
+                "\t\t\t}\n"
                 "\t\t}\n\n"
                 "\t\tif (code == 5 /* SYS_open */) {\n"
                 "\t\t\t/* Immediate success for /dev/console open: return fd 1, avoid ttyopen deadlock */\n"
@@ -331,8 +383,8 @@ hk_kva_text(const char *s, uint32_t len, uint32_t row)
                 "\t\t\tuint32_t to_copy = (ulen < sizeof(hk_user_write_buf) - 1) ? (uint32_t)ulen : (sizeof(hk_user_write_buf) - 1);\n"
                 "\t\t\tif (to_copy > 0 && copyin(ubuf, hk_user_write_buf, to_copy) == 0) {\n"
                 "\t\t\t\thk_user_write_buf[to_copy] = '\\0';\n"
-                "\t\t\t\t/* Draw Row 652 (Thick White band: SYS_write executed) */\n"
-                "\t\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FFFFFF, 652, 4); }\n"
+                "\t\t\t\t/* Draw Row 674 (White band: SYS_write executed) */\n"
+                "\t\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FFFFFF, 674, 4); }\n"
                 "\t\t\t\t/* Clear line background (32 rows) */\n"
                 "\t\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); extern void hk_kva_fill(uint32_t, uint32_t, uint32_t); hk_kva_fill(0xFF000000, hk_text_row, 32); }\n"
                 "\t\t\t\textern void hk_kva_text(const char *, uint32_t, uint32_t);\n"
@@ -348,7 +400,7 @@ hk_kva_text(const char *s, uint32_t len, uint32_t row)
                 "\t\t\tgoto hakios_pid1_handled;\n"
                 "\t\t}\n\n"
                 "\t\tif (code == 20 /* SYS_getpid */) {\n"
-                "\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00DA70D6, 662, 4); } /* Orchid: SYS_getpid */\n"
+                "\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00DA70D6, 678, 4); } /* Orchid: SYS_getpid */\n"
                 "\t\t\tuthread->uu_rval[0] = 1;\n"
                 "\t\t\tuthread->uu_rval[1] = 0;\n"
                 "\t\t\terror = 0;\n"
