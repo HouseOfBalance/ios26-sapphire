@@ -3,11 +3,11 @@
  * Part 1 Implementation for HakiOS / XNU-12377 on Snapdragon 685 (Cortex-A73/A53)
  */
 
-#if defined(__clang__)
-#pragma clang attribute push (__attribute__((target("branch-protection=none"))), apply_to = function)
-#elif defined(__GNUC__)
-#pragma GCC target ("branch-protection=none")
-#endif
+/* Note: Do NOT use __attribute__((target(...))) here because Clang's target
+ * attribute resets -mgeneral-regs-only and allows NEON/FP instructions inside
+ * the synchronous exception handler. Build-time patch_kernel_pac.py converts
+ * any compiler-emitted PAC instructions in __TEXT_EXEC to native ARMv8.0.
+ */
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -64,8 +64,17 @@ patch_memory_phys(uint64_t pa, uint64_t va, uint32_t new_insn)
 	uintptr_t p_va = (uintptr_t)p;
 	uint64_t par, daif;
 
-	__asm__ volatile("mrs %0, daif\n msr daifset, #7\n at s1e1w, %1\n isb\n" : "=&r"(daif) : "r"(p_va) : "memory");
-	__asm__ volatile("mrs %0, par_el1\n msr daif, %1\n" : "=r"(par) : "r"(daif));
+	__asm__ volatile(
+		"mrs %0, daif\n"
+		"msr daifset, #7\n"
+		"at s1e1w, %2\n"
+		"isb\n"
+		"mrs %1, par_el1\n"
+		"msr daif, %0\n"
+		: "=&r"(daif), "=&r"(par)
+		: "r"(p_va)
+		: "memory"
+	);
 	if (par & 1ULL) {
 		return false;
 	}
@@ -144,25 +153,9 @@ pac_patch_handle_trap(arm_saved_state_t *state, bool is_user)
 		if (copyin((user_addr_t)pc, &insn, sizeof(insn)) != 0) {
 			return false;
 		}
-		uint64_t par, daif;
-		__asm__ volatile("mrs %0, daif\n msr daifset, #7\n at s1e0r, %1\n isb\n" : "=&r"(daif) : "r"(pc) : "memory");
-		__asm__ volatile("mrs %0, par_el1\n msr daif, %1\n" : "=r"(par) : "r"(daif));
-		if (par & 1ULL) return false;
-		pa = (par & 0x0000FFFFFFFFF000ULL) | (pc & 0xFFFULL);
 	} else {
 		insn = *(volatile uint32_t *)pc;
-		pa = (gVirtBase != 0) ? kvtophys(pc) : pc;
-		if (!pa) {
-			uint64_t par, daif;
-			__asm__ volatile("mrs %0, daif\n msr daifset, #7\n at s1e1r, %1\n isb\n" : "=&r"(daif) : "r"(pc) : "memory");
-			__asm__ volatile("mrs %0, par_el1\n msr daif, %1\n" : "=r"(par) : "r"(daif));
-			if (!(par & 1ULL)) {
-				pa = (par & 0x0000FFFFFFFFF000ULL) | (pc & 0xFFFULL);
-			}
-		}
 	}
-
-	if (!pa) return false;
 
 	/*
 	 * 2. SMP RACE DEFENSE:
@@ -181,14 +174,56 @@ pac_patch_handle_trap(arm_saved_state_t *state, bool is_user)
 		return true;
 	}
 
-	/* 3. Giải mã qua bộ PAC Decoder thuần ARM ARM */
+	/* 3. Giải mã qua bộ PAC Decoder thuần ARM ARM (trước khi dịch địa chỉ PA!) */
 	pac_result_t res;
 	pac_action_t act = pac_decode(insn, &res);
+	if (act == PAC_NOT_PAC) {
+		return false;
+	}
+
+	if (act == PAC_PATCH) {
+		if (is_user) {
+			uint64_t par, daif;
+			__asm__ volatile(
+				"mrs %0, daif\n"
+				"msr daifset, #7\n"
+				"at s1e0r, %2\n"
+				"isb\n"
+				"mrs %1, par_el1\n"
+				"msr daif, %0\n"
+				: "=&r"(daif), "=&r"(par)
+				: "r"(pc)
+				: "memory"
+			);
+			if (!(par & 1ULL)) {
+				pa = (par & 0x0000FFFFFFFFF000ULL) | (pc & 0xFFFULL);
+			}
+		} else {
+			pa = (gVirtBase != 0) ? kvtophys(pc) : pc;
+			if (!pa) {
+				uint64_t par, daif;
+				__asm__ volatile(
+					"mrs %0, daif\n"
+					"msr daifset, #7\n"
+					"at s1e1r, %2\n"
+					"isb\n"
+					"mrs %1, par_el1\n"
+					"msr daif, %0\n"
+					: "=&r"(daif), "=&r"(par)
+					: "r"(pc)
+					: "memory"
+				);
+				if (!(par & 1ULL)) {
+					pa = (par & 0x0000FFFFFFFFF000ULL) | (pc & 0xFFFULL);
+				}
+			}
+		}
+	}
 
 	switch (act) {
 	case PAC_PATCH:
 		/* Ghi đè mã máy tại RAM qua Physical Mapping (nếu trang cho phép ghi) */
-		if (patch_memory_phys(pa, pc, res.new_insn)) {
+		if (pa && patch_memory_phys(pa, pc, res.new_insn)) {
 			pac_patch_count++;
 			/*
 			 * KHÔNG tăng PC: CPU khi eret sẽ thực thi lại chính địa chỉ PC này,
@@ -252,7 +287,3 @@ pac_patch_handle_trap(arm_saved_state_t *state, bool is_user)
 		return false;
 	}
 }
-
-#if defined(__clang__)
-#pragma clang attribute pop
-#endif

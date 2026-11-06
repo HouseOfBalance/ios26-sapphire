@@ -22,11 +22,11 @@
  * 7. Condition Flags Preservation: Saves and restores NZCV across all operations.
  */
 
-#if defined(__clang__)
-#pragma clang attribute push (__attribute__((target("branch-protection=none"))), apply_to = function)
-#elif defined(__GNUC__)
-#pragma GCC target ("branch-protection=none")
-#endif
+/* Note: Do NOT use __attribute__((target(...))) here because Clang's target
+ * attribute resets -mgeneral-regs-only and allows NEON/FP instructions inside
+ * the synchronous exception handler. Build-time patch_kernel_pac.py converts
+ * any compiler-emitted PAC instructions in __TEXT_EXEC to native ARMv8.0.
+ */
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -709,7 +709,3 @@ bool lse_patch_handle_trap(arm_saved_state_t *state, bool is_user) {
     set_saved_state_pc(state, elr + 4);
     return true;
 }
-
-#if defined(__clang__)
-#pragma clang attribute pop
-#endif

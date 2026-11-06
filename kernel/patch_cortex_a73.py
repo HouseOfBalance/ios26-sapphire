@@ -554,7 +554,14 @@ def main():
 \t// Return to arm_init()
 \tret"""
 
-        cp11_new = """\t// hakios visual marker CP11: Blue band at rows 40-49 (0x5c02a300)
+        cp11_new = """\t// hakios: set SP_EL1 (exception stack) to VA(excepstack_top) so it NEVER aliases SP_EL0 (intstack_top) during arm_init!
+\tadrp\tx9, EXT(excepstack_top)@page
+\tadd\tx9, x9, EXT(excepstack_top)@pageoff
+\tmsr\t\tSPSel, #1
+\tmov\t\tsp, x9
+\tmsr\t\tSPSel, #0
+
+\t// hakios visual marker CP11: Blue band at rows 40-49 (0x5c02a300)
 \tmrs\t\tx9, SCTLR_EL1
 \tbic\t\tx9, x9, #1
 \tmsr\t\tSCTLR_EL1, x9
@@ -932,37 +939,42 @@ LEXT(hk_render_screen_asm)
         else:
             print("  [WARN] __ARM_PAN_AVAILABLE__ not found in BCM2837.h")
 
-    # 7. makedefs/MakeInc.def (replace +pan with -pan for BCM2837)
+    # 7. makedefs/MakeInc.def (replace +pan with -pan and disable LSE for BCM2837 Cortex-A73/A53)
     p7 = os.path.join(src, "makedefs", "MakeInc.def")
     if os.path.isfile(p7):
         with open(p7, "r", encoding="utf-8", errors="replace") as f:
             c7 = f.read().replace("\r\n", "\n")
         if "-Xclang -target-feature -Xclang +pan" in c7:
-            c7 = c7.replace("-Xclang -target-feature -Xclang +pan", "-Xclang -target-feature -Xclang -pan")
+            c7 = c7.replace("-Xclang -target-feature -Xclang +pan", "-Xclang -target-feature -Xclang -pan -Xclang -target-feature -Xclang -lse")
             with open(p7, "w", encoding="utf-8", newline="\n") as f:
                 f.write(c7)
-            print("  [OK] makedefs/MakeInc.def: +pan replaced with -pan")
+            print("  [OK] makedefs/MakeInc.def: +pan replaced with -pan and -lse")
         else:
             print("  [WARN] +pan not found in MakeInc.def")
 
-    # 8. osfmk/arm64/locore.s (stub ml_sign_thread_state & ml_check_signed_state so trap PC/LR updates never panic)
-    p8 = os.path.join(src, "osfmk", "arm64", "locore.s")
-    if os.path.isfile(p8):
-        with open(p8, "r", encoding="utf-8", errors="replace") as f:
-            c8 = f.read().replace("\r\n", "\n")
-        changed_locore = False
-        if "LEXT(ml_sign_thread_state)\n" in c8 and "LEXT(ml_sign_thread_state)\n\tret\n" not in c8:
-            c8 = c8.replace("LEXT(ml_sign_thread_state)\n", "LEXT(ml_sign_thread_state)\n\tret\n", 1)
-            changed_locore = True
-        if "LEXT(ml_check_signed_state)\n" in c8 and "LEXT(ml_check_signed_state)\n\tret\n" not in c8:
-            c8 = c8.replace("LEXT(ml_check_signed_state)\n", "LEXT(ml_check_signed_state)\n\tret\n", 1)
-            changed_locore = True
-        if changed_locore:
-            with open(p8, "w", encoding="utf-8", newline="\n") as f:
-                f.write(c8)
-            print("  [OK] osfmk/arm64/locore.s: ml_sign_thread_state and ml_check_signed_state stubbed")
-        else:
-            print("  [WARN] ml_sign_thread_state / ml_check_signed_state not found in locore.s")
+    # 8. osfmk/arm64/locore.s & machine_routines_asm.s (fix CHECK_KERNEL_STACK on intstack & stub ml_sign_thread_state / ml_check_signed_state)
+    for asm_name in ("locore.s", "machine_routines_asm.s", "cswitch.s"):
+        p8 = os.path.join(src, "osfmk", "arm64", asm_name)
+        if os.path.isfile(p8):
+            with open(p8, "r", encoding="utf-8", errors="replace") as f:
+                c8 = f.read().replace("\r\n", "\n")
+            changed_asm = False
+            if "LEXT(ml_sign_thread_state)\n" in c8 and "LEXT(ml_sign_thread_state)\n\tret\n" not in c8:
+                c8 = c8.replace("LEXT(ml_sign_thread_state)\n", "LEXT(ml_sign_thread_state)\n\tret\n", 1)
+                changed_asm = True
+                print(f"  [OK] osfmk/arm64/{asm_name}: ml_sign_thread_state stubbed")
+            if "LEXT(ml_check_signed_state)\n" in c8 and "LEXT(ml_check_signed_state)\n\tret\n" not in c8:
+                c8 = c8.replace("LEXT(ml_check_signed_state)\n", "LEXT(ml_check_signed_state)\n\tret\n", 1)
+                changed_asm = True
+                print(f"  [OK] osfmk/arm64/{asm_name}: ml_check_signed_state stubbed")
+            c8_new, n_sub = re.subn(r'cbz\s+x2,\s*Lcorrupt_stack_\\@', 'cbz\t\tx2, Ltest_istack_\\@', c8)
+            if n_sub > 0:
+                c8 = c8_new
+                changed_asm = True
+                print(f"  [OK] osfmk/arm64/{asm_name}: CHECK_KERNEL_STACK cbz x2 -> Ltest_istack patched ({n_sub} occurrences)")
+            if changed_asm:
+                with open(p8, "w", encoding="utf-8", newline="\n") as f:
+                    f.write(c8)
 
     # 9. osfmk/arm64/loader_return.c (render panic text directly to screen at entry of loader_return)
     p9 = os.path.join(src, "osfmk", "arm64", "loader_return.c")
