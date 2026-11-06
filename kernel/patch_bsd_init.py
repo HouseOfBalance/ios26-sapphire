@@ -200,8 +200,8 @@ def patch_bsd_init(src_dir):
                 "\t\t\tpid1_boot_banner_drawn = 1;\n"
                 "\t\t\t/* Draw diagnostic band Row 650 (Yellow) */\n"
                 "\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FFFF00, 650, 6); }\n"
-                "\t\t\t/* Clear lower screen rows 720..2399 to pitch black */\n"
-                "\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00000000, 720, 1680); }\n"
+                "\t\t\t/* Clear banner box rows 720..960 to pitch black (240 rows = 64k stores, safe and instant) */\n"
+                "\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00000000, 720, 240); }\n"
                 "\t\t\t/* Draw master banner */\n"
                 "\t\t\tstatic const char hk_init_banner[] =\n"
                 '\t\t\t\t"\\n"\n'
@@ -234,6 +234,13 @@ def patch_bsd_init(src_dir):
                 "\t\t\t\thk_user_write_buf[to_copy] = '\\0';\n"
                 "\t\t\t\t/* Draw Row 652 (Thick White band: SYS_write executed) */\n"
                 "\t\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FFFFFF, 652, 4); }\n"
+                "\t\t\t\t/* Clean D-cache for hk_user_write_buf so physical RAM is coherent before MMU is disabled */\n"
+                "\t\t\t\tfor (uint32_t hk_off = 0; hk_off < to_copy; hk_off += 64) {\n"
+                '\t\t\t\t\tasm volatile("dc cvac, %0" : : "r"(&hk_user_write_buf[hk_off]) : "memory");\n'
+                "\t\t\t\t}\n"
+                '\t\t\t\tasm volatile("dsb sy" : : : "memory");\n'
+                "\t\t\t\t/* Clear line background (32 rows) */\n"
+                "\t\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00000000, hk_text_row, 32); }\n"
                 "\t\t\t\textern const unsigned char iso_font[];\n"
                 "\t\t\t\textern void hk_render_screen_asm(const char *, uint32_t, const unsigned char *, uint32_t);\n"
                 "\t\t\t\thk_render_screen_asm(hk_user_write_buf, to_copy, iso_font, hk_text_row);\n"

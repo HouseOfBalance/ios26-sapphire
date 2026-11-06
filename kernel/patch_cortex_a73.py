@@ -651,6 +651,10 @@ LEXT(hk_draw_band)
 \tstp\t\tx21, x22, [sp, #32]
 \tstp\t\tx23, x24, [sp, #48]
 
+\t/* Ensure row_start and row_count are treated as 32-bit unsigned integers */
+\tand\t\tx1, x1, #0xffffffff
+\tand\t\tx2, x2, #0xffffffff
+
 \t/* Keep callers from writing beyond the 2400-row framebuffer. */
 \tmov\t\tx22, #2400
 \tcmp\t\tx1, x22
@@ -755,15 +759,6 @@ LEXT(hk_render_screen_asm)
 \tmov\t\tx19, x0
 \tmov\t\tw20, w1
 \tmov\t\tx21, x2
-
-\t// Clean D-cache for text buffer to Point of Coherency before MMU is disabled
-\tmov\t\tx10, x19
-\tmov\t\tw12, w20
-11:\tdc\t\tcvac, x10
-\tadd\t\tx10, x10, #64
-\tsubs\tw12, w12, #64
-\tb.gt\t11b
-\tdsb\t\tsy
 
 \tmrs\t\tx23, DAIF
 \tmsr\t\tDAIFSet, #0xf
