@@ -335,7 +335,6 @@ void
 hk_run_pid1_diagnostics(void)
 {
 	extern void hk_draw_band(uint32_t, uint32_t, uint32_t);
-	extern void *kernel_map;
 
 	/* 1. CALIBRATION LADDER (Distinct Colors & Thicknesses) */
 	hk_draw_band(0x00FF0000, 100, 16);  /* Row 100: Red (16 rows) */
@@ -373,7 +372,7 @@ hk_run_pid1_diagnostics(void)
 
 	/* Gauge Block C: State flags (rows 1610..1630) */
 	/* kernel_map status: Lime if != NULL, Red if NULL */
-	hk_draw_band((kernel_map != (void *)0) ? 0x0000FF00 : 0x00FF0000, 1610, 8);
+	hk_draw_band((kernel_map != VM_MAP_NULL) ? 0x0000FF00 : 0x00FF0000, 1610, 8);
 	/* makeMapping state: Cyan if TRUE, Magenta if FALSE, Blue if never run */
 	int ms = hk_fb_mapping_state();
 	hk_draw_band((ms > 0) ? 0x0000FFFF : (ms == 0 ? 0x00FF00FF : 0x000000FF), 1620, 8);
