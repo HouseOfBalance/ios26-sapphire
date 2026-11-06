@@ -226,6 +226,7 @@ def patch_bsd_init(src_dir):
  * Rows are absolute panel rows (row 0 = top of the panel), same as hk_draw_band. */
 int hk_kva_fb_ready(void);
 int hk_fb_mapping_state(void);
+vm_offset_t hk_get_manual_kva(void);
 void hk_kva_fill(uint32_t color, uint32_t row, uint32_t count);
 void hk_kva_text(const char *s, uint32_t len, uint32_t row);
 
@@ -235,27 +236,43 @@ hk_fb_mapping_state(void)
 	return hk_fb_made_mapping;
 }
 
+vm_offset_t hk_manual_kva = 0;
+
+vm_offset_t
+hk_get_manual_kva(void)
+{
+	if (hk_manual_kva == 0) {
+		extern vm_offset_t ml_io_map_wcomb(vm_offset_t, vm_size_t);
+		/* 1080 * 2400 * 4 = 10368000 bytes (~10MB) */
+		hk_manual_kva = ml_io_map_wcomb(0x5c000000UL, 10368000UL);
+	}
+	return hk_manual_kva;
+}
+
 int
 hk_kva_fb_ready(void)
 {
-	/* Must be a kernel VA (TTBR1 range). A raw PA such as 0x5c000000 fails here. */
-	return (uint64_t)hk_fb_kva_base >= 0xffff000000000000ULL &&
-	       vinfo.v_depth == 32 && hk_fb_width != 0 && hk_fb_height != 0 &&
-	       hk_fb_rowbytes >= hk_fb_width * 4;
+	vm_offset_t base = (hk_fb_kva_base >= 0xffff000000000000ULL) ? hk_fb_kva_base : hk_get_manual_kva();
+	return (uint64_t)base >= 0xffff000000000000ULL;
 }
 
 void
 hk_kva_fill(uint32_t color, uint32_t row, uint32_t count)
 {
-	if (!hk_kva_fb_ready() || row >= hk_fb_height) {
+	vm_offset_t base = (hk_fb_kva_base >= 0xffff000000000000ULL) ? hk_fb_kva_base : hk_get_manual_kva();
+	uint32_t h = (hk_fb_height != 0) ? hk_fb_height : 2400;
+	uint32_t w = (hk_fb_width != 0) ? hk_fb_width : 1080;
+	uint32_t rb = (hk_fb_rowbytes >= w * 4) ? hk_fb_rowbytes : 4320;
+
+	if ((uint64_t)base < 0xffff000000000000ULL || row >= h) {
 		return;
 	}
-	if (count > hk_fb_height - row) {
-		count = hk_fb_height - row;
+	if (count > h - row) {
+		count = h - row;
 	}
 	for (uint32_t y = row; y < row + count; y++) {
-		volatile uint32_t *p = (volatile uint32_t *)(hk_fb_kva_base + (vm_offset_t)y * hk_fb_rowbytes);
-		for (uint32_t x = 0; x < hk_fb_width; x++) {
+		volatile uint32_t *p = (volatile uint32_t *)(base + (vm_offset_t)y * rb);
+		for (uint32_t x = 0; x < w; x++) {
 			p[x] = color;
 		}
 	}
@@ -266,10 +283,14 @@ hk_kva_fill(uint32_t color, uint32_t row, uint32_t count)
 void
 hk_kva_text(const char *s, uint32_t len, uint32_t row)
 {
+	vm_offset_t base = (hk_fb_kva_base >= 0xffff000000000000ULL) ? hk_fb_kva_base : hk_get_manual_kva();
+	uint32_t h = (hk_fb_height != 0) ? hk_fb_height : 2400;
+	uint32_t w = (hk_fb_width != 0) ? hk_fb_width : 1080;
+	uint32_t rb = (hk_fb_rowbytes >= w * 4) ? hk_fb_rowbytes : 4320;
 	const uint32_t fg = 0xFFFFFFFFu, bg = 0xFF000000u;
 	uint32_t x0 = 20, y0 = row;
 
-	if (!hk_kva_fb_ready()) {
+	if ((uint64_t)base < 0xffff000000000000ULL) {
 		return;
 	}
 	for (uint32_t i = 0; i < len && s[i]; i++) {
@@ -277,14 +298,14 @@ hk_kva_text(const char *s, uint32_t len, uint32_t row)
 		if (ch == '\r') {
 			continue;
 		}
-		if (ch == '\n' || x0 + 16 > hk_fb_width) {
+		if (ch == '\n' || x0 + 16 > w) {
 			x0 = 20;
 			y0 += 32;
 			if (ch == '\n') {
 				continue;
 			}
 		}
-		if (y0 + 32 > hk_fb_height) {
+		if (y0 + 32 > h) {
 			break;
 		}
 		if (ch < 32 || ch > 126) {
@@ -294,8 +315,8 @@ hk_kva_text(const char *s, uint32_t len, uint32_t row)
 		for (uint32_t gy = 0; gy < 16; gy++) {
 			unsigned char bits = g[gy];
 			for (uint32_t sy = 0; sy < 2; sy++) {
-				volatile uint32_t *p = (volatile uint32_t *)(hk_fb_kva_base +
-				    (vm_offset_t)(y0 + gy * 2 + sy) * hk_fb_rowbytes) + x0;
+				volatile uint32_t *p = (volatile uint32_t *)(base +
+				    (vm_offset_t)(y0 + gy * 2 + sy) * rb) + x0;
 				for (uint32_t gx = 0; gx < 8; gx++) {
 					uint32_t c = (bits & (1u << gx)) ? fg : bg;
 					p[gx * 2] = c;
@@ -306,8 +327,7 @@ hk_kva_text(const char *s, uint32_t len, uint32_t row)
 		x0 += 16;
 	}
 	__asm__ volatile ("dsb sy" ::: "memory");
-}
-'''
+}'''
             with open(target_vc, "w", encoding="utf-8", newline="\n") as f:
                 f.write(cvc)
             print("  [OK] osfmk/console/video_console.c: hk_kva_fill/hk_kva_text installed")
@@ -324,52 +344,74 @@ hk_kva_text(const char *s, uint32_t len, uint32_t row)
         else:
             t_syscall = "\terror = (*(callp->sy_call))(proc, &uthread->uu_arg[0], &(uthread->uu_rval[0]));"
             r_syscall = (
-                "\t/* hakios: userland PID 1 text banner and syscall interception */\n"
+                "\t/* hakios: userland PID 1 diagnostic suite: calibration, bit-gauge & KVA render */\n"
                 "\tif (pid == 1) {\n"
                 "\t\tstatic int pid1_boot_banner_drawn = 0;\n"
                 "\t\tif (!pid1_boot_banner_drawn) {\n"
                 "\t\t\tpid1_boot_banner_drawn = 1;\n"
-                "\t\t\t/* Ladder (absolute panel rows). Legacy hk_draw_band = MMU-off path already proven by 650.\n"
-                "\t\t\t *   650 yellow  hk_draw_band  entered PID 1 hook\n"
-                "\t\t\t *   646 magenta hk_draw_band  initialize_screen ran with makeMapping FALSE\n"
-                "\t\t\t *   642 blue    hk_draw_band  initialize_screen never captured a mapping\n"
-                "\t\t\t *   670 red     hk_draw_band  hk_kva_fb_ready() FALSE (not a TTBR1 KVA)\n"
-                "\t\t\t *   654 cyan    hk_kva_fill   KVA path, before banner\n"
-                "\t\t\t *   658 lime    hk_kva_fill   KVA path, after banner\n"
-                "\t\t\t *   662 white   hk_draw_band  CPU still alive after the KVA writes */\n"
                 "\t\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);\n"
                 "\t\t\textern int hk_kva_fb_ready(void);\n"
                 "\t\t\textern int hk_fb_mapping_state(void);\n"
+                "\t\t\textern vm_offset_t hk_get_manual_kva(void);\n"
                 "\t\t\textern void hk_kva_fill(uint32_t, uint32_t, uint32_t);\n"
                 "\t\t\textern void hk_kva_text(const char *, uint32_t, uint32_t);\n"
-                "\t\t\thk_draw_band(0x00FFFF00, 650, 4);\n"
-                "\t\t\tif (hk_fb_mapping_state() == 0) { hk_draw_band(0x00FF00FF, 646, 4); }\n"
-                "\t\t\tif (hk_fb_mapping_state() < 0) { hk_draw_band(0x000000FF, 642, 4); }\n"
-                "\t\t\tif (!hk_kva_fb_ready()) {\n"
-                "\t\t\t\thk_draw_band(0x00FF0000, 670, 4);\n"
-                "\t\t\t} else {\n"
-                "\t\t\t\thk_kva_fill(0xFF00FFFF, 654, 4);\n"
-                "\t\t\t\t/* Banner box: absolute rows 720..1119 */\n"
-                "\t\t\t\thk_kva_fill(0xFF000000, 720, 400);\n"
-                "\t\t\t\t/* Master banner. 'F' first: asymmetric glyph to catch a mirrored font. */\n"
-                "\t\t\t\tstatic const char hk_init_banner[] =\n"
-                '\t\t\t\t\t"F\\n"\n'
-                '\t\t\t\t\t"========================================\\n"\n'
-                '\t\t\t\t\t"   HakiOS (iOS 26 / XNU 12377.121.6)   \\n"\n'
-                '\t\t\t\t\t"   Xiaomi Redmi Note 13 4G (sapphire)   \\n"\n'
-                '\t\t\t\t\t"========================================\\n\\n"\n'
-                '\t\t\t\t\t"[*] SoC: Qualcomm Snapdragon SM6225 Bengal\\n"\n'
-                '\t\t\t\t\t"[*] Cores: Cortex-A73 Gold (4KB Quad-PTE)\\n"\n'
-                '\t\t\t\t\t"[*] Root: Mockfs ramdisk mounted on md0\\n"\n'
-                '\t\t\t\t\t"[*] PID 1: /sbin/launchd running in EL0!\\n"\n'
-                '\t\t\t\t\t"[*] System call interface: ACTIVE\\n\\n";\n'
-                "\t\t\t\thk_kva_text(hk_init_banner, (uint32_t)sizeof(hk_init_banner) - 1, 720);\n"
-                "\t\t\t\thk_kva_fill(0xFF00FF00, 658, 4);\n"
-                "\t\t\t\thk_draw_band(0x00FFFFFF, 662, 4);\n"
+                "\t\t\textern struct vc_info vinfo;\n"
+                "\t\t\textern vm_map_t kernel_map;\n"
+                "\n"
+                "\t\t\t/* 1. CALIBRATION LADDER (Distinct Colors & Thicknesses) */\n"
+                "\t\t\thk_draw_band(0x00FF0000, 100, 16);  /* Row 100: Red (16 rows) */\n"
+                "\t\t\thk_draw_band(0x00FF8C00, 300, 24);  /* Row 300: Dark Orange (24 rows) */\n"
+                "\t\t\thk_draw_band(0x00FFFF00, 500, 32);  /* Row 500: Yellow (32 rows) */\n"
+                "\t\t\thk_draw_band(0x0000FF00, 700, 40);  /* Row 700: Green (40 rows) */\n"
+                "\t\t\thk_draw_band(0x0000FFFF, 900, 48);  /* Row 900: Cyan (48 rows) */\n"
+                "\t\t\thk_draw_band(0x000000FF, 1100, 56); /* Row 1100: Blue (56 rows) */\n"
+                "\t\t\thk_draw_band(0x00FFFFFF, 1300, 64); /* Row 1300: White (64 rows) */\n"
+                "\t\t\thk_draw_band(0x00FF1493, 2380, 20); /* Row 2380: Deep Pink panel bottom probe */\n"
+                "\n"
+                "\t\t\t/* 2. NIBBLE GAUGE: 16 colors for 4-bit nibbles */\n"
+                "\t\t\tstatic const uint32_t nibble_palette[16] = {\n"
+                "\t\t\t\t0x00000000, 0x000000FF, 0x0000FF00, 0x0000FFFF,\n"
+                "\t\t\t\t0x00FF0000, 0x00FF00FF, 0x00FFFF00, 0x00FFFFFF,\n"
+                "\t\t\t\t0x00808080, 0x00000080, 0x00008000, 0x00008080,\n"
+                "\t\t\t\t0x00800000, 0x00800080, 0x00808000, 0x00FFA500\n"
+                "\t\t\t};\n"
+                "\n"
+                "\t\t\t/* Gauge Block A: vinfo.v_baseaddr (16 nibbles, rows 1400..1527) */\n"
+                "\t\t\thk_draw_band(0x00FF1493, 1390, 8); /* Pink guide header */\n"
+                "\t\t\tuint64_t g_val = (uint64_t)vinfo.v_baseaddr;\n"
+                "\t\t\tfor (int ni = 15; ni >= 0; ni--) {\n"
+                "\t\t\t\tuint32_t n_val = (uint32_t)((g_val >> (ni * 4)) & 0xF);\n"
+                "\t\t\t\thk_draw_band(nibble_palette[n_val], 1400 + (15 - ni) * 8, 8);\n"
                 "\t\t\t}\n"
+                "\n"
+                "\t\t\t/* Gauge Block B: vinfo.v_rowbytes (8 nibbles, rows 1540..1603) */\n"
+                "\t\t\thk_draw_band(0x00FF1493, 1534, 4); /* Pink guide header */\n"
+                "\t\t\tuint32_t g_rb = (uint32_t)vinfo.v_rowbytes;\n"
+                "\t\t\tfor (int ni = 7; ni >= 0; ni--) {\n"
+                "\t\t\t\tuint32_t n_val = (g_rb >> (ni * 4)) & 0xF;\n"
+                "\t\t\t\thk_draw_band(nibble_palette[n_val], 1540 + (7 - ni) * 8, 8);\n"
+                "\t\t\t}\n"
+                "\n"
+                "\t\t\t/* Gauge Block C: State flags (rows 1610..1630) */\n"
+                "\t\t\t/* kernel_map status: Lime (0x0000FF00) if != NULL, Red if NULL */\n"
+                "\t\t\thk_draw_band((kernel_map != NULL) ? 0x0000FF00 : 0x00FF0000, 1610, 8);\n"
+                "\t\t\t/* makeMapping state: Cyan (0x0000FFFF) if TRUE, Magenta (0x00FF00FF) if FALSE */\n"
+                "\t\t\tint ms = hk_fb_mapping_state();\n"
+                "\t\t\thk_draw_band((ms > 0) ? 0x0000FFFF : (ms == 0 ? 0x00FF00FF : 0x000000FF), 1620, 8);\n"
+                "\n"
+                "\t\t\t/* 3. TEST ml_io_map_wcomb CALL DIRECTLY */\n"
+                "\t\t\tvm_offset_t man_kva = hk_get_manual_kva();\n"
+                "\t\t\t/* Row 1640: Lime if manual KVA >= 0xffff000000000000, Red if failed */\n"
+                "\t\t\thk_draw_band(((uint64_t)man_kva >= 0xffff000000000000ULL) ? 0x0000FF00 : 0x00FF0000, 1640, 12);\n"
+                "\n"
+                "\t\t\t/* 4. ATTEMPT KVA WRITE (Orange test band on manual KVA) */\n"
+                "\t\t\tif ((uint64_t)man_kva >= 0xffff000000000000ULL) {\n"
+                "\t\t\t\thk_kva_fill(0x00FFA500, 1660, 32); /* 32 rows Orange via KVA */\n"
+                "\t\t\t}\n"
+                "\t\t\t/* Row 1700: White via MMU-off hk_draw_band to prove CPU survived KVA write! */\n"
+                "\t\t\thk_draw_band(0x00FFFFFF, 1700, 16);\n"
                 "\t\t}\n\n"
                 "\t\tif (code == 5 /* SYS_open */) {\n"
-                "\t\t\t/* Immediate success for /dev/console open: return fd 1, avoid ttyopen deadlock */\n"
                 "\t\t\tuthread->uu_rval[0] = 1;\n"
                 "\t\t\tuthread->uu_rval[1] = 0;\n"
                 "\t\t\terror = 0;\n"
@@ -377,22 +419,17 @@ hk_kva_text(const char *s, uint32_t len, uint32_t row)
                 "\t\t}\n\n"
                 "\t\tif (code == 4 /* SYS_write */) {\n"
                 "\t\t\tstatic char hk_user_write_buf[256];\n"
-                "\t\t\tstatic uint32_t hk_text_row = 1080;\n"
+                "\t\t\tstatic uint32_t hk_text_row = 1750;\n"
                 "\t\t\tuser_addr_t ubuf = (user_addr_t)uthread->uu_arg[1];\n"
                 "\t\t\tuser_size_t ulen = (user_size_t)uthread->uu_arg[2];\n"
                 "\t\t\tuint32_t to_copy = (ulen < sizeof(hk_user_write_buf) - 1) ? (uint32_t)ulen : (sizeof(hk_user_write_buf) - 1);\n"
                 "\t\t\tif (to_copy > 0 && copyin(ubuf, hk_user_write_buf, to_copy) == 0) {\n"
                 "\t\t\t\thk_user_write_buf[to_copy] = '\\0';\n"
-                "\t\t\t\t/* Draw Row 674 (White band: SYS_write executed) */\n"
-                "\t\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FFFFFF, 674, 4); }\n"
-                "\t\t\t\t/* Clear line background (32 rows) */\n"
-                "\t\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); extern void hk_kva_fill(uint32_t, uint32_t, uint32_t); hk_kva_fill(0xFF000000, hk_text_row, 32); }\n"
-                "\t\t\t\textern void hk_kva_text(const char *, uint32_t, uint32_t);\n"
+                "\t\t\t\thk_draw_band(0x00FFFFFF, 1730, 8);\n"
+                "\t\t\t\thk_kva_fill(0xFF000000, hk_text_row, 32);\n"
                 "\t\t\t\thk_kva_text(hk_user_write_buf, to_copy, hk_text_row);\n"
                 "\t\t\t\thk_text_row += 32;\n"
-                "\t\t\t\tif (hk_text_row > 2200) {\n"
-                "\t\t\t\t\thk_text_row = 1080;\n"
-                "\t\t\t\t}\n"
+                "\t\t\t\tif (hk_text_row > 2200) hk_text_row = 1750;\n"
                 "\t\t\t}\n"
                 "\t\t\tuthread->uu_rval[0] = (int)ulen;\n"
                 "\t\t\tuthread->uu_rval[1] = 0;\n"
@@ -400,7 +437,6 @@ hk_kva_text(const char *s, uint32_t len, uint32_t row)
                 "\t\t\tgoto hakios_pid1_handled;\n"
                 "\t\t}\n\n"
                 "\t\tif (code == 20 /* SYS_getpid */) {\n"
-                "\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00DA70D6, 678, 4); } /* Orchid: SYS_getpid */\n"
                 "\t\t\tuthread->uu_rval[0] = 1;\n"
                 "\t\t\tuthread->uu_rval[1] = 0;\n"
                 "\t\t\terror = 0;\n"
@@ -408,7 +444,7 @@ hk_kva_text(const char *s, uint32_t len, uint32_t row)
                 "\t\t}\n\n"
                 "\t\tif (code == 93 /* SYS_select */) {\n"
                 "\t\t\tstatic uint32_t hb_color = 0x0000FF00;\n"
-                "\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(hb_color, 666, 4); } /* Heartbeat tick */\n"
+                "\t\t\thk_draw_band(hb_color, 1740, 4);\n"
                 "\t\t\thb_color = (hb_color == 0x0000FF00) ? 0x0000FFFF : 0x0000FF00;\n"
                 "\t\t}\n"
                 "\t}\n\n"
