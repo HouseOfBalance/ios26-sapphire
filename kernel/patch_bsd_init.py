@@ -183,38 +183,90 @@ def patch_bsd_init(src_dir):
 
     print("  [OK] bsd/kern/bsd_init.c successfully patched with BSD lifecycle ladder")
 
-    # 12. Instrument bsd/dev/arm/systemcalls.c for PID 1 userland syscall execution & heartbeat
+    # 12. Instrument bsd/dev/arm/systemcalls.c for PID 1 userland syscall interception, banner display & heartbeat
     target_sys = os.path.join(src_dir, "bsd", "dev", "arm", "systemcalls.c")
     if os.path.isfile(target_sys):
         with open(target_sys, "r", encoding="utf-8", errors="replace") as f:
             csys = f.read().replace("\r\n", "\n")
-        if "/* hakios: monitor userland PID 1 syscall execution and heartbeat */" in csys:
+        if "/* hakios: userland PID 1 text banner and syscall interception */" in csys:
             print("  [ALREADY PATCHED] bsd/dev/arm/systemcalls.c: userland syscall monitor already installed")
         else:
-            t_syscall = "code = arm_get_syscall_number(state);"
+            t_syscall = "\terror = (*(callp->sy_call))(proc, &uthread->uu_arg[0], &(uthread->uu_rval[0]));"
             r_syscall = (
-                "code = arm_get_syscall_number(state);\n"
-                "\t/* hakios: monitor userland PID 1 syscall execution and heartbeat */\n"
-                "\tif (proc_pid(proc) == 1) {\n"
-                "\t\tstatic int pid1_first_syscall = 0;\n"
-                "\t\tif (!pid1_first_syscall) {\n"
-                "\t\t\tpid1_first_syscall = 1;\n"
-                "\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FFFF00, 650, 6); } /* Vivid Yellow: PID 1 userland syscall entered */\n"
-                "\t\t}\n"
+                "\t/* hakios: userland PID 1 text banner and syscall interception */\n"
+                "\tif (pid == 1) {\n"
+                "\t\tstatic int pid1_boot_banner_drawn = 0;\n"
+                "\t\tif (!pid1_boot_banner_drawn) {\n"
+                "\t\t\tpid1_boot_banner_drawn = 1;\n"
+                "\t\t\t/* Draw diagnostic band Row 650 (Yellow) */\n"
+                "\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FFFF00, 650, 6); }\n"
+                "\t\t\t/* Clear lower screen rows 720..2399 to pitch black */\n"
+                "\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00000000, 720, 1680); }\n"
+                "\t\t\t/* Draw master banner */\n"
+                "\t\t\tstatic const char hk_init_banner[] =\n"
+                '\t\t\t\t"\\n"\n'
+                '\t\t\t\t"========================================\\n"\n'
+                '\t\t\t\t"   HakiOS (iOS 26 / XNU 12377.121.6)   \\n"\n'
+                '\t\t\t\t"   Xiaomi Redmi Note 13 4G (sapphire)   \\n"\n'
+                '\t\t\t\t"========================================\\n\\n"\n'
+                '\t\t\t\t"[*] SoC: Qualcomm Snapdragon SM6225 Bengal\\n"\n'
+                '\t\t\t\t"[*] Cores: Cortex-A73 Gold (4KB Quad-PTE)\\n"\n'
+                '\t\t\t\t"[*] Root: Mockfs ramdisk mounted on md0\\n"\n'
+                '\t\t\t\t"[*] PID 1: /sbin/launchd running in EL0!\\n"\n'
+                '\t\t\t\t"[*] System call interface: ACTIVE\\n\\n";\n'
+                "\t\t\textern const unsigned char iso_font[];\n"
+                "\t\t\textern void hk_render_screen_asm(const char *, uint32_t, const unsigned char *, uint32_t);\n"
+                "\t\t\thk_render_screen_asm(hk_init_banner, (uint32_t)sizeof(hk_init_banner) - 1, iso_font, 720);\n"
+                "\t\t}\n\n"
+                "\t\tif (code == 5 /* SYS_open */) {\n"
+                "\t\t\t/* Immediate success for /dev/console open: return fd 1, avoid ttyopen deadlock */\n"
+                "\t\t\tuthread->uu_rval[0] = 1;\n"
+                "\t\t\terror = 0;\n"
+                "\t\t\tgoto hakios_pid1_handled;\n"
+                "\t\t}\n\n"
+                "\t\tif (code == 4 /* SYS_write */) {\n"
+                "\t\t\tstatic char hk_user_write_buf[256];\n"
+                "\t\t\tstatic uint32_t hk_text_row = 1080;\n"
+                "\t\t\tuser_addr_t ubuf = (user_addr_t)uthread->uu_arg[1];\n"
+                "\t\t\tuser_size_t ulen = (user_size_t)uthread->uu_arg[2];\n"
+                "\t\t\tuint32_t to_copy = (ulen < sizeof(hk_user_write_buf) - 1) ? (uint32_t)ulen : (sizeof(hk_user_write_buf) - 1);\n"
+                "\t\t\tif (to_copy > 0 && copyin(ubuf, hk_user_write_buf, to_copy) == 0) {\n"
+                "\t\t\t\thk_user_write_buf[to_copy] = '\\0';\n"
+                "\t\t\t\t/* Draw Row 652 (Thick White band: SYS_write executed) */\n"
+                "\t\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FFFFFF, 652, 4); }\n"
+                "\t\t\t\textern const unsigned char iso_font[];\n"
+                "\t\t\t\textern void hk_render_screen_asm(const char *, uint32_t, const unsigned char *, uint32_t);\n"
+                "\t\t\t\thk_render_screen_asm(hk_user_write_buf, to_copy, iso_font, hk_text_row);\n"
+                "\t\t\t\thk_text_row += 32;\n"
+                "\t\t\t\tif (hk_text_row > 2200) {\n"
+                "\t\t\t\t\thk_text_row = 1080;\n"
+                "\t\t\t\t}\n"
+                "\t\t\t}\n"
+                "\t\t\tuthread->uu_rval[0] = (int)ulen;\n"
+                "\t\t\terror = 0;\n"
+                "\t\t\tgoto hakios_pid1_handled;\n"
+                "\t\t}\n\n"
+                "\t\tif (code == 20 /* SYS_getpid */) {\n"
+                "\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00DA70D6, 654, 4); } /* Orchid: SYS_getpid */\n"
+                "\t\t\tuthread->uu_rval[0] = 1;\n"
+                "\t\t\terror = 0;\n"
+                "\t\t\tgoto hakios_pid1_handled;\n"
+                "\t\t}\n\n"
                 "\t\tif (code == 93 /* SYS_select */) {\n"
                 "\t\t\tstatic uint32_t hb_color = 0x0000FF00;\n"
                 "\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(hb_color, 656, 4); } /* Heartbeat tick */\n"
                 "\t\t\thb_color = (hb_color == 0x0000FF00) ? 0x0000FFFF : 0x0000FF00;\n"
                 "\t\t}\n"
-                "\t}"
+                "\t}\n\n"
+                "\terror = (*(callp->sy_call))(proc, &uthread->uu_arg[0], &(uthread->uu_rval[0]));\nhakios_pid1_handled: ;"
             )
             if t_syscall in csys:
                 csys = csys.replace(t_syscall, r_syscall, 1)
                 with open(target_sys, "w", encoding="utf-8", newline="\n") as f:
                     f.write(csys)
-                print("  [OK] bsd/dev/arm/systemcalls.c: userland syscall & heartbeat monitor installed (rows 650, 656)")
+                print("  [OK] bsd/dev/arm/systemcalls.c: userland syscall interception & text banner engine installed")
             else:
-                print("  [WARN] bsd/dev/arm/systemcalls.c: code = arm_get_syscall_number pattern not found")
+                print("  [WARN] bsd/dev/arm/systemcalls.c: error = (*(callp->sy_call)) pattern not found")
 
     return True
 

@@ -800,7 +800,11 @@ LEXT(hk_render_screen_asm)
 \tisb
 
 \tmov\t\tx25, #20
+\tcmp\t\tw3, #720
+\tcsel\tw26, w3, wzr, hi
+\tcbnz\tw26, 21f
 \tmov\t\tx26, #720
+21:
 
 \tmovz\tw14, #0xffff
 \tmovk\tw14, #0x00ff, lsl #16
@@ -1650,6 +1654,13 @@ kernel_debug_string_early(const char *message)
             print("  [OK] osfmk/console/video_console.c: vcputc text force installed (always active)")
         else:
             print("  [WARN] t_vcputc pattern not found in video_console.c")
+
+        # Never set disableConsoleOutput to TRUE in gc_enable
+        t_dis = "disableConsoleOutput = TRUE;"
+        r_dis = "/* hakios: never suppress console */ disableConsoleOutput = FALSE;"
+        if t_dis in c21:
+            c21 = c21.replace(t_dis, r_dis)
+            print("  [OK] osfmk/console/video_console.c: disableConsoleOutput overrides neutralized")
 
         with open(p21, "w", encoding="utf-8", newline="\n") as f:
             f.write(c21)
