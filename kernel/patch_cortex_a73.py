@@ -795,14 +795,17 @@ LEXT(hk_render_screen_asm)
 \tisb
 
 \tmov\t\tx25, #20
-\tcmp\t\tw3, #720
-\tcsel\tw26, w3, wzr, hi
-\tcbnz\tw26, 21f
+\tand\t\tx26, x3, #0xffffffff
+\tcmp\t\tx26, #720
+\tcsel\tx26, x26, xzr, hs
+\tcbnz\tx26, 21f
 \tmov\t\tx26, #720
 21:
 
 \tmovz\tw14, #0xffff
-\tmovk\tw14, #0x00ff, lsl #16
+\tmovk\tw14, #0xffff, lsl #16
+\tmovz\tw13, #0x0000
+\tmovk\tw13, #0xff00, lsl #16
 \tmov\t\tx15, #4320
 
 2:\tcbz\t\tw20, 7f
@@ -843,18 +846,18 @@ LEXT(hk_render_screen_asm)
 \tmov\t\tx7, x2
 \tadd\t\tx8, x2, x15
 
-61:\tlsr\t\tw10, w5, w6
-\ttbz\t\tw10, #0, 62f
+61:\ttbz\t\tw5, #7, 62f
 \tstr\t\tw14, [x7], #4
 \tstr\t\tw14, [x7], #4
 \tstr\t\tw14, [x8], #4
 \tstr\t\tw14, [x8], #4
 \tb\t\t63f
-62:\tstr\t\twzr, [x7], #4
-\tstr\t\twzr, [x7], #4
-\tstr\t\twzr, [x8], #4
-\tstr\t\twzr, [x8], #4
-63:\tadd\t\tw6, w6, #1
+62:\tstr\t\tw13, [x7], #4
+\tstr\t\tw13, [x7], #4
+\tstr\t\tw13, [x8], #4
+\tstr\t\tw13, [x8], #4
+63:\tlsl\t\tw5, w5, #1
+\tadd\t\tw6, w6, #1
 \tcmp\t\tw6, #8
 \tb.lt\t61b
 
