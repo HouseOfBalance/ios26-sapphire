@@ -158,6 +158,8 @@ def patch_bsd_init(src_dir):
     r_bsdinit = (
         "bsdinit_task(void)\n{\n"
         "\t/* hakios: PID 1 kernel bootstrap */\n"
+        "\t/* hakios/claude: clear diagnostic bit 63 in TPIDR_EL0 before userland */\n"
+        "\t__asm__ volatile (\"mrs x0, tpidr_el0; bic x0, x0, #(1ULL << 63); msr tpidr_el0, x0\" ::: \"x0\");\n"
         "\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FF8C00, 630, 4); } /* Dark Orange: bsdinit_task entered */\n"
     )
     if t_bsdinit in c:

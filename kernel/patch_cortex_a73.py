@@ -432,6 +432,88 @@ def main():
         else:
             print("  [WARN] sleh_hook_old not found in sleh.c")
 
+        
+        sleh_inv_old = """void
+sleh_invalid_stack(arm_context_t *context, uint64_t esr __unused, vm_offset_t far __unused)
+{
+\tthread_t thread = current_thread();
+\tvm_offset_t kernel_stack_bottom, sp;
+
+\t{
+\t\t/* hakios: the panic text below gets cut short this early; the syndrome first, on one line */
+\t\tchar line[200];
+\t\tsnprintf(line, sizeof(line), "hakios: early exception esr=0x%llx far=0x%lx pc=0x%llx x20=0x%llx x21=0x%llx\\n",
+\t\t    esr, far, get_saved_state_pc(&context->ss), get_saved_state_reg(&context->ss, 20),
+\t\t    get_saved_state_reg(&context->ss, 21));
+\t\tloader_log_line(line);
+\t}
+
+\tsp = get_saved_state_sp(&context->ss);
+\tvm_offset_t kstackptr = (vm_offset_t)thread->machine.kstackptr;
+\tkernel_stack_bottom = round_page(kstackptr) - KERNEL_STACK_SIZE;"""
+        sleh_inv_new = """void
+sleh_invalid_stack(arm_context_t *context, uint64_t esr __unused, vm_offset_t far __unused)
+{
+\textern void hk_draw_band_stackless(uint32_t color, uint32_t row_start, uint32_t row_count);
+\thk_draw_band_stackless(0x00FF8C00, 216, 4); /* Dark Orange: sleh_invalid_stack entered (216..219) */
+
+\tthread_t thread = current_thread();
+\tif (thread == NULL) {
+\t\t/* Early boot invalid stack with TPIDR_EL1 == 0: DO NOT DEREFERENCE thread! */
+\t\textern void hk_render_screen_asm(const char *str, uint32_t len, const unsigned char *font);
+\t\textern const unsigned char iso_font[];
+\t\tstatic char emsg[384];
+\t\tint pos = 0;
+\t\tconst char *hdr = "=== HAKIOS EARLY INVALID STACK ===\\n";
+\t\twhile (*hdr) emsg[pos++] = *hdr++;
+\t\tuint64_t pc = (context != NULL) ? (uint64_t)get_saved_state_pc(&context->ss) : 0ULL;
+\t\tuint64_t sp_val = (context != NULL) ? (uint64_t)get_saved_state_sp(&context->ss) : 0ULL;
+\t\tuint64_t lr_val = (context != NULL) ? (uint64_t)get_saved_state_lr(&context->ss) : 0ULL;
+\t\tuint64_t x0_val = (context != NULL) ? (uint64_t)get_saved_state_reg(&context->ss, 0) : 0ULL;
+\t\tuint64_t vals[6] = { pc, lr_val, sp_val, (uint64_t)esr, (uint64_t)far, x0_val };
+\t\tconst char *names[6] = { "pc : 0x", "lr : 0x", "sp : 0x", "esr: 0x", "far: 0x", "x0 : 0x" };
+\t\tfor (int k = 0; k < 6; k++) {
+\t\t\tconst char *nm = names[k];
+\t\t\twhile (*nm) emsg[pos++] = *nm++;
+\t\t\tuint64_t v = vals[k];
+\t\t\tfor (int sh = 60; sh >= 0; sh -= 4) {
+\t\t\t\tuint32_t d = (uint32_t)((v >> sh) & 0xf);
+\t\t\t\temsg[pos++] = (char)(d < 10 ? ('0' + d) : ('a' + d - 10));
+\t\t\t}
+\t\t\temsg[pos++] = '\\n';
+\t\t}
+\t\temsg[pos] = '\\0';
+\t\tfor (uintptr_t p = (uintptr_t)emsg; p < (uintptr_t)emsg + pos + 64; p += 64) {
+\t\t\t__asm__ volatile ("dc cvac, %0" : : "r" (p));
+\t\t}
+\t\t__asm__ volatile ("dsb sy");
+\t\thk_render_screen_asm(emsg, pos, iso_font);
+\t\thk_draw_band_stackless(0x00FF00FF, 220, 4); /* Magenta: early panic rendered (220..223) */
+\t\tfor (;;) {
+\t\t\t__asm__ volatile ("wfe");
+\t\t}
+\t}
+
+\tvm_offset_t kernel_stack_bottom, sp;
+
+\t{
+\t\t/* hakios: the panic text below gets cut short this early; the syndrome first, on one line */
+\t\tchar line[200];
+\t\tsnprintf(line, sizeof(line), "hakios: early exception esr=0x%llx far=0x%lx pc=0x%llx x20=0x%llx x21=0x%llx\\n",
+\t\t    esr, far, get_saved_state_pc(&context->ss), get_saved_state_reg(&context->ss, 20),
+\t\t    get_saved_state_reg(&context->ss, 21));
+\t\tloader_log_line(line);
+\t}
+
+\tsp = get_saved_state_sp(&context->ss);
+\tvm_offset_t kstackptr = (vm_offset_t)thread->machine.kstackptr;
+\tkernel_stack_bottom = round_page(kstackptr) - KERNEL_STACK_SIZE;"""
+        if sleh_inv_old in c_norm:
+            c_norm = c_norm.replace(sleh_inv_old, sleh_inv_new, 1)
+            print("  [OK] osfmk/arm64/sleh.c: sleh_invalid_stack NULL-guard and diagnostic bands installed")
+        else:
+            print("  [WARN] sleh_inv_old not found in sleh.c")
+
         with open(p3, "w", encoding="utf-8", newline="\n") as f:
             f.write(c_norm)
 
@@ -904,7 +986,97 @@ LEXT(hk_render_screen_asm)
 \tldp\t\tx29, x30, [sp], #80
 \tret
 """
-        c_norm = c_norm + hk_draw_band_code + hk_render_screen_asm_code
+        hk_draw_band_stackless_code = """
+/*
+ * hakios: stackless visual marker band drawer (accessible from start.s, locore.s, sleh.c)
+ * void hk_draw_band_stackless(uint32_t color, uint32_t row_start, uint32_t row_count);
+ * Zero stack usage: does not modify or use SP or callee-saved registers (x16-x30).
+ * Uses only caller-saved registers x0-x15.
+ */
+\t.text
+\t.align 2
+\t.globl EXT(hk_draw_band_stackless)
+LEXT(hk_draw_band_stackless)
+\t/* Ensure row_start and row_count are treated as 32-bit unsigned integers */
+\tand\t\tx1, x1, #0xffffffff
+\tand\t\tx2, x2, #0xffffffff
+
+\t/* Keep callers from writing beyond the 2400-row framebuffer. */
+\tmov\t\tx3, #2400
+\tcmp\t\tx1, x3
+\tb.hs\t5f
+\tsub\t\tx3, x3, x1
+\tcmp\t\tx2, x3
+\tcsel\tx2, x2, x3, lo
+\tcbz\t\tx2, 5f
+
+\tand\t\tx0, x0, #0xffffffff
+\torr\t\tx0, x0, x0, lsl #32
+
+\tmov\t\tx4, #4320
+\tmul\t\tx4, x1, x4
+\tmovz\tx3, #0x5c00, lsl #16
+\tadd\t\tx4, x4, x3
+
+\tmov\t\tw12, #270
+\tmul\t\tw12, w2, w12
+
+\tmrs\t\tx5, DAIF
+\tmsr\t\tDAIFSet, #0xf
+
+\tmrs\t\tx6, SCTLR_EL1
+\ttbz\t\tx6, #0, 1f
+
+\tmrs\t\tx7, TTBR0_EL1
+\tadrp\tx8, EXT(loader_stub_slot)@page
+\tadd\t\tx8, x8, EXT(loader_stub_slot)@pageoff
+\tldr\t\tx8, [x8, #24]
+\tadrp\tx9, EXT(bootstrap_pagetables)@page
+\tadd\t\tx9, x9, EXT(bootstrap_pagetables)@pageoff
+\tsub\t\tx9, x9, x8
+\tmsr\t\tTTBR0_EL1, x9
+\tisb
+\ttlbi\tvmalle1
+\tdsb\t\tsy
+\tisb
+
+\tadr\t\tx11, 3f
+\tadr\t\tx10, 1f
+\tsub\t\tx10, x10, x8
+\tbr\t\tx10
+
+1:
+\tmrs\t\tx13, SCTLR_EL1
+\tbic\t\tx10, x13, #1
+\tmsr\t\tSCTLR_EL1, x10
+\tisb
+
+\tmov\t\tx14, x4
+\tmov\t\tw15, w12
+2:
+\tstp\tx0, x0, [x14], #16
+\tsubs\tw15, w15, #1
+\tb.ne\t2b
+\tdsb\t\tsy
+
+\tmsr\t\tSCTLR_EL1, x13
+\tisb
+
+\ttbz\t\tx6, #0, 4f
+\tbr\t\tx11
+
+3:
+\tmsr\t\tTTBR0_EL1, x7
+\tisb
+\ttlbi\tvmalle1
+\tdsb\t\tsy
+\tisb
+4:
+\tmsr\t\tDAIF, x5
+5:
+\tret
+"""
+        c_norm = c_norm + hk_draw_band_code + hk_render_screen_asm_code + hk_draw_band_stackless_code
 
         with open(p4, "w", encoding="utf-8", newline="\n") as f:
             f.write(c_norm)
@@ -968,6 +1140,89 @@ LEXT(hk_render_screen_asm)
                 changed_asm = True
                 print(f"  [OK] osfmk/arm64/{asm_name}: ml_check_signed_state stubbed")
             c8_new, n_sub = re.subn(r'cbz\s+x2,\s*Lcorrupt_stack_\\@', 'cbz\t\tx2, Ltest_istack_\\@', c8)
+
+            if asm_name == "locore.s":
+                t_vec_entry = """el1_sp0_synchronous_vector_long:
+\tstp\t\tx0, x1, [sp, #-16]!\t\t\t\t// Save x0 and x1 to the exception stack
+\tmrs\t\tx1, ESR_EL1\t\t\t\t\t\t\t// Get the exception syndrome"""
+                r_vec_entry = """el1_sp0_synchronous_vector_long:
+\tstp\t\tx0, x1, [sp, #-16]!\t\t\t\t// Save x0 and x1 to the exception stack
+\tmrs\t\tx1, ESR_EL1\t\t\t\t\t\t\t// Get the exception syndrome
+\t/* hakios/claude: EC diagnostic for early sync faults */
+\tlsr\t\tx0, x1, #26\t\t\t\t\t\t\t// x0 = EC
+\tcbz\t\tx0, 88f\t\t\t\t\t\t\t\t// If EC == 0 (LSE/PAC trap), bypass completely!
+\tmrs\t\tx0, TPIDR_EL0\t\t\t\t\t\t// Read temporary one-shot flag
+\ttbnz\tx0, #63, 88f\t\t\t\t\t\t// If bit 63 set, already drawn, bypass!
+\torr\t\tx0, x0, #(1ULL << 63)
+\tmsr\t\tTPIDR_EL0, x0\t\t\t\t\t\t// Set one-shot bit 63
+\tstp\t\tx2, x3, [sp, #-16]!
+\tstp\t\tx4, x5, [sp, #-16]!
+\tstp\t\tx6, x7, [sp, #-16]!
+\tstp\t\tx8, x9, [sp, #-16]!
+\tstp\t\tx10, x11, [sp, #-16]!
+\tstp\t\tx12, x13, [sp, #-16]!
+\tstp\t\tx14, x15, [sp, #-16]!
+\tstp\t\tx29, x30, [sp, #-16]!
+\tlsr\t\tw0, w1, #26
+\tlsl\t\tw0, w0, #16
+\tmovz\tw2, #0x00ff
+\tmovk\tw2, #0x00ff, lsl #8
+\torr\t\tw0, w0, w2
+\tmov\t\tw1, #198\t\t\t\t\t\t\t// Row 198
+\tmov\t\tw2, #4\t\t\t\t\t\t\t\t// 4 rows (198..201)
+\tbl\t\tEXT(hk_draw_band_stackless)
+\tldp\t\tx29, x30, [sp], #16
+\tldp\t\tx14, x15, [sp], #16
+\tldp\t\tx12, x13, [sp], #16
+\tldp\t\tx10, x11, [sp], #16
+\tldp\t\tx8, x9, [sp], #16
+\tldp\t\tx6, x7, [sp], #16
+\tldp\t\tx4, x5, [sp], #16
+\tldp\t\tx2, x3, [sp], #16
+\tmrs\t\tx1, ESR_EL1\t\t\t\t\t\t\t// Reload ESR
+88:"""
+                if t_vec_entry in c8:
+                    c8 = c8.replace(t_vec_entry, r_vec_entry, 1)
+                    changed_asm = True
+                    print(f"  [OK] osfmk/arm64/{asm_name}: el1_sp0_synchronous_vector_long Row 198 EC marker installed")
+
+                t_corr_entry = """\tINIT_SAVED_STATE_FLAVORS sp, w0, w1
+\tmov\t\tx0, sp\t\t\t\t\t\t\t\t// Copy exception frame pointer to x0
+\tadrp\tx1, fleh_invalid_stack@page\t\t\t// Load address for fleh"""
+                r_corr_entry = """\tINIT_SAVED_STATE_FLAVORS sp, w0, w1
+\tmov\t\tx0, sp\t\t\t\t\t\t\t\t// Copy exception frame pointer to x0
+\t/* hakios/claude: draw Row 204 (Vivid Yellow: 204..207) on corrupt stack detection */
+\tmov\t\tx19, x0
+\tmovz\tw0, #0xff00
+\tmovk\tw0, #0x00ff, lsl #16
+\tmov\t\tw1, #204
+\tmov\t\tw2, #4
+\tbl\t\tEXT(hk_draw_band_stackless)
+\tmov\t\tx0, x19
+\tadrp\tx1, fleh_invalid_stack@page\t\t\t// Load address for fleh"""
+                if t_corr_entry in c8:
+                    c8 = c8.replace(t_corr_entry, r_corr_entry, 1)
+                    changed_asm = True
+                    print(f"  [OK] osfmk/arm64/{asm_name}: Lcorrupt_stack Row 204 Vivid Yellow marker installed")
+
+                t_spin_entry = """0:
+\twfe
+\tb\t\t0b // Spin for watchdog"""
+                r_spin_entry = """0:
+\t/* hakios/claude: draw Row 210 (Vivid Red: 210..213) on spill failed spin */
+\tmovz\tw0, #0x0000
+\tmovk\tw0, #0x00ff, lsl #16
+\tmov\t\tw1, #210
+\tmov\t\tw2, #4
+\tbl\t\tEXT(hk_draw_band_stackless)
+1:
+\twfe
+\tb\t\t1b // Spin for watchdog"""
+                if t_spin_entry in c8:
+                    c8 = c8.replace(t_spin_entry, r_spin_entry, 1)
+                    changed_asm = True
+                    print(f"  [OK] osfmk/arm64/{asm_name}: spill_failed Row 210 Vivid Red marker installed")
+
             if n_sub > 0:
                 c8 = c8_new
                 changed_asm = True
@@ -1406,11 +1661,46 @@ kernel_debug_string_early(const char *message)
         r16_loop = """\t/* hakios/claude: Thick pre-lock and post-lock diagnostic bands */
 \t{
 \t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
-\t\thk_draw_band(0x00FFFF00, 296, 6); /* Vivid Yellow: PRE-LOCK */
+\t\thk_draw_band(0x00FFFF00, 296, 6); /* Vivid Yellow: PRE-LOCK (rows 296..301) */
 \t\tvm_free_page_lock();
-\t\thk_draw_band(0x00FF00FF, 304, 6); /* Vivid Magenta: POST-LOCK */
+\t\thk_draw_band(0x00FF00FF, 304, 2); /* Vivid Magenta: POST-LOCK (rows 304..305) */
+
+\t\t/* Gauge at Rows 410..440 */
+\t\tstatic const uint32_t nibble_pal[16] = {
+\t\t\t0x00000000, 0x00000080, 0x00008000, 0x00008080,
+\t\t\t0x00800000, 0x00800080, 0x00808000, 0x00C0C0C0,
+\t\t\t0x00808080, 0x000000FF, 0x0000FF00, 0x0000FFFF,
+\t\t\t0x00FF0000, 0x00FF00FF, 0x00FFFF00, 0x00FFFFFF
+\t\t};
+\t\thk_draw_band(0x00FFFFFF, 410, 4); /* Calibration marker (White, 4 rows: 410..413) */
+
+\t\textern vm_offset_t first_avail;
+\t\textern vm_offset_t avail_end;
+\t\textern boolean_t need_ram_ranges_init;
+\t\tuint32_t fa32 = (uint32_t)first_avail;
+\t\tuint32_t ae32 = (uint32_t)avail_end;
+\t\tfor (int k = 0; k < 8; k++) {
+\t\t\tuint32_t nib = (fa32 >> ((7 - k) * 4)) & 0xf;
+\t\t\thk_draw_band(nibble_pal[nib], 416 + k, 1);
+\t\t}
+\t\tfor (int k = 0; k < 8; k++) {
+\t\t\tuint32_t nib = (ae32 >> ((7 - k) * 4)) & 0xf;
+\t\t\thk_draw_band(nibble_pal[nib], 426 + k, 1);
+\t\t}
+\t\thk_draw_band(need_ram_ranges_init ? 0x0000FF00 : 0x00FF0000, 436, 2);
+\t\tuint64_t vbar_val;
+\t\t__asm__ volatile ("mrs %0, VBAR_EL1" : "=r" (vbar_val));
+\t\thk_draw_band((vbar_val >= 0xffff000000000000ULL) ? 0x0000FF00 : 0x00FF0000, 440, 2);
 \t}
-\tfor (uint32_t i = 0; i < npages && pmap_next_page(&phys_page); i++) {
+\tfor (uint32_t i = 0; i < npages; i++) {
+\t\tboolean_t pnext_ret = pmap_next_page(&phys_page);
+\t\tif (i == 0) {
+\t\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
+\t\t\thk_draw_band(0x00800080, 311, 1); /* Purple: call-site returned (Row 311, 1 row) */
+\t\t}
+\t\tif (!pnext_ret) {
+\t\t\tbreak;
+\t\t}
 \t\tif (i == 0) {
 \t\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
 \t\t\thk_draw_band(0x0000BFFF, 312, 4); /* Deep Sky Blue: page loop entered */
