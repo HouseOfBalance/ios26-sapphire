@@ -726,6 +726,262 @@ Lhk_fb_fill:
 \tmsr\t\tSCTLR_EL1, x9
 \tisb
 
+\t/* hakios DIAGNOSTIC: Phase 1 AT S1E1W measurement and bootstrap pagetable inspection */
+\t// 1. Measure AT S1E1W with MMU ON on direct FB VA (0xfffffff004000000)
+\tmovz\tx9, #0x0400, lsl #16
+\tmovk\tx9, #0xfff0, lsl #32
+\tmovk\tx9, #0xffff, lsl #48
+\tat\ts1e1w, x9
+\tisb
+\tmrs\tx27, par_el1
+
+\t// 2. Switch MMU OFF to inspect memory via PA and paint diagnostic rows
+\tmrs\tx9, SCTLR_EL1
+\tbic\tx9, x9, #1
+\tmsr\tSCTLR_EL1, x9
+\tisb
+
+\t// 3. Read L1[192] and L2[32] from bootstrap_pagetables via PA
+\tadd\tx16, x25, #0x1000
+\tldr\tx28, [x16, #(192 * 8)]
+\tcbz\tx28, 10f
+\tmovz\tx13, #0xf000
+\tmovk\tx13, #0xffff, lsl #16
+\tmovk\tx13, #0xffff, lsl #32
+\tand\tx17, x28, x13
+\tldr\tx29, [x17, #(32 * 8)]
+\tb\t11f
+10:
+\tmov\tx29, xzr
+11:
+
+\t// 4. Draw Row 170 (2 rows: 170..171, PA = 0x5c0b34c0): PAR_EL1 F bit (Lime = Success, Red = Fail)
+\tmovz\tx9, #0x34c0
+\tmovk\tx9, #0x5c0b, lsl #16
+\ttbz\tx27, #0, 12f
+\t// Fail (F == 1): Bright Red
+\tmovz\tx10, #0x00ff
+\tmovk\tx10, #0x0000, lsl #16
+\tmovk\tx10, #0x00ff, lsl #32
+\tmovk\tx10, #0x0000, lsl #48
+\tb\t13f
+12:
+\t// Success (F == 0): Lime Green
+\tmovz\tx10, #0x0000
+\tmovk\tx10, #0x00ff, lsl #16
+\tmovk\tx10, #0x0000, lsl #32
+\tmovk\tx10, #0x00ff, lsl #48
+13:
+\tmov\tw11, #540
+14:
+\tstp\tx10, x10, [x9], #16
+\tsubs\tw11, w11, #1
+\tb.ne\t14b
+
+\t// 5. Draw Row 172 (2 rows: 172..173, PA = 0x5c0b5680): PAR_EL1 FST code
+\tmovz\tx9, #0x5680
+\tmovk\tx9, #0x5c0b, lsl #16
+\ttbz\tx27, #0, 20f
+\tubfx\tx12, x27, #1, #6
+\tcmp\tx12, #0x05
+\tb.eq\t21f
+\tcmp\tx12, #0x06
+\tb.eq\t22f
+\tcmp\tx12, #0x0e
+\tb.eq\t23f
+\tcmp\tx12, #0x0a
+\tb.eq\t24f
+\t// Other fault: Magenta (0x00FF00FF)
+\tmovz\tx10, #0x00ff
+\tmovk\tx10, #0x00ff, lsl #16
+\tmovk\tx10, #0x00ff, lsl #32
+\tmovk\tx10, #0x00ff, lsl #48
+\tb\t25f
+20:
+\t// Success: Spring Green (0x0000FF7F)
+\tmovz\tx10, #0xff7f
+\tmovk\tx10, #0x0000, lsl #16
+\tmovk\tx10, #0xff7f, lsl #32
+\tmovk\tx10, #0x0000, lsl #48
+\tb\t25f
+21:
+\t// FST 0x05 (Trans L1): Dark Red (0x008B0000)
+\tmovz\tx10, #0x0000
+\tmovk\tx10, #0x008b, lsl #16
+\tmovk\tx10, #0x0000, lsl #32
+\tmovk\tx10, #0x008b, lsl #48
+\tb\t25f
+22:
+\t// FST 0x06 (Trans L2): Dark Orange (0x00FF8C00)
+\tmovz\tx10, #0x8c00
+\tmovk\tx10, #0x00ff, lsl #16
+\tmovk\tx10, #0x8c00, lsl #32
+\tmovk\tx10, #0x00ff, lsl #48
+\tb\t25f
+23:
+\t// FST 0x0E (Perm L2): Yellow (0x00FFFF00)
+\tmovz\tx10, #0xff00
+\tmovk\tx10, #0x00ff, lsl #16
+\tmovk\tx10, #0xff00, lsl #32
+\tmovk\tx10, #0x00ff, lsl #48
+\tb\t25f
+24:
+\t// FST 0x0A (AF L2): Cyan (0x0000FFFF)
+\tmovz\tx10, #0xffff
+\tmovk\tx10, #0x0000, lsl #16
+\tmovk\tx10, #0xffff, lsl #32
+\tmovk\tx10, #0x0000, lsl #48
+25:
+\tmov\tw11, #540
+26:
+\tstp\tx10, x10, [x9], #16
+\tsubs\tw11, w11, #1
+\tb.ne\t26b
+
+\t// 6. Draw Row 174 (2 rows: 174..175, PA = 0x5c0b7840): L1[192] Status
+\tmovz\tx9, #0x7840
+\tmovk\tx9, #0x5c0b, lsl #16
+\tcbnz\tx28, 30f
+\t// L1[192] == 0: Dark Red (0x008B0000)
+\tmovz\tx10, #0x0000
+\tmovk\tx10, #0x008b, lsl #16
+\tmovk\tx10, #0x0000, lsl #32
+\tmovk\tx10, #0x008b, lsl #48
+\tb\t32f
+30:
+\tand\tx12, x28, #3
+\tcmp\tx12, #3
+\tb.ne\t31f
+\t// Valid table descriptor: Dodger Blue (0x001E90FF)
+\tmovz\tx10, #0x90ff
+\tmovk\tx10, #0x001e, lsl #16
+\tmovk\tx10, #0x90ff, lsl #32
+\tmovk\tx10, #0x001e, lsl #48
+\tb\t32f
+31:
+\t// Other: White
+\tmovz\tx10, #0xffff
+\tmovk\tx10, #0x00ff, lsl #16
+\tmovk\tx10, #0xffff, lsl #32
+\tmovk\tx10, #0x00ff, lsl #48
+32:
+\tmov\tw11, #540
+33:
+\tstp\tx10, x10, [x9], #16
+\tsubs\tw11, w11, #1
+\tb.ne\t33b
+
+\t// 7. Draw Row 176 (2 rows: 176..177, PA = 0x5c0b9a00): L2[32] Content
+\tmovz\tx9, #0x9a00
+\tmovk\tx9, #0x5c0b, lsl #16
+\tcbnz\tx29, 40f
+\t// L2[32] == 0: White (0x00FFFFFF)
+\tmovz\tx10, #0xffff
+\tmovk\tx10, #0x00ff, lsl #16
+\tmovk\tx10, #0xffff, lsl #32
+\tmovk\tx10, #0x00ff, lsl #48
+\tb\t44f
+40:
+\t// Expected descriptor: 0x006000005c000605
+\tmovz\tx14, #0x0605
+\tmovk\tx14, #0x0060, lsl #48
+\tmovz\tx15, #0x0000
+\tmovk\tx15, #0x5c00, lsl #16
+\torr\tx14, x14, x15
+\tcmp\tx29, x14
+\tb.ne\t41f
+\t// Exact match: Vivid Gold (0x00FFD700)
+\tmovz\tx10, #0xd700
+\tmovk\tx10, #0x00ff, lsl #16
+\tmovk\tx10, #0xd700, lsl #32
+\tmovk\tx10, #0x00ff, lsl #48
+\tb\t44f
+41:
+\tand\tx12, x29, #3
+\tcmp\tx12, #1
+\tb.ne\t42f
+\t// Block descriptor with different attr/PA: Hot Pink (0x00FF69B4)
+\tmovz\tx10, #0x69b4
+\tmovk\tx10, #0x00ff, lsl #16
+\tmovk\tx10, #0x69b4, lsl #32
+\tmovk\tx10, #0x00ff, lsl #48
+\tb\t44f
+42:
+\t// Other descriptor type: Purple (0x00800080)
+\tmovz\tx10, #0x0080
+\tmovk\tx10, #0x0080, lsl #16
+\tmovk\tx10, #0x0080, lsl #32
+\tmovk\tx10, #0x0080, lsl #48
+44:
+\tmov\tw11, #540
+45:
+\tstp\tx10, x10, [x9], #16
+\tsubs\tw11, w11, #1
+\tb.ne\t45b
+
+\t// 8. Draw Row 178..181 (4 rows, PA = 0x5c0bbbc0): 16-bit Binary Gauge of PAR_EL1[15:0]
+\tmov\tw18, #4
+50:
+\tmovz\tx9, #0xbbc0
+\tmovk\tx9, #0x5c0b, lsl #16
+\tmov\tw11, #4
+\tsub\tw11, w11, w18
+\tmov\tw12, #4320
+\tmul\tw11, w11, w12
+\tadd\tx9, x9, x11
+
+\t// Left margin: 7 stores of Black (0x00000000)
+\tmov\tw11, #7
+51:
+\tstp\txzr, xzr, [x9], #16
+\tsubs\tw11, w11, #1
+\tb.ne\t51b
+
+\t// Loop over 16 bits: bit 0 (leftmost) to bit 15 (rightmost)
+\tmov\tw12, #0
+52:
+\tlsr\tx13, x27, x12
+\ttbz\tx13, #0, 53f
+\t// Bit is 1: White (0x00FFFFFF)
+\tmovz\tx10, #0xffff
+\tmovk\tx10, #0x00ff, lsl #16
+\tmovk\tx10, #0xffff, lsl #32
+\tmovk\tx10, #0x00ff, lsl #48
+\tb\t54f
+53:
+\t// Bit is 0: Dark Grey (0x00333333)
+\tmovz\tx10, #0x3333
+\tmovk\tx10, #0x0033, lsl #16
+\tmovk\tx10, #0x3333, lsl #32
+\tmovk\tx10, #0x0033, lsl #48
+54:
+\t// Paint 16 stores (64 pixels wide)
+\tmov\tw11, #16
+55:
+\tstp\tx10, x10, [x9], #16
+\tsubs\tw11, w11, #1
+\tb.ne\t55b
+
+\tadd\tw12, w12, #1
+\tcmp\tw12, #16
+\tb.ne\t52b
+
+\t// Right margin: 7 stores of Black
+\tmov\tw11, #7
+56:
+\tstp\txzr, xzr, [x9], #16
+\tsubs\tw11, w11, #1
+\tb.ne\t56b
+
+\tsubs\tw18, w18, #1
+\tb.ne\t50b
+
+\t// 9. Re-enable MMU
+\tmrs\tx9, SCTLR_EL1
+\torr\tx9, x9, #1
+\tmsr\tSCTLR_EL1, x9
+\tisb
+
 \tLOADER_CHECKPOINT 11\t\t// hakios: about to ret into arm_init()
 \t// Return to arm_init()
 \tret"""
