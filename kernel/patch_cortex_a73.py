@@ -1679,20 +1679,39 @@ loader_return(void)
         if m_kb:
             c10 = c10.replace(m_kb.group(0), m_kb.group(0) + """
 \t{
-\t\textern void hk_draw_band(uint32_t color, uint32_t row_start, uint32_t row_count);
-\t\thk_draw_band(0x0000FFFF, 184, 2); /* Cyan band at row 184-185: entered kernel_bootstrap */
+\t\textern void hk_draw_band_direct(uint32_t color, uint32_t row_start, uint32_t row_count);
+\t\thk_draw_band_direct(0x0000FFFF, 496, 4); /* Cyan: entered kernel_bootstrap */
 \t}""", 1)
             print("  [OK] osfmk/kern/startup.c: kernel_bootstrap visual marker installed")
         else:
             print("  [WARN] kernel_bootstrap not found in startup.c")
 
+        # Instrument load_context entry and context switch
+        lc_target = "static void __attribute__((noreturn))\nload_context(\n\tthread_t                thread)\n{"
+        if lc_target in c10:
+            c10 = c10.replace(lc_target, lc_target + """
+\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0048D1CC, 543, 2); } /* MediumTurquoise: load_context entry */""", 1)
+            print("  [OK] osfmk/kern/startup.c: load_context entry instrumented")
+
+        msc_target = "machine_set_current_thread(thread);"
+        if msc_target in c10:
+            c10 = c10.replace(msc_target, msc_target + """
+\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0020B2AA, 544, 2); } /* LightSeaGreen: machine_set_current_thread done */""", 1)
+            print("  [OK] osfmk/kern/startup.c: machine_set_current_thread instrumented")
+
+        mlc_target = "machine_load_context(thread);"
+        if mlc_target in c10:
+            c10 = c10.replace(mlc_target, """{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF7F50, 545, 2); } /* Coral: about to machine_load_context */
+\t""" + mlc_target, 1)
+            print("  [OK] osfmk/kern/startup.c: machine_load_context instrumented")
+
         # Instrument kernel_bootstrap_thread(void) entry
-        m_kbt = re.search(r'(void\s+kernel_bootstrap_thread\s*\(\s*void\s*\)\s*\{)', c10)
-        if m_kbt:
-            c10 = c10.replace(m_kbt.group(0), m_kbt.group(0) + """
+        kbt_target = "static void\nkernel_bootstrap_thread(void)\n{"
+        if kbt_target in c10:
+            c10 = c10.replace(kbt_target, kbt_target + """
 \t{
-\t\textern void hk_draw_band(uint32_t color, uint32_t row_start, uint32_t row_count);
-\t\thk_draw_band(0x00FF1493, 186, 2); /* Hot Pink band at row 186-187: entered kernel_bootstrap_thread */
+\t\textern void hk_draw_band_direct(uint32_t color, uint32_t row_start, uint32_t row_count);
+\t\thk_draw_band_direct(0x00FFFFFF, 546, 4); /* White: ENTERED kernel_bootstrap_thread! */
 \t}""", 1)
             print("  [OK] osfmk/kern/startup.c: kernel_bootstrap_thread visual marker installed")
         else:
@@ -1730,9 +1749,26 @@ loader_return(void)
 
         # Step milestones in kernel_bootstrap_thread
         kbt_steps = [
-            ("\tidle_thread_create(processor);", "\tidle_thread_create(processor);\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FFD700, 550, 4); } /* Gold: idle_thread_create */"),
-            ("\tsched_startup();", "\tsched_startup();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF8C00, 556, 4); } /* DarkOrange: sched_startup */"),
-            ("\tbsd_init();", "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FFFFFF, 570, 8); } /* White: entering bsd_init! */\n\tbsd_init();"),
+            ("\tidle_thread_create(processor, idle_thread);",
+             "\tidle_thread_create(processor, idle_thread);\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FFD700, 548, 4); } /* Gold: idle_thread_create done */"),
+            ("\tsched_startup();",
+             "\tsched_startup();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000FF00, 550, 4); } /* Lime: sched_startup done */"),
+            ("\tthread_daemon_init();",
+             "\tthread_daemon_init();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000FFFF, 552, 4); } /* Cyan: thread_daemon_init done */"),
+            ("\tmapping_adjust();",
+             "\tmapping_adjust();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF00FF, 554, 4); } /* Magenta: mapping_adjust done */"),
+            ("\tclock_service_create();",
+             "\tclock_service_create();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF8C00, 556, 4); } /* DarkOrange: clock_service_create done */"),
+            ("\tdevice_service_create();",
+             "\tdevice_service_create();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF1493, 558, 4); } /* DeepPink: device_service_create done */"),
+            ("\tPE_init_iokit();",
+             "\tPE_init_iokit();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FFFF00, 560, 4); } /* Yellow: PE_init_iokit done */"),
+            ("\t(void) spllo();",
+             "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x007FFF00, 562, 4); } /* Chartreuse: about to spllo */\n\t(void) spllo();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000BFFF, 564, 4); } /* DeepSkyBlue: spllo returned */"),
+            ("\tinitialize_screen(NULL, kPEAcquireScreen);",
+             "\tinitialize_screen(NULL, kPEAcquireScreen);\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00BA55D3, 566, 4); } /* MediumOrchid: initialize_screen done */"),
+            ("\tbsd_init();",
+             "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FFFFFF, 570, 8); } /* Thick White: ENTERING bsd_init! */\n\tbsd_init();"),
         ]
         for t_step, r_step in kbt_steps:
             if t_step in c10:
