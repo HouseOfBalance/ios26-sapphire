@@ -411,6 +411,10 @@ const char *loader_boot_payload(uintptr_t rd_start, uintptr_t rd_end, int verify
 
 	uintptr_t entry_pa = p->entry_va + pa_of_va_base;
 	con_hex("JUMP", entry_pa);
+#ifndef ENXERTO_GIT_SHA
+#define ENXERTO_GIT_SHA "unknown"
+#endif
+	con_str("BUILD", ENXERTO_GIT_SHA);
 	bootui_progress(1000, "STARTING IOS");
 	enxerto_charger_handoff();	/* the kernel's sweetcharger=2 finds the charger registers as ABL left them */
 	con_str("XNU", "jumping (fbcon clears screen)");

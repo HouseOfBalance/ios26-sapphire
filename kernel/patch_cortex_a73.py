@@ -1156,13 +1156,10 @@ LEXT(hk_draw_band_stackless)
 \torr\t\tx0, x0, #(1ULL << 63)
 \tmsr\t\tTPIDR_EL0, x0\t\t\t\t\t\t// Set one-shot bit 63
 \tmov\t\tx28, lr\t\t\t\t\t\t\t// Save lr in x28 (untouched by hk_draw_band_stackless)
-\tlsr\t\tw0, w1, #26
-\tlsl\t\tw0, w0, #16
-\tmovz\tw2, #0x00ff
-\tmovk\tw2, #0x00ff, lsl #8
-\torr\t\tw0, w0, w2
-\tmov\t\tw1, #198\t\t\t\t\t\t\t// Row 198
-\tmov\t\tw2, #4\t\t\t\t\t\t\t\t// 4 rows (198..201)
+\tmovz\tw0, #0x4500\t\t\t\t\t\t\t// Vivid OrangeRed (0x00FF4500)
+\tmovk\tw0, #0x00ff, lsl #16
+\tmov\t\tw1, #230\t\t\t\t\t\t\t// Row 230 (isolated from Row 194 by 36 rows!)
+\tmov\t\tw2, #6\t\t\t\t\t\t\t\t// 6 rows thick (230..235) for unambiguous visibility
 \tbl\t\tEXT(hk_draw_band_stackless)
 \tmov\t\tlr, x28\t\t\t\t\t\t\t// Restore lr from x28
 \tmrs\t\tx1, ESR_EL1\t\t\t\t\t\t\t// Reload ESR
@@ -1170,7 +1167,7 @@ LEXT(hk_draw_band_stackless)
                 if t_vec_entry in c8:
                     c8 = c8.replace(t_vec_entry, r_vec_entry, 1)
                     changed_asm = True
-                    print(f"  [OK] osfmk/arm64/{asm_name}: el1_sp0_synchronous_vector_long Row 198 EC marker installed")
+                    print(f"  [OK] osfmk/arm64/{asm_name}: el1_sp0_synchronous_vector_long Row 230 OrangeRed marker installed")
 
                 t_corr_entry = """\tINIT_SAVED_STATE_FLAVORS sp, w0, w1
 \tmov\t\tx0, sp\t\t\t\t\t\t\t\t// Copy exception frame pointer to x0
@@ -1205,9 +1202,9 @@ LEXT(hk_draw_band_stackless)
 \twfe
 \tb\t\t1b // Spin for watchdog"""
                 if t_spin_entry in c8:
-                    c8 = c8.replace(t_spin_entry, r_spin_entry, 1)
+                    c8 = c8.replace(t_spin_entry, r_spin_entry)
                     changed_asm = True
-                    print(f"  [OK] osfmk/arm64/{asm_name}: spill_failed Row 210 Vivid Red marker installed")
+                    print(f"  [OK] osfmk/arm64/{asm_name}: spill_failed Row 210 Vivid Red marker installed in all vectors (SP0 and SP1)")
 
             if n_sub > 0:
                 c8 = c8_new

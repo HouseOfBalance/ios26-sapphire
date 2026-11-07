@@ -10,14 +10,14 @@
 ## 1. Fast Diagnostic Reading Order (Post-Boot Inspection)
 
 After booting with `fastboot boot enxerto-boot.img`:
-1. **Check Exception Vectors (Rows 198 .. 220) [100% STACKLESS]:**
-   - Did an exception occur? Look at **Rows 198, 204, 210, 216, 220**.
-   - **Row 198 (4 rows, Cyan+EC):** `el1_sp0_synchronous_vector_long` entry (100% stackless, preserves LR in x28, zero memory/SP access).
+1. **Check Exception Vectors (Rows 204 .. 235) [100% STACKLESS]:**
+   - Did an exception occur? Look at **Rows 204, 210, 216, 220, 230**.
+   - **Row 230..235 (6 rows, Vivid OrangeRed `0x00FF4500`):** `el1_sp0_synchronous_vector_long` entry (100% stackless, LR in x28, zero memory/SP access). Dời từ Row 198 về Row 230, cách xa Row 194 (Cyan) 36 hàng và đổi sang màu Đỏ Cam để phân biệt tuyệt đối 100%.
    - **Row 204 (4 rows, Vivid Yellow):** `Lcorrupt_stack` in `CHECK_KERNEL_STACK` (`TPIDR_EL1 == 0` early boot path).
-   - **Row 210 (4 rows, Vivid Red):** `el1_sp1_synchronous_vector_long_spill_failed` (Double fault watchdog spin `wfe`).
+   - **Row 210 (4 rows, Vivid Red):** `el1_sp0/sp1_synchronous_vector_long_spill_failed` (Double fault watchdog spin `wfe`).
    - **Row 216 (4 rows, Dark Orange):** `sleh_invalid_stack` entry.
    - **Row 220 (4 rows, Magenta):** On-screen panic text rendered at `y = 720` (ASCII font) showing `pc`, `lr`, `sp`, `esr`, `far`, `x0`.
-   - *Note:* Because Row 198 is 100% stackless, if an exception fires, Row 198 is guaranteed to be drawn regardless of stack validity.
+   - *Note:* Because Row 230 is 100% stackless, if an exception fires, Row 230 is guaranteed to be drawn regardless of stack validity.
 2. **Check `pmap_next_page` Execution (Rows 304 .. 315 & 330):**
    - **Row 304..305 (2 rows, Vivid Magenta):** `POST-LOCK` reached.
    - **Row 306..307 (2 rows, White):** `pmap_next_page()` entered.
@@ -73,11 +73,11 @@ All rows are strictly $\ge 2$ rows thick and non-overlapping:
 | `184`     | 2      | Cyan       | `0x0000FFFF` | `kernel_bootstrap` entry |
 | `186`     | 2      | Hot Pink   | `0x00FF69B4` | `kernel_bootstrap_thread` entry |
 | `194`     | 2      | Cyan       | `0x0000FFFF` | `STARTUP_SUB_LOCKS` (Subsystem 3 passed) |
-| `198..201`| 4      | Cyan+EC    | `0x00ECFFFF` | `el1_sp0_synchronous_vector_long` entry (100% stackless, LR in x28) |
 | `204..207`| 4      | Vivid Yellow | `0x00FFFF00` | `Lcorrupt_stack` in `CHECK_KERNEL_STACK` (TPIDR_EL1 == 0 or corrupt SP) |
-| `210..213`| 4      | Vivid Red  | `0x00FF0000` | `el1_sp1_synchronous_vector_long_spill_failed` (Double Fault spin `wfe`) |
+| `210..213`| 4      | Vivid Red  | `0x00FF0000` | `el1_sp0/sp1_synchronous_vector_long_spill_failed` (Double Fault spin `wfe`) |
 | `216..219`| 4      | Dark Orange | `0x00FF8C00` | `sleh_invalid_stack` entered |
 | `220..223`| 4      | Magenta    | `0x00FF00FF` | On-screen early panic text rendered via `hk_render_screen_asm` |
+| `230..235`| 6      | OrangeRed  | `0x00FF4500` | `el1_sp0_synchronous_vector_long` entry (100% stackless, LR in x28, 36 rows below 194) |
 | `250..251`| 2      | White      | `0x00FFFFFF` | `initialize_ram_ranges` entered |
 | `256..257`| 2      | Lime       | `0x0000FF00` | `initialize_ram_ranges` completed |
 | `258..259`| 2      | Cyan       | `0x0000FFFF` | `pmap_free_pages_span` entered |

@@ -362,6 +362,12 @@ def main():
         "-mgeneral-regs-only", "-mstrict-align", "-fno-stack-protector",
         "-fno-tree-loop-distribute-patterns", "-Wall", "-Wextra"
     ]
+    try:
+        git_sha = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], cwd=enxerto_dir, text=True).strip()
+    except Exception:
+        git_sha = "unknown"
+    cflags.append(f'-DENXERTO_GIT_SHA=\\"{git_sha}\\"')
+    print(f"Build SHA: {git_sha}")
     if args.bootlog == "1":
         cflags.append("-DBOOTUI_LOG=1")
 
