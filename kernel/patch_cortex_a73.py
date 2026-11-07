@@ -1053,6 +1053,10 @@ Lhk_fb_fill:
 \t.align 2
 \t.globl EXT(hk_draw_band)
 LEXT(hk_draw_band)
+\t/* If row_start >= 290, forward directly to hk_draw_band_direct (no MMU toggle) */
+\tcmp\t\tw1, #290
+\tb.hs\tEXT(hk_draw_band_direct)
+
 \tstp\t\tx29, x30, [sp, #-64]!
 \tstp\t\tx19, x20, [sp, #16]
 \tstp\t\tx21, x22, [sp, #32]
@@ -1352,21 +1356,11 @@ LEXT(hk_draw_band_direct)
 \tmov\tw5, #270
 \tmul\tw5, w2, w5
 
-\t/* Compute end probe address: x7 = x4 + (w5 * 16) - 1 */
-\tlsl\tx7, x5, #4
-\tadd\tx7, x4, x7
-\tsub\tx7, x7, #1
-
-\t/* 4. AT guard: check if both start and end addresses are mapped & writable */
-\tmrs\tx6, par_el1
+\t/* 4. AT guard: check if start address is mapped & writable */
 \tat\ts1e1w, x4
 \tisb
 \tmrs\tx3, par_el1
-\ttbnz\tx3, #0, Lhk_direct_fault
-\tat\ts1e1w, x7
-\tisb
-\tmrs\tx3, par_el1
-\ttbnz\tx3, #0, Lhk_direct_fault
+\ttbnz\tx3, #0, Lhk_direct_exit
 
 \t/* 5. Duplicate 32-bit color to 64-bit register x0 */
 \tand\tx0, x0, #0xffffffff
@@ -1379,12 +1373,6 @@ Lhk_direct_loop:
 \tb.ne\tLhk_direct_loop
 \tdsb\tsy
 
-\t/* 7. Normal exit: restore PAR_EL1 */
-\tmsr\tpar_el1, x6
-\tret
-
-Lhk_direct_fault:
-\tmsr\tpar_el1, x6
 Lhk_direct_exit:
 \tret
 """
@@ -2398,20 +2386,26 @@ kernel_debug_string_early(const char *message)
 \t{
 \t\textern void hk_draw_band_direct(uint32_t color, uint32_t row_start, uint32_t row_count);
 \t\ttt_entry_t *fb_l1_tte = cpu_tte + L1_TABLE_T1_INDEX(0xfffffff004000000ULL, TCR_EL1_BOOT);
+\t\ttt_entry_t *fb_l2_base;
 \t\tif ((*fb_l1_tte & ARM_TTE_VALID) == 0) {
-\t\t\thk_draw_band_direct(0x008B0000, 162, 2); /* Dark Red: L1 entry missing in cpu_tte */
+\t\t\tvm_offset_t l2_page = alloc_ptpage(FALSE);
+\t\t\t*fb_l1_tte = (kvtophys(l2_page) & ARM_TTE_TABLE_MASK) | ARM_TTE_TYPE_TABLE | ARM_TTE_VALID | ARM_DYNAMIC_TABLE_XN | ARM_TTE_TABLE_AP(ARM_TTE_TABLE_AP_USER_NA);
+\t\t\tbzero((void *)l2_page, ARM_PGBYTES);
+\t\t\tfb_l2_base = (tt_entry_t *)l2_page;
 \t\t} else {
-\t\t\ttt_entry_t *fb_l2_base = (tt_entry_t *)phystokv((*fb_l1_tte) & ARM_TTE_TABLE_MASK);
-\t\t\ttt_entry_t *fb_l2_tte = fb_l2_base + ((0x04000000ULL & ARM_TT_L2_INDEX_MASK) >> ARM_TT_L2_SHIFT);
-\t\t\tfor (int k = 0; k < 5; k++) {
-\t\t\t\tuint64_t target_desc = (0x5c000000ULL + ((uint64_t)k * 0x200000ULL)) | 0x0060000000000605ULL;
-\t\t\t\tif (fb_l2_tte[k] != 0 && fb_l2_tte[k] != target_desc) {
-\t\t\t\t\thk_draw_band_direct(0x00FF0000, 164, 2); /* Red: collision in cpu_tte */
-\t\t\t\t}
-\t\t\t\tfb_l2_tte[k] = target_desc;
-\t\t\t}
-\t\t\t__asm__ volatile("dsb sy" ::: "memory");
+\t\t\tfb_l2_base = (tt_entry_t *)phystokv((*fb_l1_tte) & ARM_TTE_TABLE_MASK);
 \t\t}
+\t\ttt_entry_t *fb_l2_tte = fb_l2_base + ((0x04000000ULL & ARM_TT_L2_INDEX_MASK) >> ARM_TT_L2_SHIFT);
+\t\tfor (int k = 0; k < 5; k++) {
+\t\t\tuint64_t target_desc = (0x5c000000ULL + ((uint64_t)k * 0x200000ULL)) | 0x0060000000000605ULL;
+\t\t\tfb_l2_tte[k] = target_desc;
+\t\t}
+\t\t__asm__ volatile("dsb sy; isb" ::: "memory");
+\t\t__asm__ volatile("dc civac, %0; dsb sy; isb" : : "r" (fb_l1_tte) : "memory");
+\t\tfor (int k = 0; k < 5; k++) {
+\t\t\t__asm__ volatile("dc civac, %0" : : "r" (&fb_l2_tte[k]) : "memory");
+\t\t}
+\t\t__asm__ volatile("dsb sy; isb" ::: "memory");
 \t}
 
 \tset_mmu_ttb_alternate(cpu_ttep & TTBR_BADDR_MASK);
