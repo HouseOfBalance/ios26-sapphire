@@ -103,6 +103,7 @@ jobs:
           done
           if [ -n "$KERNEL" ]; then
             echo "Found compiled Mach-O kernel: $KERNEL"
+            python3 tools/verify_kernel_markers.py "$KERNEL"
             python3 kernel/patch_kernel_pac.py "$KERNEL"
             cp "$KERNEL" out/mach.development.bcm2837
             echo "Building Mockfs RAMDisk for md0 with PID 1 launchd..."

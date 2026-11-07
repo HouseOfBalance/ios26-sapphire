@@ -815,7 +815,13 @@ LEXT(hk_draw_band)
 \tdsb\t\tsy
 \tisb
 4:
+\tmrs\t\tx10, TPIDR_EL1
+\tcbnz\tx10, 41f
+\tmsr\t\tDAIFSet, #0xf
+\tb\t\t42f
+41:
 \tmsr\t\tDAIF, x23
+42:
 \tldp\t\tx23, x24, [sp, #48]
 \tldp\t\tx21, x22, [sp, #32]
 \tldp\t\tx19, x20, [sp, #16]
@@ -978,7 +984,12 @@ LEXT(hk_render_screen_asm)
 \tdsb\t\tsy
 \tisb
 
-9:\tmsr\t\tDAIF, x23
+9:\tmrs\t\tx10, TPIDR_EL1
+\tcbnz\tx10, 91f
+\tmsr\t\tDAIFSet, #0xf
+\tb\t\t92f
+91:\tmsr\t\tDAIF, x23
+92:
 \tldp\t\tx25, x26, [sp, #64]
 \tldp\t\tx23, x24, [sp, #48]
 \tldp\t\tx21, x22, [sp, #32]
@@ -1139,35 +1150,186 @@ LEXT(hk_draw_band_stackless)
                 c8 = c8.replace("LEXT(ml_check_signed_state)\n", "LEXT(ml_check_signed_state)\n\tret\n", 1)
                 changed_asm = True
                 print(f"  [OK] osfmk/arm64/{asm_name}: ml_check_signed_state stubbed")
-            c8_new, n_sub = re.subn(r'cbz\s+x2,\s*Lcorrupt_stack_\\@', 'cbz\t\tx2, Ltest_istack_\\@', c8)
+            c8, n_sub = re.subn(r'cbz\s+x2,\s*Lcorrupt_stack_\\@', 'cbz\t\tx2, Ltest_istack_\\@', c8)
+            if n_sub > 0:
+                changed_asm = True
+                print(f"  [OK] osfmk/arm64/{asm_name}: CHECK_KERNEL_STACK cbz x2 -> Ltest_istack patched ({n_sub} occurrences)")
 
             if asm_name == "locore.s":
-                t_vec_entry = """el1_sp0_synchronous_vector_long:
-\tstp\t\tx0, x1, [sp, #-16]!\t\t\t\t// Save x0 and x1 to the exception stack
-\tmrs\t\tx1, ESR_EL1\t\t\t\t\t\t\t// Get the exception syndrome"""
-                r_vec_entry = """el1_sp0_synchronous_vector_long:
-\tstp\t\tx0, x1, [sp, #-16]!\t\t\t\t// Save x0 and x1 to the exception stack
-\tmrs\t\tx1, ESR_EL1\t\t\t\t\t\t\t// Get the exception syndrome
-\t/* hakios/claude: EC diagnostic for early sync faults - 100% STACKLESS */
+                # 1. el1_sp0_synchronous_vector_long: Row 230 OrangeRed (230..235, 6 rows) - 100% STACKLESS BEFORE STP
+                t_sp0_sync = """el1_sp0_synchronous_vector_long:
+\tstp\t\tx0, x1, [sp, #-16]!\t\t\t\t// Save x0 and x1 to the exception stack"""
+                r_sp0_sync = """el1_sp0_synchronous_vector_long:
+\t/* hakios/claude: EC diagnostic for early sync faults - 100% STACKLESS BEFORE STP */
+\tmov\t\tx16, x0
+\tmov\t\tx17, x1
+\tmov\t\tx18, lr
+\tmrs\t\tx1, ESR_EL1
 \tlsr\t\tx0, x1, #26\t\t\t\t\t\t\t// x0 = EC
-\tcbz\t\tx0, 88f\t\t\t\t\t\t\t\t// If EC == 0 (LSE/PAC trap), bypass completely!
-\tmrs\t\tx0, TPIDR_EL0\t\t\t\t\t\t// Read temporary one-shot flag
+\tcbz\t\tx0, 88f\t\t\t\t\t\t\t\t// If EC == 0 (LSE/PAC trap), bypass!
+\tmrs\t\tx0, TPIDR_EL0
 \ttbnz\tx0, #63, 88f\t\t\t\t\t\t// If bit 63 set, already drawn, bypass!
 \torr\t\tx0, x0, #(1ULL << 63)
-\tmsr\t\tTPIDR_EL0, x0\t\t\t\t\t\t// Set one-shot bit 63
-\tmov\t\tx28, lr\t\t\t\t\t\t\t// Save lr in x28 (untouched by hk_draw_band_stackless)
+\tmsr\t\tTPIDR_EL0, x0
 \tmovz\tw0, #0x4500\t\t\t\t\t\t\t// Vivid OrangeRed (0x00FF4500)
 \tmovk\tw0, #0x00ff, lsl #16
-\tmov\t\tw1, #230\t\t\t\t\t\t\t// Row 230 (isolated from Row 194 by 36 rows!)
-\tmov\t\tw2, #6\t\t\t\t\t\t\t\t// 6 rows thick (230..235) for unambiguous visibility
+\tmov\t\tw1, #230\t\t\t\t\t\t\t// Row 230
+\tmov\t\tw2, #6\t\t\t\t\t\t\t\t// 6 rows thick (230..235)
 \tbl\t\tEXT(hk_draw_band_stackless)
-\tmov\t\tlr, x28\t\t\t\t\t\t\t// Restore lr from x28
-\tmrs\t\tx1, ESR_EL1\t\t\t\t\t\t\t// Reload ESR
-88:"""
-                if t_vec_entry in c8:
-                    c8 = c8.replace(t_vec_entry, r_vec_entry, 1)
+88:
+\tmov\t\tlr, x18
+\tmov\t\tx1, x17
+\tmov\t\tx0, x16
+\tstp\t\tx0, x1, [sp, #-16]!\t\t\t\t// Save x0 and x1 to the exception stack"""
+                if t_sp0_sync in c8:
+                    c8 = c8.replace(t_sp0_sync, r_sp0_sync, 1)
                     changed_asm = True
-                    print(f"  [OK] osfmk/arm64/{asm_name}: el1_sp0_synchronous_vector_long Row 230 OrangeRed marker installed")
+                    print(f"  [OK] osfmk/arm64/{asm_name}: el1_sp0_synchronous Row 230 OrangeRed marker installed (pre-stp)")
+
+                # 2. el1_sp0_irq_vector_long: Row 220 GreenYellow (220..223, 4 rows) - STACKLESS BEFORE STP
+                t_sp0_irq = """el1_sp0_irq_vector_long:
+#if CONFIG_SPTM
+\tEL1_SP0_REDZONE_CHECK sp_sel=2
+#endif
+\tEL1_SP0_VECTOR"""
+                r_sp0_irq = """el1_sp0_irq_vector_long:
+\t/* hakios/claude: IRQ on SP0 - STACKLESS BEFORE STP (only if TPIDR_EL1 == 0) */
+\tmrs\t\tx16, TPIDR_EL1
+\tcbnz\tx16, 88f
+\tmov\t\tx16, x0
+\tmov\t\tx17, x1
+\tmov\t\tx18, lr
+\tmrs\t\tx0, TPIDR_EL0
+\ttbnz\tx0, #62, 87f
+\torr\t\tx0, x0, #(1ULL << 62)
+\tmsr\t\tTPIDR_EL0, x0
+\tmovz\tw0, #0xff2f\t\t\t\t\t\t\t// GreenYellow (0x00ADFF2F)
+\tmovk\tw0, #0x00ad, lsl #16
+\tmov\t\tw1, #220\t\t\t\t\t\t\t// Row 220
+\tmov\t\tw2, #4\t\t\t\t\t\t\t\t// 4 rows thick (220..223)
+\tbl\t\tEXT(hk_draw_band_stackless)
+87:
+\tmov\t\tlr, x18
+\tmov\t\tx1, x17
+\tmov\t\tx0, x16
+88:
+#if CONFIG_SPTM
+\tEL1_SP0_REDZONE_CHECK sp_sel=2
+#endif
+\tEL1_SP0_VECTOR"""
+                if t_sp0_irq in c8:
+                    c8 = c8.replace(t_sp0_irq, r_sp0_irq, 1)
+                    changed_asm = True
+                    print(f"  [OK] osfmk/arm64/{asm_name}: el1_sp0_irq Row 220 GreenYellow marker installed (pre-stp)")
+
+                # 3. el1_sp0_fiq_vector_long: Row 224 Lime (224..227, 4 rows) - STACKLESS BEFORE STP
+                t_sp0_fiq = """el1_sp0_fiq_vector_long:
+\t// ARM64_TODO write optimized decrementer
+#if CONFIG_SPTM
+\tEL1_SP0_REDZONE_CHECK sp_sel=3
+#endif
+\tEL1_SP0_VECTOR"""
+                r_sp0_fiq = """el1_sp0_fiq_vector_long:
+\t/* hakios/claude: FIQ on SP0 - STACKLESS BEFORE STP (only if TPIDR_EL1 == 0) */
+\tmrs\t\tx16, TPIDR_EL1
+\tcbnz\tx16, 88f
+\tmov\t\tx16, x0
+\tmov\t\tx17, x1
+\tmov\t\tx18, lr
+\tmrs\t\tx0, TPIDR_EL0
+\ttbnz\tx0, #61, 87f
+\torr\t\tx0, x0, #(1ULL << 61)
+\tmsr\t\tTPIDR_EL0, x0
+\tmovz\tw0, #0xff00\t\t\t\t\t\t\t// Lime (0x0000FF00)
+\tmovk\tw0, #0x0000, lsl #16
+\tmov\t\tw1, #224\t\t\t\t\t\t\t// Row 224
+\tmov\t\tw2, #4\t\t\t\t\t\t\t\t// 4 rows thick (224..227)
+\tbl\t\tEXT(hk_draw_band_stackless)
+87:
+\tmov\t\tlr, x18
+\tmov\t\tx1, x17
+\tmov\t\tx0, x16
+88:
+\t// ARM64_TODO write optimized decrementer
+#if CONFIG_SPTM
+\tEL1_SP0_REDZONE_CHECK sp_sel=3
+#endif
+\tEL1_SP0_VECTOR"""
+                if t_sp0_fiq in c8:
+                    c8 = c8.replace(t_sp0_fiq, r_sp0_fiq, 1)
+                    changed_asm = True
+                    print(f"  [OK] osfmk/arm64/{asm_name}: el1_sp0_fiq Row 224 Lime marker installed (pre-stp)")
+
+                # 4. el1_sp0_serror_vector_long: Row 228 Red (228..229, 2 rows) - STACKLESS BEFORE STP
+                t_sp0_serror = """el1_sp0_serror_vector_long:
+\tEL1_SP0_VECTOR"""
+                r_sp0_serror = """el1_sp0_serror_vector_long:
+\t/* hakios/claude: SError on SP0 - STACKLESS BEFORE STP */
+\tmov\t\tx16, x0
+\tmov\t\tx17, x1
+\tmov\t\tx18, lr
+\tmovz\tw0, #0x0000\t\t\t\t\t\t\t// Vivid Red (0x00FF0000)
+\tmovk\tw0, #0x00ff, lsl #16
+\tmov\t\tw1, #228\t\t\t\t\t\t\t// Row 228
+\tmov\t\tw2, #2\t\t\t\t\t\t\t\t// 2 rows thick
+\tbl\t\tEXT(hk_draw_band_stackless)
+\tmov\t\tlr, x18
+\tmov\t\tx1, x17
+\tmov\t\tx0, x16
+\tEL1_SP0_VECTOR"""
+                if t_sp0_serror in c8:
+                    c8 = c8.replace(t_sp0_serror, r_sp0_serror, 1)
+                    changed_asm = True
+                    print(f"  [OK] osfmk/arm64/{asm_name}: el1_sp0_serror Row 228 Red marker installed (pre-stp)")
+
+                # 5. el1_sp1_synchronous_vector_long: Row 236 BlueViolet (236..237, 2 rows) - STACKLESS BEFORE STP
+                t_sp1_sync = """el1_sp1_synchronous_vector_long:
+\t/*
+\t * Before making our first (potentially faulting) memory access"""
+                r_sp1_sync = """el1_sp1_synchronous_vector_long:
+\t/* hakios/claude: Sync on SP1 - STACKLESS BEFORE STP */
+\tmov\t\tx16, x0
+\tmov\t\tx17, x1
+\tmov\t\tx18, lr
+\tmovz\tw0, #0x2be2\t\t\t\t\t\t\t// BlueViolet (0x008A2BE2)
+\tmovk\tw0, #0x008a, lsl #16
+\tmov\t\tw1, #236\t\t\t\t\t\t\t// Row 236
+\tmov\t\tw2, #2\t\t\t\t\t\t\t\t// 2 rows thick
+\tbl\t\tEXT(hk_draw_band_stackless)
+\tmov\t\tlr, x18
+\tmov\t\tx1, x17
+\tmov\t\tx0, x16
+\t/*
+\t * Before making our first (potentially faulting) memory access"""
+                if t_sp1_sync in c8:
+                    c8 = c8.replace(t_sp1_sync, r_sp1_sync, 1)
+                    changed_asm = True
+                    print(f"  [OK] osfmk/arm64/{asm_name}: el1_sp1_synchronous Row 236 BlueViolet marker installed (pre-stp)")
+
+                # 6. el1_sp1_irq_vector_long: Row 238 DarkOrange (238..239, 2 rows) - STACKLESS BEFORE STP
+                t_sp1_irq = """el1_sp1_irq_vector_long:
+\tEL1_SP1_VECTOR"""
+                r_sp1_irq = """el1_sp1_irq_vector_long:
+\t/* hakios/claude: IRQ on SP1 - STACKLESS BEFORE STP (only if TPIDR_EL1 == 0) */
+\tmrs\t\tx16, TPIDR_EL1
+\tcbnz\tx16, 88f
+\tmov\t\tx16, x0
+\tmov\t\tx17, x1
+\tmov\t\tx18, lr
+\tmovz\tw0, #0x8c00\t\t\t\t\t\t\t// DarkOrange (0x00FF8C00)
+\tmovk\tw0, #0x00ff, lsl #16
+\tmov\t\tw1, #238\t\t\t\t\t\t\t// Row 238
+\tmov\t\tw2, #2\t\t\t\t\t\t\t\t// 2 rows thick
+\tbl\t\tEXT(hk_draw_band_stackless)
+\tmov\t\tlr, x18
+\tmov\t\tx1, x17
+\tmov\t\tx0, x16
+88:
+\tEL1_SP1_VECTOR"""
+                if t_sp1_irq in c8:
+                    c8 = c8.replace(t_sp1_irq, r_sp1_irq, 1)
+                    changed_asm = True
+                    print(f"  [OK] osfmk/arm64/{asm_name}: el1_sp1_irq Row 238 DarkOrange marker installed (pre-stp)")
 
                 t_corr_entry = """\tINIT_SAVED_STATE_FLAVORS sp, w0, w1
 \tmov\t\tx0, sp\t\t\t\t\t\t\t\t// Copy exception frame pointer to x0
@@ -1206,10 +1368,6 @@ LEXT(hk_draw_band_stackless)
                     changed_asm = True
                     print(f"  [OK] osfmk/arm64/{asm_name}: spill_failed Row 210 Vivid Red marker installed in all vectors (SP0 and SP1)")
 
-            if n_sub > 0:
-                c8 = c8_new
-                changed_asm = True
-                print(f"  [OK] osfmk/arm64/{asm_name}: CHECK_KERNEL_STACK cbz x2 -> Ltest_istack patched ({n_sub} occurrences)")
             if changed_asm:
                 with open(p8, "w", encoding="utf-8", newline="\n") as f:
                     f.write(c8)
@@ -1558,6 +1716,7 @@ kernel_debug_string_early(const char *message)
 \tvm_offset_t             *startp,
 \tvm_offset_t             *endp)
 {
+\t__asm__ volatile ("msr daifset, #0xf; isb");
 \t{
 \t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
 \t\thk_draw_band(0x00FF7F50, 288, 2); /* Coral: vm_page_bootstrap entered */
@@ -1643,9 +1802,11 @@ kernel_debug_string_early(const char *message)
         t16_loop = '\tvm_free_page_lock();\n\n\tfor (uint32_t i = 0; i < npages && pmap_next_page(&phys_page); i++) {'
         r16_loop = """\t/* hakios/claude: Thick pre-lock and post-lock diagnostic bands */
 \t{
+\t\t__asm__ volatile ("msr daifset, #0xf; isb");
 \t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
 \t\thk_draw_band(0x00FFFF00, 296, 6); /* Vivid Yellow: PRE-LOCK (rows 296..301) */
 \t\tvm_free_page_lock();
+\t\t__asm__ volatile ("msr daifset, #0xf; isb");
 \t\thk_draw_band(0x00FF00FF, 304, 2); /* Vivid Magenta: POST-LOCK (rows 304..305) */
 
 \t\t/* Gauge at Rows 410..440 */
@@ -1676,6 +1837,10 @@ kernel_debug_string_early(const char *message)
 \t\thk_draw_band((vbar_val >= 0xffff000000000000ULL) ? 0x0000FF00 : 0x00FF0000, 440, 2);
 \t}
 \tfor (uint32_t i = 0; i < npages; i++) {
+\t\tif (i == 0) {
+\t\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
+\t\t\thk_draw_band(0x00FFFFFF, 305, 1); /* White: call-site about to call pmap_next_page */
+\t\t}
 \t\tboolean_t pnext_ret = pmap_next_page(&phys_page);
 \t\tif (i == 0) {
 \t\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
@@ -1984,6 +2149,25 @@ lck_mtx_assert(lck_mtx_t *lock, unsigned int type)
             print("  [OK] pexpert/arm/pe_init.c: forced kPETextMode for video_console display")
         else:
             print("  [WARN] t23 pattern not found in pe_init.c")
+
+    # Post-patch verification assertions: verify files on disk actually contain the patches!
+    print("=== Post-patch Verification on Disk ===")
+    p_locore = os.path.join(src, "osfmk", "arm64", "locore.s")
+    if os.path.isfile(p_locore):
+        with open(p_locore, "r", encoding="utf-8") as f:
+            locore_content = f.read()
+        assert "Row 230" in locore_content, "ASSERTION FAILED: locore.s missing Row 230 marker on disk!"
+        assert "Row 220" in locore_content, "ASSERTION FAILED: locore.s missing Row 220 marker on disk!"
+        assert "hk_draw_band_stackless" in locore_content, "ASSERTION FAILED: locore.s missing hk_draw_band_stackless on disk!"
+        print("  [OK] locore.s verified: stackless vector markers present on disk")
+
+    p_vmres = os.path.join(src, "osfmk", "vm", "vm_resident.c")
+    if os.path.isfile(p_vmres):
+        with open(p_vmres, "r", encoding="utf-8") as f:
+            vmres_content = f.read()
+        assert "304" in vmres_content, "ASSERTION FAILED: vm_resident.c missing Row 304 marker on disk!"
+        assert "305" in vmres_content, "ASSERTION FAILED: vm_resident.c missing Row 305 marker on disk!"
+        print("  [OK] vm_resident.c verified: progress markers present on disk")
 
     print("Cortex-A73 patches successfully applied!")
 
