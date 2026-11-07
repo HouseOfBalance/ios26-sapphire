@@ -14,3 +14,5 @@ out/
 artifacts/
 enxerto/out/
 *.img
+
+scratch/
