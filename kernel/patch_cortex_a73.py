@@ -2206,22 +2206,34 @@ kernel_debug_string_early(const char *message)
 \t\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
 \t\t\thk_draw_band_direct(0x0000FF00, 344, 2); /* Lime: i=100 reached */
 \t\t} else if (i == 1000) {
+\t\t\tstatic const uint32_t npal1[16] = {
+\t\t\t\t0x00000000, 0x00000080, 0x00008000, 0x00008080,
+\t\t\t\t0x00800000, 0x00800080, 0x00808000, 0x00C0C0C0,
+\t\t\t\t0x00808080, 0x000000FF, 0x0000FF00, 0x0000FFFF,
+\t\t\t\t0x00FF0000, 0x00FF00FF, 0x00FFFF00, 0x00FFFFFF
+\t\t\t};
 \t\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
 \t\t\thk_draw_band_direct(0x0000FFFF, 346, 2); /* Cyan: i=1,000 reached */
 \t\t\textern vm_offset_t first_avail;
 \t\t\tuint32_t fa = (uint32_t)first_avail;
 \t\t\tfor (int k = 0; k < 8; k++) {
 \t\t\t\tuint32_t nib = (fa >> ((7 - k) * 4)) & 0xf;
-\t\t\t\thk_draw_band_direct(nibble_pal[nib], 450 + k, 1);
+\t\t\t\thk_draw_band_direct(npal1[nib], 450 + k, 1);
 \t\t\t}
 \t\t} else if (i == 10000) {
+\t\t\tstatic const uint32_t npal2[16] = {
+\t\t\t\t0x00000000, 0x00000080, 0x00008000, 0x00008080,
+\t\t\t\t0x00800000, 0x00800080, 0x00808000, 0x00C0C0C0,
+\t\t\t\t0x00808080, 0x000000FF, 0x0000FF00, 0x0000FFFF,
+\t\t\t\t0x00FF0000, 0x00FF00FF, 0x00FFFF00, 0x00FFFFFF
+\t\t\t};
 \t\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
 \t\t\thk_draw_band_direct(0x001E90FF, 348, 2); /* Dodger Blue: i=10,000 reached */
 \t\t\textern vm_offset_t first_avail;
 \t\t\tuint32_t fa = (uint32_t)first_avail;
 \t\t\tfor (int k = 0; k < 8; k++) {
 \t\t\t\tuint32_t nib = (fa >> ((7 - k) * 4)) & 0xf;
-\t\t\t\thk_draw_band_direct(nibble_pal[nib], 460 + k, 1);
+\t\t\t\thk_draw_band_direct(npal2[nib], 460 + k, 1);
 \t\t\t}
 \t\t} else if (i == 50000) {
 \t\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
