@@ -79,7 +79,7 @@ BOARDS = {
         # Silver cluster (Cortex-A53) has no 16K granule (TGran16 == 0), so on 16K XNU
         # it is parked; with --amp (4K kernel) all 8 cores are listed.
         cpu_compat='qcom,kryo260', big_from=0, freqs=(1900800000, 2803200000),
-        mem=(0x80000000, 0x40000000),
+        mem=(0xb0000000, 0x4d000000),
         gic=(0x0f200000, 0x10000, 0x0f300000, 0x100000),
         ufs=(0x04804000, 0x3000),
         uart=(0x04a90000, 0x1000),

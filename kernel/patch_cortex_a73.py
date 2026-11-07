@@ -1715,8 +1715,8 @@ loader_return(void)
         kb_steps = [
             ("\tconsole_init();", "\tconsole_init();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000FFFF, 500, 4); } /* Cyan: console_init */"),
             ("\tsched_init();", "\tsched_init();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000FF00, 506, 4); } /* Lime: sched_init */"),
-            ("\tmapping_free_prime();", "\tmapping_free_prime();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FFFF00, 512, 4); } /* Yellow: mapping_free_prime */"),
-            ("\tmachine_init();", "\tmachine_init();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000BFFF, 518, 4); } /* DeepSkyBlue: machine_init */"),
+            ("\tmapping_free_prime();", "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FFD700, 508, 4); } /* Gold: mapping_free_prime entering */\n\tmapping_free_prime();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FFFF00, 512, 4); } /* Yellow: mapping_free_prime done */"),
+            ("\tmachine_init();", "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x007FFF00, 514, 4); } /* Chartreuse: machine_init entering */\n\tmachine_init();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000BFFF, 518, 4); } /* DeepSkyBlue: machine_init done */"),
             ("\tclock_init();", "\tclock_init();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00BA55D3, 524, 4); } /* MediumOrchid: clock_init */"),
             ("\ttask_init();", "\ttask_init();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x001E90FF, 530, 4); } /* DodgerBlue: task_init */"),
             ("\tthread_init();", "\tthread_init();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF1493, 536, 4); } /* DeepPink: thread_init */"),
@@ -1773,37 +1773,44 @@ loader_return(void)
         else:
             print("  [WARN] Expected %u seed bytes target not found in prng_random.c")
 
-# 13. osfmk/kern/debug.c (on-screen panic dump directly from panic_trap_to_debugger)
+# 13. osfmk/kern/debug.c (on-screen panic dump directly from panic_trap_to_debugger and panic entry)
     p13 = os.path.join(src, "osfmk", "kern", "debug.c")
     if os.path.isfile(p13):
         with open(p13, "r", encoding="utf-8", errors="replace") as f:
             c13 = f.read().replace("\r\n", "\n")
+
+        # Hook panic() function entry directly
+        m_panic = re.search(r'(\nvoid\s+panic\s*\(\s*const\s+char\s*\*\s*\w+\s*,[^{]*\{)', c13)
+        if m_panic:
+            c13 = c13.replace(m_panic.group(0), m_panic.group(0) + '\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF0000, 660, 20); } /* Thick Bright Red band: panic entry */', 1)
+            print("  [OK] osfmk/kern/debug.c: panic() entry direct visual hook installed")
+        else:
+            print("  [WARN] panic() function signature not found in debug.c")
+
+        # Hook panic_trap_to_debugger entry
+        m_ptd = re.search(r'(panic_trap_to_debugger\s*\([^){]*\)\s*\{)', c13)
+        if m_ptd:
+            c13 = c13.replace(m_ptd.group(0), m_ptd.group(0) + '\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF0000, 660, 20); } /* Thick Bright Red band: panic_trap_to_debugger entry */', 1)
+            print("  [OK] osfmk/kern/debug.c: panic_trap_to_debugger entry direct visual hook installed")
+        else:
+            print("  [WARN] panic_trap_to_debugger signature not found in debug.c")
+
+        # Hook panic_spin_forever entry
+        m_psf = re.search(r'(panic_spin_forever\s*\([^){]*\)\s*\{)', c13)
+        if m_psf:
+            c13 = c13.replace(m_psf.group(0), m_psf.group(0) + '\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF0000, 660, 20); } /* Thick Bright Red band: panic_spin_forever entry */', 1)
+            print("  [OK] osfmk/kern/debug.c: panic_spin_forever entry direct visual hook installed")
+        else:
+            print("  [WARN] panic_spin_forever signature not found in debug.c")
+
         target_dbg = 'loader_log_line("\\n== PANIC: ");\n\t\tloader_log_line(rbuf);\n\t\tloader_log_line(" ==\\n");\n\t}'
         replace_dbg = '''loader_log_line("\\n== PANIC: ");
 \t\tloader_log_line(rbuf);
 \t\tloader_log_line(" ==\\n");
 \t\t/* hakios: on-screen panic dump directly to display */
 \t\t{
-\t\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
-\t\t\thk_draw_band(0x00FF0000, 660, 16); /* Thick Bright Red band: kernel panic */
-\t\t\textern void hk_render_screen_asm(const char *, uint32_t, const unsigned char *);
-\t\t\textern const unsigned char iso_font[];
-\t\t\tstatic char hk_pmsg[400];
-\t\t\tint pn = 0;
-\t\t\tconst char *p1 = "=== HAKIOS KERNEL PANIC ===\\n";
-\t\t\twhile (*p1 && pn < 300) hk_pmsg[pn++] = *p1++;
-\t\t\tconst char *p2 = rbuf;
-\t\t\twhile (*p2 && pn < 380) hk_pmsg[pn++] = *p2++;
-\t\t\thk_pmsg[pn++] = '\\n';
-\t\t\thk_pmsg[pn] = 0;
-\t\t\tfor (uintptr_t p = (uintptr_t)hk_pmsg; p < (uintptr_t)hk_pmsg + pn + 64; p += 64) {
-\t\t\t\t__asm__ volatile ("dc civac, %0" : : "r" (p));
-\t\t\t}
-\t\t\t__asm__ volatile ("dsb sy");
-\t\t\thk_render_screen_asm(hk_pmsg, pn, iso_font);
-\t\t\tfor (;;) {
-\t\t\t\t__asm__ volatile ("wfe");
-\t\t\t}
+\t\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
+\t\t\thk_draw_band_direct(0x00FF0000, 660, 20); /* Thick Bright Red band: kernel panic */
 \t\t}
 \t}'''
         if target_dbg in c13:
@@ -1818,26 +1825,8 @@ loader_return(void)
 \t\t\tloader_log_line(" ==\\n");
 \t\t\t/* hakios: on-screen early panic dump directly to display */
 \t\t\t{
-\t\t\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
-\t\t\t\thk_draw_band(0x00FF0000, 660, 16); /* Thick Bright Red band: early panic */
-\t\t\t\textern void hk_render_screen_asm(const char *, uint32_t, const unsigned char *);
-\t\t\t\textern const unsigned char iso_font[];
-\t\t\t\tstatic char hk_epmsg[400];
-\t\t\t\tint epn = 0;
-\t\t\t\tconst char *p1 = "=== EARLY PANIC ===\\n";
-\t\t\t\twhile (*p1 && epn < 300) hk_epmsg[epn++] = *p1++;
-\t\t\t\tconst char *p2 = buf;
-\t\t\t\twhile (*p2 && epn < 380) hk_epmsg[epn++] = *p2++;
-\t\t\t\thk_epmsg[epn++] = '\\n';
-\t\t\t\thk_epmsg[epn] = 0;
-\t\t\t\tfor (uintptr_t p = (uintptr_t)hk_epmsg; p < (uintptr_t)hk_epmsg + epn + 64; p += 64) {
-\t\t\t\t\t__asm__ volatile ("dc civac, %0" : : "r" (p));
-\t\t\t\t}
-\t\t\t\t__asm__ volatile ("dsb sy");
-\t\t\t\thk_render_screen_asm(hk_epmsg, epn, iso_font);
-\t\t\t\tfor (;;) {
-\t\t\t\t\t__asm__ volatile ("wfe");
-\t\t\t\t}
+\t\t\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
+\t\t\t\thk_draw_band_direct(0x00FF0000, 660, 20); /* Thick Bright Red band: early panic */
 \t\t\t}
 \t\t}'''
         if target_early_panic in c13:

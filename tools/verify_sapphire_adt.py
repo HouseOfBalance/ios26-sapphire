@@ -175,7 +175,7 @@ assert chosen is not None, 'chosen node missing in device-tree'
 dram_base_bytes = chosen.prop('dram-base')
 assert dram_base_bytes is not None, 'dram-base missing in chosen'
 dram_base = int.from_bytes(dram_base_bytes, 'little')
-assert dram_base == 0x80000000, f'dram-base {hex(dram_base)} != 0x80000000 (SM6225 Bengal DRAM base)'
+assert dram_base in (0x80000000, 0xb0000000), f'dram-base {hex(dram_base)} invalid (expected 0x80000000 or 0xb0000000)'
 
 dram_size_bytes = chosen.prop('dram-size')
 assert dram_size_bytes is not None, 'dram-size missing in chosen'
