@@ -148,7 +148,7 @@ def patch_startup(src_dir):
     r1 = (
         "minimac_policy_init();\n"
         "\t/* hakios: startup milestone visual ladder bands */\n"
-        "\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FF7F50, 360, 4); } /* Coral: minimac_policy */"
+        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF7F50, 360, 4); } /* Coral: minimac_policy */"
     )
     if m1 in c:
         print("  [ALREADY PATCHED] osfmk/kern/startup.c: minimac_policy band already present (row 360)")
@@ -162,7 +162,7 @@ def patch_startup(src_dir):
     t2 = "kernel_startup_initialize_upto(STARTUP_SUB_LOCKDOWN);"
     r2 = (
         "kernel_startup_initialize_upto(STARTUP_SUB_LOCKDOWN);\n"
-        "\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x0040E0D0, 376, 4); } /* Turquoise: past lockdown */"
+        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0040E0D0, 376, 4); } /* Turquoise: past lockdown */"
     )
     if m2 in c:
         print("  [ALREADY PATCHED] osfmk/kern/startup.c: lockdown band already present (row 376)")
@@ -175,9 +175,9 @@ def patch_startup(src_dir):
     # 3. Band around scale_setup()
     t3 = "scale_setup();"
     r3 = (
-        "{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x0098FF98, 380, 4); } /* Mint: scale_setup */\n"
+        "{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0098FF98, 380, 4); } /* Mint: scale_setup */\n"
         "\tscale_setup();\n"
-        "\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x0000FF7F, 384, 4); } /* Spring Green: past scale_setup, to bsd_init */"
+        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000FF7F, 384, 4); } /* Spring Green: past scale_setup, to bsd_init */"
     )
     if m3 in c:
         print("  [ALREADY PATCHED] osfmk/kern/startup.c: scale_setup bands already present (rows 380, 384)")

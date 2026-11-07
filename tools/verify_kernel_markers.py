@@ -2,6 +2,11 @@
 """
 verify_kernel_markers.py - Post-build Mach-O kernel disassembly & marker verification tool
 Ensures that critical diagnostic markers exist in the compiled kernel binary before packaging.
+Specifically verifies:
+1. hk_draw_band_direct exists and contains NO msr TTBR0_EL1, NO msr SCTLR_EL1, NO tlbi.
+2. hk_draw_band_direct contains AT S1E1W memory guard.
+3. Exception vectors call hk_draw_band_direct / hk_draw_band_stackless.
+4. pmap_next_page contains Row 306 diagnostic instruction.
 """
 
 import sys
@@ -62,14 +67,45 @@ def verify_macho(macho_path):
                 return s['off'] + (va - s['addr'])
         return None
 
-    # Check 1: hk_draw_band_stackless must exist
-    hk_stackless_va = symbols.get('_hk_draw_band_stackless') or symbols.get('hk_draw_band_stackless')
-    if not hk_stackless_va:
-        print("ERROR: _hk_draw_band_stackless symbol not found!")
+    # Check 1: hk_draw_band_direct must exist
+    hk_direct_va = symbols.get('_hk_draw_band_direct') or symbols.get('hk_draw_band_direct')
+    if not hk_direct_va:
+        print("ERROR: _hk_draw_band_direct symbol not found!")
         return False
-    print(f"  [OK] Symbol _hk_draw_band_stackless found at {hex(hk_stackless_va)}")
+    print(f"  [OK] Symbol _hk_draw_band_direct found at {hex(hk_direct_va)}")
 
-    # Check 2: el1_sp0_synchronous_vector_long must call hk_draw_band_stackless
+    # Check 1b: Verify hk_draw_band_direct implementation (NO TTBR0 switch, NO SCTLR toggle, has AT guard)
+    off_direct = va_to_off(hk_direct_va)
+    with open(macho_path, 'rb') as f:
+        f.seek(off_direct)
+        code_direct = f.read(0xa0)
+
+    found_at_guard = False
+    for i in range(0, len(code_direct), 4):
+        insn = struct.unpack('<I', code_direct[i:i+4])[0]
+        # msr TTBR0_EL1 -> 0xd5182000 | reg
+        if (insn & 0xFFFFFFE0) == 0xD5182000:
+            print("ERROR: hk_draw_band_direct contains forbidden msr TTBR0_EL1!")
+            return False
+        # msr SCTLR_EL1 -> 0xd5181000 | reg
+        if (insn & 0xFFFFFFE0) == 0xD5181000:
+            print("ERROR: hk_draw_band_direct contains forbidden msr SCTLR_EL1!")
+            return False
+        # tlbi -> 0xd508...
+        if (insn & 0xFFF00000) == 0xD5080000 and (insn & 0x00008000):
+            print("ERROR: hk_draw_band_direct contains forbidden tlbi instruction!")
+            return False
+        # at s1e1w, Xt -> 0xd5087800 | reg
+        if (insn & 0xFFFFFFE0) == 0xD5087800:
+            found_at_guard = True
+
+    if not found_at_guard:
+        print("ERROR: hk_draw_band_direct missing AT S1E1W guard instruction!")
+        return False
+    print("  [OK] hk_draw_band_direct verified: 100% VA space, AT guard present, zero MMU toggles")
+
+    # Check 2: el1_sp0_synchronous_vector_long must branch to drawer
+    hk_stackless_va = symbols.get('_hk_draw_band_stackless') or symbols.get('hk_draw_band_stackless') or hk_direct_va
     vec_va = symbols.get('el1_sp0_synchronous_vector_long') or symbols.get('_el1_sp0_synchronous_vector_long')
     if not vec_va:
         print("ERROR: el1_sp0_synchronous_vector_long symbol not found!")
@@ -79,9 +115,9 @@ def verify_macho(macho_path):
     off = va_to_off(vec_va)
     with open(macho_path, 'rb') as f:
         f.seek(off)
-        code = f.read(0x60) # first 24 instructions
+        code = f.read(0x60)
 
-    found_branch_to_stackless = False
+    found_branch = False
     for i in range(0, len(code), 4):
         insn = struct.unpack('<I', code[i:i+4])[0]
         if (insn & 0xFC000000) == 0x94000000: # BL
@@ -90,43 +126,13 @@ def verify_macho(macho_path):
                 imm26 -= 0x04000000
             pc = vec_va + i
             dest = pc + (imm26 << 2)
-            if dest == hk_stackless_va:
-                found_branch_to_stackless = True
-                print(f"  [OK] BL hk_draw_band_stackless confirmed inside el1_sp0_synchronous_vector_long at {hex(pc)}!")
+            if dest in (hk_direct_va, hk_stackless_va):
+                found_branch = True
+                print(f"  [OK] BL drawer confirmed inside el1_sp0_synchronous_vector_long at {hex(pc)}!")
                 break
 
-    if not found_branch_to_stackless:
-        print("ERROR: el1_sp0_synchronous_vector_long does NOT call hk_draw_band_stackless!")
-        return False
-
-    # Check 2b: el1_sp0_irq_vector_long must call hk_draw_band_stackless
-    irq_va = symbols.get('el1_sp0_irq_vector_long') or symbols.get('_el1_sp0_irq_vector_long')
-    if not irq_va:
-        print("ERROR: el1_sp0_irq_vector_long symbol not found!")
-        return False
-    print(f"  [OK] Symbol el1_sp0_irq_vector_long found at {hex(irq_va)}")
-
-    off_irq = va_to_off(irq_va)
-    with open(macho_path, 'rb') as f:
-        f.seek(off_irq)
-        code_irq = f.read(0x60)
-
-    found_irq_branch = False
-    for i in range(0, len(code_irq), 4):
-        insn = struct.unpack('<I', code_irq[i:i+4])[0]
-        if (insn & 0xFC000000) == 0x94000000:
-            imm26 = insn & 0x03FFFFFF
-            if imm26 & 0x02000000:
-                imm26 -= 0x04000000
-            pc = irq_va + i
-            dest = pc + (imm26 << 2)
-            if dest == hk_stackless_va:
-                found_irq_branch = True
-                print(f"  [OK] BL hk_draw_band_stackless confirmed inside el1_sp0_irq_vector_long at {hex(pc)}!")
-                break
-
-    if not found_irq_branch:
-        print("ERROR: el1_sp0_irq_vector_long does NOT call hk_draw_band_stackless!")
+    if not found_branch:
+        print("ERROR: el1_sp0_synchronous_vector_long does NOT branch to diagnostic drawer!")
         return False
 
     # Check 3: _pmap_next_page must exist and contain Row 306

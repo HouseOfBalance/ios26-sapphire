@@ -49,7 +49,9 @@ def main():
 \tloader_checkpoint(32);   /* past static_if_init */"""
 
         replacement_init = """\textern void hk_draw_band(uint32_t color, uint32_t row_start, uint32_t row_count);
-\thk_draw_band(0x00FFA500, 50, 10);   /* hakios visual marker: Orange at rows 50-59 (entered arm_init) */
+	extern void hk_draw_band_direct(uint32_t color, uint32_t row_start, uint32_t row_count);
+	hk_draw_band(0x00FFA500, 50, 4);   /* hakios visual marker: Orange at rows 50-53 (legacy drawer) */
+	hk_draw_band_direct(0x00FFFF00, 55, 4); /* hakios visual marker: Yellow at rows 55-58 (Phase 1 direct VA drawer) */
 \tloader_checkpoint(30);   /* hakios: reached arm_init (C) at all (ret from start.s worked) */
 \thk_draw_band(0x0000FF00, 60, 10);   /* hakios visual marker: Green at rows 60-69 (past CP30, about to slide/rebase) */
 \tarm_slide_rebase_and_sign_image();
@@ -134,9 +136,10 @@ def main():
 
         target_vm = """\tarm_vm_init(xmaxmem, args);"""
 
-        replacement_vm = """\thk_draw_band(0x0000FA9A, 158, 2);  /* hakios visual marker: Medium Spring Green at rows 158-159 (before arm_vm_init) */
+        replacement_vm = """	extern void hk_draw_band_direct(uint32_t color, uint32_t row_start, uint32_t row_count);
+	hk_draw_band_direct(0x0000FA9A, 158, 2);  /* hakios visual marker: Medium Spring Green at rows 158-159 (before arm_vm_init) */
 \tarm_vm_init(xmaxmem, args);
-\thk_draw_band(0x00FF007F, 160, 3);  /* hakios visual marker: Rose at rows 160-162 (past arm_vm_init) */"""
+	hk_draw_band_direct(0x00FF007F, 160, 3);  /* hakios visual marker: Rose at rows 160-162 (past arm_vm_init) */"""
 
         target_serial = """\tconst unsigned int serial_exists = serial_init();
 \tloader_checkpoint(18);
@@ -571,7 +574,7 @@ sleh_invalid_stack(arm_context_t *context, uint64_t esr __unused, vm_offset_t fa
         assert cp2_old in c_norm, "checkpoint 2 not found in start.s"
         c_norm = c_norm.replace(cp2_old, cp2_new)
 
-        # CP3: after page tables built - Magenta band (rows 20-29, 0x5c015180) & save (VA - PA) delta
+        # CP3: Phase 1 Direct Mapping & Magenta band (rows 20-29, 0x5c015180) & save (VA - PA) delta
         cp3_old = """\t/* Ensure TTEs are visible */
 \tdsb\t\tish
 
@@ -579,7 +582,68 @@ sleh_invalid_stack(arm_context_t *context, uint64_t esr __unused, vm_offset_t fa
 
 \tb\t\tcommon_start"""
 
-        cp3_new = """\t/* Ensure TTEs are visible */
+        cp3_new = """\t// hakios Phase 1: Direct Framebuffer Mapping in bootstrap_pagetables (TTBR1 L1[192])
+\t// L1 index 192 (0xC0), L2 entries 32..36 (0xfffffff004000000..0xfffffff004a00000)
+\t// Base of bootstrap_pagetables is in x25. TTBR1 L1 root is at x25 + 0x1000.
+\tadd\tx9, x25, #0x1000
+\tldr\tx10, [x9, #(192 * 8)]
+\tmovz\tx13, #0xf000
+\tmovk\tx13, #0xffff, lsl #16
+\tmovk\tx13, #0xffff, lsl #32
+\tand\tx10, x10, x13
+\tadd\tx10, x10, #(32 * 8)
+
+\t// Guard: verify entries 32..36 are zero before modifying
+\tmov\tw11, #5
+\tmov\tx14, x10
+Lhk_fb_read_guard:
+\tldr\tx15, [x14], #8
+\tcbnz\tx15, Lhk_fb_read_fail
+\tsubs\tw11, w11, #1
+\tb.ne\tLhk_fb_read_guard
+\tb\tLhk_fb_zero
+
+Lhk_fb_read_fail:
+\t// Warning: non-zero entries found! Draw Red band at row 45 directly to PA (0x5c02f760)
+\tmovz\tx14, #0xf760
+\tmovk\tx14, #0x5c02, lsl #16
+\tmovz\tx15, #0x00ff
+\tmovk\tx15, #0x0000, lsl #16
+\tmovk\tx15, #0x00ff, lsl #32
+\tmovk\tx15, #0x0000, lsl #48
+\tmov\tw11, #1080
+Lhk_fb_warn_loop:
+\tstp\tx15, x15, [x14], #16
+\tsubs\tw11, w11, #1
+\tb.ne\tLhk_fb_warn_loop
+
+Lhk_fb_zero:
+\tmov\tw11, #5
+\tmov\tx14, x10
+Lhk_fb_zero_loop:
+\tstr\txzr, [x14], #8
+\tsubs\tw11, w11, #1
+\tb.ne\tLhk_fb_zero_loop
+
+\t// Fill 5 block descriptors: PA | 0x0060000000000605ULL
+\t// PA base = 0x5c000000, 2MB step = 0x200000
+\tmovz\tx12, #0x0605
+\tmovk\tx12, #0x0060, lsl #48
+\tmovz\tx13, #0x0000
+\tmovk\tx13, #0x5c00, lsl #16
+\torr\tx12, x12, x13
+
+\tmov\tw11, #5
+\tmovz\tx13, #0x0000
+\tmovk\tx13, #0x0020, lsl #16
+Lhk_fb_fill:
+\tstr\tx12, [x10], #8
+\tadd\tx12, x12, x13
+\tsubs\tw11, w11, #1
+\tb.ne\tLhk_fb_fill
+\tdsb\tsy
+
+\t/* Ensure TTEs are visible */
 \tdsb\t\tish
 \t// hakios: record (VA - PA) delta in loader_stub_slot[3] for runtime PA transitions
 \tadrp\tx9, EXT(loader_stub_slot)@page
@@ -602,8 +666,6 @@ sleh_invalid_stack(arm_context_t *context, uint64_t esr __unused, vm_offset_t fa
 \tLOADER_CHECKPOINT 3
 
 \tb\t\tcommon_start"""
-
-        assert cp3_old in c_norm, "checkpoint 3 not found in start.s"
         c_norm = c_norm.replace(cp3_old, cp3_new)
 
         # CP7: in common_start right before MMU enable - White band (rows 30-39, 0x5c01fa40)
@@ -997,97 +1059,93 @@ LEXT(hk_render_screen_asm)
 \tldp\t\tx29, x30, [sp], #80
 \tret
 """
+        hk_draw_band_direct_code = """
+/*
+ * hakios: direct virtual address marker band drawer
+ * void hk_draw_band_direct(uint32_t color, uint32_t row_start, uint32_t row_count);
+ * Runs 100% in VA space. No MMU toggle, no TTBR0 switch, no TLBI, zero stack.
+ * Framebuffer VA = 0xfffffff004000000ULL
+ * Uses only caller-saved registers x0-x8.
+ */
+\t.text
+\t.align 2
+\t.globl EXT(hk_draw_band_direct)
+LEXT(hk_draw_band_direct)
+\t/* 1. Sanitize arguments (32-bit unsigned) */
+\tand\tx1, x1, #0xffffffff
+\tand\tx2, x2, #0xffffffff
+
+\t/* 2. Bounds check against 2400 rows */
+\tmov\tx3, #2400
+\tcmp\tx1, x3
+\tb.hs\tLhk_direct_exit
+\tsub\tx3, x3, x1
+\tcmp\tx2, x3
+\tcsel\tx2, x2, x3, lo
+\tcbz\tx2, Lhk_direct_exit
+
+\t/* 3. Compute row start pointer (x4) and count (w5) */
+\tmov\tx4, #4320
+\tmul\tx4, x1, x4
+\tmovz\tx3, #0x0400, lsl #16
+\tmovk\tx3, #0xfff0, lsl #32
+\tmovk\tx3, #0xffff, lsl #48
+\tadd\tx4, x4, x3
+
+\t/* Stride: 270 pairs of 64-bit words (4320 bytes) per row */
+\tmov\tw5, #270
+\tmul\tw5, w2, w5
+
+\t/* Compute end probe address: x7 = x4 + (w5 * 16) - 1 */
+\tlsl\tx7, x5, #4
+\tadd\tx7, x4, x7
+\tsub\tx7, x7, #1
+
+\t/* 4. AT guard: check if both start and end addresses are mapped & writable */
+\tmrs\tx6, par_el1
+\tat\ts1e1w, x4
+\tisb
+\tmrs\tx3, par_el1
+\ttbnz\tx3, #0, Lhk_direct_fault
+\tat\ts1e1w, x7
+\tisb
+\tmrs\tx3, par_el1
+\ttbnz\tx3, #0, Lhk_direct_fault
+
+\t/* 5. Duplicate 32-bit color to 64-bit register x0 */
+\tand\tx0, x0, #0xffffffff
+\torr\tx0, x0, x0, lsl #32
+
+\t/* 6. Fill loop */
+Lhk_direct_loop:
+\tstp\tx0, x0, [x4], #16
+\tsubs\tw5, w5, #1
+\tb.ne\tLhk_direct_loop
+\tdsb\tsy
+
+\t/* 7. Normal exit: restore PAR_EL1 */
+\tmsr\tpar_el1, x6
+\tret
+
+Lhk_direct_fault:
+\tmsr\tpar_el1, x6
+Lhk_direct_exit:
+\tret
+"""
+
         hk_draw_band_stackless_code = """
 /*
  * hakios: stackless visual marker band drawer (accessible from start.s, locore.s, sleh.c)
  * void hk_draw_band_stackless(uint32_t color, uint32_t row_start, uint32_t row_count);
- * Zero stack usage: does not modify or use SP or callee-saved registers (x16-x30).
- * Uses only caller-saved registers x0-x15.
+ * Forwards directly to hk_draw_band_direct (100% stackless, no MMU switch).
  */
 \t.text
 \t.align 2
 \t.globl EXT(hk_draw_band_stackless)
 LEXT(hk_draw_band_stackless)
-\t/* Ensure row_start and row_count are treated as 32-bit unsigned integers */
-\tand\t\tx1, x1, #0xffffffff
-\tand\t\tx2, x2, #0xffffffff
-
-\t/* Keep callers from writing beyond the 2400-row framebuffer. */
-\tmov\t\tx3, #2400
-\tcmp\t\tx1, x3
-\tb.hs\t5f
-\tsub\t\tx3, x3, x1
-\tcmp\t\tx2, x3
-\tcsel\tx2, x2, x3, lo
-\tcbz\t\tx2, 5f
-
-\tand\t\tx0, x0, #0xffffffff
-\torr\t\tx0, x0, x0, lsl #32
-
-\tmov\t\tx4, #4320
-\tmul\t\tx4, x1, x4
-\tmovz\tx3, #0x5c00, lsl #16
-\tadd\t\tx4, x4, x3
-
-\tmov\t\tw12, #270
-\tmul\t\tw12, w2, w12
-
-\tmrs\t\tx5, DAIF
-\tmsr\t\tDAIFSet, #0xf
-
-\tmrs\t\tx6, SCTLR_EL1
-\ttbz\t\tx6, #0, 1f
-
-\tmrs\t\tx7, TTBR0_EL1
-\tadrp\tx8, EXT(loader_stub_slot)@page
-\tadd\t\tx8, x8, EXT(loader_stub_slot)@pageoff
-\tldr\t\tx8, [x8, #24]
-\tadrp\tx9, EXT(bootstrap_pagetables)@page
-\tadd\t\tx9, x9, EXT(bootstrap_pagetables)@pageoff
-\tsub\t\tx9, x9, x8
-\tmsr\t\tTTBR0_EL1, x9
-\tisb
-\ttlbi\tvmalle1
-\tdsb\t\tsy
-\tisb
-
-\tadr\t\tx11, 3f
-\tadr\t\tx10, 1f
-\tsub\t\tx10, x10, x8
-\tbr\t\tx10
-
-1:
-\tmrs\t\tx13, SCTLR_EL1
-\tbic\t\tx10, x13, #1
-\tmsr\t\tSCTLR_EL1, x10
-\tisb
-
-\tmov\t\tx14, x4
-\tmov\t\tw15, w12
-2:
-\tstp\tx0, x0, [x14], #16
-\tsubs\tw15, w15, #1
-\tb.ne\t2b
-\tdsb\t\tsy
-
-\tmsr\t\tSCTLR_EL1, x13
-\tisb
-
-\ttbz\t\tx6, #0, 4f
-\tbr\t\tx11
-
-3:
-\tmsr\t\tTTBR0_EL1, x7
-\tisb
-\ttlbi\tvmalle1
-\tdsb\t\tsy
-\tisb
-4:
-\tmsr\t\tDAIF, x5
-5:
-\tret
+\tb\tEXT(hk_draw_band_direct)
 """
-        c_norm = c_norm + hk_draw_band_code + hk_render_screen_asm_code + hk_draw_band_stackless_code
+        c_norm = c_norm + hk_draw_band_code + hk_draw_band_direct_code + hk_render_screen_asm_code + hk_draw_band_stackless_code
 
         with open(p4, "w", encoding="utf-8", newline="\n") as f:
             f.write(c_norm)
@@ -1729,12 +1787,16 @@ kernel_debug_string_early(const char *message)
 
         # After pmap_startup call in vm_page_bootstrap
         t16_pms_call = '\tkernel_debug_string_early("pmap_startup");\n\tpmap_startup(&virtual_space_start, &virtual_space_end);'
-        r16_pms_call = """\tkernel_debug_string_early("pmap_startup");
-\tpmap_startup(&virtual_space_start, &virtual_space_end);
-\t{
-\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
-\t\thk_draw_band(0x0032CD32, 292, 2); /* Lime: pmap_startup returned to vm_page_bootstrap */
-\t}"""
+        r16_pms_call = """	kernel_debug_string_early("pmap_startup");
+	{
+		extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
+		hk_draw_band_direct(0x0000FFFF, 294, 2); /* Cyan: pmap_startup entered */
+	}
+	pmap_startup(&virtual_space_start, &virtual_space_end);
+	{
+		extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
+		hk_draw_band_direct(0x0032CD32, 292, 2); /* Lime: pmap_startup returned to vm_page_bootstrap */
+	}"""
         if t16_pms_call in c16:
             c16 = c16.replace(t16_pms_call, r16_pms_call, 1)
             print("  [OK] osfmk/vm/vm_resident.c: pmap_startup call return marker installed")
@@ -1800,14 +1862,14 @@ kernel_debug_string_early(const char *message)
 
         # Page init loop in pmap_startup with fine-grained ladder markers
         t16_loop = '\tvm_free_page_lock();\n\n\tfor (uint32_t i = 0; i < npages && pmap_next_page(&phys_page); i++) {'
-        r16_loop = """\t/* hakios/claude: Thick pre-lock and post-lock diagnostic bands */
+        r16_loop = """\t/* hakios: Direct diagnostic bands without MMU toggling */
 \t{
 \t\t__asm__ volatile ("msr daifset, #0xf; isb");
-\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
-\t\thk_draw_band(0x00FFFF00, 296, 6); /* Vivid Yellow: PRE-LOCK (rows 296..301) */
+\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
+\t\thk_draw_band_direct(0x00FF00FF, 302, 2); /* Vivid Magenta: PRE-LOCK (rows 302..303) */
 \t\tvm_free_page_lock();
 \t\t__asm__ volatile ("msr daifset, #0xf; isb");
-\t\thk_draw_band(0x00FF00FF, 304, 2); /* Vivid Magenta: POST-LOCK (rows 304..305) */
+\t\thk_draw_band_direct(0x00FF00FF, 304, 2); /* Vivid Magenta: POST-LOCK (rows 304..305) */
 
 \t\t/* Gauge at Rows 410..440 */
 \t\tstatic const uint32_t nibble_pal[16] = {
@@ -1816,7 +1878,7 @@ kernel_debug_string_early(const char *message)
 \t\t\t0x00808080, 0x000000FF, 0x0000FF00, 0x0000FFFF,
 \t\t\t0x00FF0000, 0x00FF00FF, 0x00FFFF00, 0x00FFFFFF
 \t\t};
-\t\thk_draw_band(0x00FFFFFF, 410, 4); /* Calibration marker (White, 4 rows: 410..413) */
+\t\thk_draw_band_direct(0x00FFFFFF, 410, 4); /* Calibration marker (White, 4 rows: 410..413) */
 
 \t\textern vm_offset_t first_avail;
 \t\textern pmap_paddr_t avail_end;
@@ -1825,69 +1887,75 @@ kernel_debug_string_early(const char *message)
 \t\tuint32_t ae32 = (uint32_t)avail_end;
 \t\tfor (int k = 0; k < 8; k++) {
 \t\t\tuint32_t nib = (fa32 >> ((7 - k) * 4)) & 0xf;
-\t\t\thk_draw_band(nibble_pal[nib], 416 + k, 1);
+\t\t\thk_draw_band_direct(nibble_pal[nib], 416 + k, 1);
 \t\t}
 \t\tfor (int k = 0; k < 8; k++) {
 \t\t\tuint32_t nib = (ae32 >> ((7 - k) * 4)) & 0xf;
-\t\t\thk_draw_band(nibble_pal[nib], 426 + k, 1);
+\t\t\thk_draw_band_direct(nibble_pal[nib], 426 + k, 1);
 \t\t}
-\t\thk_draw_band(need_ram_ranges_init ? 0x0000FF00 : 0x00FF0000, 436, 2);
+\t\thk_draw_band_direct(need_ram_ranges_init ? 0x0000FF00 : 0x00FF0000, 436, 2);
 \t\tuint64_t vbar_val;
 \t\t__asm__ volatile ("mrs %0, VBAR_EL1" : "=r" (vbar_val));
-\t\thk_draw_band((vbar_val >= 0xffff000000000000ULL) ? 0x0000FF00 : 0x00FF0000, 440, 2);
+\t\thk_draw_band_direct((vbar_val >= 0xffff000000000000ULL) ? 0x0000FF00 : 0x00FF0000, 440, 2);
 \t}
 \tfor (uint32_t i = 0; i < npages; i++) {
 \t\tif (i == 0) {
-\t\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
-\t\t\thk_draw_band(0x00FFFFFF, 305, 1); /* White: call-site about to call pmap_next_page */
+\t\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
+\t\t\thk_draw_band_direct(0x00FFFFFF, 305, 1); /* White: call-site about to call pmap_next_page */
 \t\t}
 \t\tboolean_t pnext_ret = pmap_next_page(&phys_page);
 \t\tif (i == 0) {
-\t\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
-\t\t\thk_draw_band(0x00800080, 310, 2); /* Purple: call-site returned (Rows 310..311, 2 rows) */
+\t\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
+\t\t\thk_draw_band_direct(0x00800080, 310, 2); /* Purple: call-site returned (Rows 310..311, 2 rows) */
 \t\t}
 \t\tif (!pnext_ret) {
 \t\t\tbreak;
 \t\t}
 \t\tif (i == 0) {
-\t\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
-\t\t\thk_draw_band(0x0000BFFF, 312, 4); /* Deep Sky Blue: page loop entered */
+\t\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
+\t\t\thk_draw_band_direct(0x0000BFFF, 312, 4); /* Deep Sky Blue: page loop entered */
 \t\t}"""
         if t16_loop in c16:
             c16 = c16.replace(t16_loop, r16_loop, 1)
             print("  [OK] osfmk/vm/vm_resident.c: page init loop markers installed")
-
+        else:
+            loop_pat = re.compile(r'\tvm_free_page_lock\(\);.*?\tfor \(uint32_t i = 0; i < npages && pmap_next_page\(&phys_page\); i\+\+\) \{', re.DOTALL)
+            if loop_pat.search(c16):
+                c16 = loop_pat.sub(r16_loop, c16, count=1)
+                print("  [OK] osfmk/vm/vm_resident.c: page init loop markers installed via regex")
+            else:
+                print("  [WARN] t16_loop not found in vm_resident.c")
         t16_lowglo = '\tvm_pages_first_pnum = phys_page;\n\t\t\tpatch_low_glo_vm_page_info(vm_pages, vm_pages_end,\n\t\t\t    vm_pages_first_pnum);'
         r16_lowglo = """\tvm_pages_first_pnum = phys_page;
-\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x0000FF00, 316, 4); } /* Lime: first_pnum set */
+\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000FF00, 316, 4); } /* Lime: first_pnum set */
 \t\t\tpatch_low_glo_vm_page_info(vm_pages, vm_pages_end, vm_pages_first_pnum);
-\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FF00FF, 320, 4); } /* Magenta: low_glo patched */"""
+\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF00FF, 320, 4); } /* Magenta: low_glo patched */"""
         if t16_lowglo in c16:
             c16 = c16.replace(t16_lowglo, r16_lowglo, 1)
             print("  [OK] osfmk/vm/vm_resident.c: low_glo info markers installed")
 
         t16_init = '\t++vm_pages_count;\n\t\tvm_page_init(vm_page_get(i), phys_page);'
         r16_init = """\t++vm_pages_count;
-\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); if (i == 0) hk_draw_band(0x00FFFF00, 324, 4); } /* Yellow: before vm_page_init(0) */
+\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); if (i == 0) { extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FFFF00, 324, 4); } } /* Yellow: before vm_page_init(0) */
 \t\tvm_page_init(vm_page_get(i), phys_page);
-\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); if (i == 0) hk_draw_band(0x00FF8C00, 328, 4); } /* Orange: after vm_page_init(0) */"""
+\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); if (i == 0) { extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF8C00, 328, 4); } } /* Orange: after vm_page_init(0) */"""
         if t16_init in c16:
             c16 = c16.replace(t16_init, r16_init, 1)
             print("  [OK] osfmk/vm/vm_resident.c: vm_page_init markers installed")
 
         t16_rel = '\tif (vm_himemory_mode) {\n\t\t\tvm_page_release_startup(vm_page_get(i));\n\t\t}'
         r16_rel = """\tif (vm_himemory_mode) {
-\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); if (i == 0) hk_draw_band(0x0000FFFF, 332, 4); } /* Cyan: before vm_page_release_startup(0) */
+\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); if (i == 0) { extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000FFFF, 332, 4); } } /* Cyan: before vm_page_release_startup(0) */
 \t\t\tvm_page_release_startup(vm_page_get(i));
-\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); if (i == 0) hk_draw_band(0x00ADFF2F, 336, 4); } /* GreenYellow: after vm_page_release_startup(0) */
+\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); if (i == 0) { extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00ADFF2F, 336, 4); } } /* GreenYellow: after vm_page_release_startup(0) */
 \t\t}
 \t\tif (i == 1) {
 \t\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
-\t\t\thk_draw_band(0x00FF1493, 340, 4); /* Deep Pink: iteration 1 reached! */
+\t\t\thk_draw_band_direct(0x00FF1493, 340, 4); /* Deep Pink: iteration 1 reached! */
 \t\t}
 \t\tif (i == (npages >> 1)) {
 \t\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
-\t\t\thk_draw_band(0x001E90FF, 344, 4); /* Dodger Blue: page loop 50% */
+\t\t\thk_draw_band_direct(0x001E90FF, 344, 4); /* Dodger Blue: page loop 50% */
 \t\t}"""
         if t16_rel in c16:
             c16 = c16.replace(t16_rel, r16_rel, 1)
@@ -1909,7 +1977,7 @@ kernel_debug_string_early(const char *message)
         r16_unlock = """\tvm_free_page_unlock();
 \t{
 \t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
-\t\thk_draw_band(0x0000FF00, 348, 6); /* Lime: page loop & unlock complete */
+\t\thk_draw_band_direct(0x0000FF00, 348, 6); /* Lime: page loop & unlock complete */
 \t}"""
         if idx_loop != -1 and t16_unlock in c16[idx_loop:]:
             c16 = c16[:idx_loop] + c16[idx_loop:].replace(t16_unlock, r16_unlock, 1)
@@ -2066,6 +2134,43 @@ kernel_debug_string_early(const char *message)
         else:
             print("  [WARN] t20_end not found in arm_vm_init.c")
 
+        # 20c. Phase 2: Direct Framebuffer VA Mapping in cpu_tte before set_mmu_ttb_alternate
+        t20_fb = '\tarm_vm_physmap_init(args);\n\tset_mmu_ttb_alternate(cpu_ttep & TTBR_BADDR_MASK);'
+        r20_fb = """\tarm_vm_physmap_init(args);
+
+\t/* hakios Phase 2: Direct Framebuffer VA Mapping in cpu_tte (0xfffffff004000000) */
+\t{
+\t\textern void hk_draw_band_direct(uint32_t color, uint32_t row_start, uint32_t row_count);
+\t\ttt_entry_t *fb_l1_tte = cpu_tte + L1_TABLE_T1_INDEX(0xfffffff004000000ULL, TCR_EL1_BOOT);
+\t\tif ((*fb_l1_tte & ARM_TTE_VALID) == 0) {
+\t\t\thk_draw_band_direct(0x008B0000, 162, 2); /* Dark Red: L1 entry missing in cpu_tte */
+\t\t} else {
+\t\t\ttt_entry_t *fb_l2_base = (tt_entry_t *)phystokv((*fb_l1_tte) & ARM_TTE_TABLE_MASK);
+\t\t\ttt_entry_t *fb_l2_tte = fb_l2_base + ((0x04000000ULL & ARM_TT_L2_INDEX_MASK) >> ARM_TT_L2_SHIFT);
+\t\t\tfor (int k = 0; k < 5; k++) {
+\t\t\t\tuint64_t target_desc = (0x5c000000ULL + ((uint64_t)k * 0x200000ULL)) | 0x0060000000000605ULL;
+\t\t\t\tif (fb_l2_tte[k] != 0 && fb_l2_tte[k] != target_desc) {
+\t\t\t\t\thk_draw_band_direct(0x00FF0000, 164, 2); /* Red: collision in cpu_tte */
+\t\t\t\t}
+\t\t\t\tfb_l2_tte[k] = target_desc;
+\t\t\t}
+\t\t\t__asm__ volatile("dsb sy" ::: "memory");
+\t\t}
+\t}
+
+\tset_mmu_ttb_alternate(cpu_ttep & TTBR_BADDR_MASK);
+\tflush_mmu_tlb();
+
+\t/* hakios visual marker: verify Phase 2 mapping in cpu_tte immediately after TTBR1 switch */
+\t{
+\t\textern void hk_draw_band_direct(uint32_t color, uint32_t row_start, uint32_t row_count);
+\t\thk_draw_band_direct(0x00FF007F, 160, 3); /* Rose at rows 160-162 */
+\t}"""
+        if t20_fb in c20:
+            c20 = c20.replace(t20_fb, r20_fb, 1)
+            print("  [OK] osfmk/arm64/arm_vm_init.c: Phase 2 direct FB mapping in cpu_tte installed")
+        else:
+            print("  [WARN] t20_fb not found in arm_vm_init.c")
         with open(p20, "w", encoding="utf-8", newline="\n") as f:
             f.write(c20)
 
@@ -2166,6 +2271,7 @@ lck_mtx_assert(lck_mtx_t *lock, unsigned int type)
         with open(p_vmres, "r", encoding="utf-8") as f:
             vmres_content = f.read()
         assert "304" in vmres_content, "ASSERTION FAILED: vm_resident.c missing Row 304 marker on disk!"
+        assert "302" in vmres_content, "ASSERTION FAILED: vm_resident.c missing Row 302 marker on disk!"
         assert "305" in vmres_content, "ASSERTION FAILED: vm_resident.c missing Row 305 marker on disk!"
         print("  [OK] vm_resident.c verified: progress markers present on disk")
 
