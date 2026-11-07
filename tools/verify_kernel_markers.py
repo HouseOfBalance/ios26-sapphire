@@ -34,57 +34,37 @@ def verify_macho(macho_path):
             cmd_data = f.read(cmdsize - 8)
             if cmd == 0x19: # LC_SEGMENT_64
                 segname = cmd_data[:16].decode('utf-8', errors='ignore').rstrip('\x00')
-                vmaddr, vmsize, fileoff, filesize, maxprot, initprot, nsects, sflags = struct.unpack('<QQQQIIII', cmd_data[16:56])
-                sect_off = 56
+                vmaddr, vmsize, fileoff, filesize, maxprot, initprot, nsects, sflags = struct.unpack('<QQQQIIII', cmd_data[16:64])
+                sec_offset = 64
                 for _ in range(nsects):
-                    sname = cmd_data[sect_off:sect_off+16].decode('utf-8', errors='ignore').rstrip('\x00')
-                    smseg = cmd_data[sect_off+16:sect_off+32].decode('utf-8', errors='ignore').rstrip('\x00')
-                    saddr, ssize, soff = struct.unpack('<QQI', cmd_data[sect_off+32:sect_off+52])
-                    sections.append((sname, smseg, saddr, ssize, soff))
-                    sect_off += 80
+                    sdata = cmd_data[sec_offset:sec_offset+80]
+                    sname = sdata[:16].decode('utf-8', errors='ignore').rstrip('\x00')
+                    smseg = sdata[16:32].decode('utf-8', errors='ignore').rstrip('\x00')
+                    saddr, ssize, soff = struct.unpack('<QQI', sdata[32:52])
+                    sections.append({'name': sname, 'seg': smseg, 'addr': saddr, 'size': ssize, 'off': soff})
+                    sec_offset += 80
             elif cmd == 0x2: # LC_SYMTAB
                 symoff, nsyms, stroff, strsize = struct.unpack('<IIII', cmd_data[:16])
                 symtab_info = (symoff, nsyms, stroff, strsize)
 
-    if not symtab_info:
-        print("ERROR: LC_SYMTAB not found!")
-        return False
-
-    symoff, nsyms, stroff, strsize = symtab_info
-    symbols = {}
-
-    with open(macho_path, 'rb') as f:
-        f.seek(stroff)
-        strtab = f.read(strsize)
-
-        f.seek(symoff)
-        for _ in range(nsyms):
-            n_strx, n_type, n_sect, n_desc, n_value = struct.unpack('<IBBHI', f.read(12) + f.read(4)) # n_value is 64-bit on arm64?
-            # Wait, nlist_64 is: uint32 n_strx (4), uint8 n_type (1), uint8 n_sect (1), uint16 n_desc (2), uint64 n_value (8) = 16 bytes
-            # Correct unpacking:
-            pass
-
-    # Unpack nlist_64 correctly
-    with open(macho_path, 'rb') as f:
-        f.seek(stroff)
-        strtab = f.read(strsize)
-
-        f.seek(symoff)
-        for _ in range(nsyms):
-            entry_bytes = f.read(16)
-            if len(entry_bytes) < 16:
-                break
-            n_strx, n_type, n_sect, n_desc, n_value = struct.unpack('<IBBHQ', entry_bytes)
-            if n_strx < len(strtab):
-                end = strtab.find(b'\x00', n_strx)
-                if end != -1:
-                    name = strtab[n_strx:end].decode('utf-8', errors='ignore')
-                    symbols[name] = n_value
+        symbols = {}
+        if symtab_info:
+            symoff, nsyms, stroff, strsize = symtab_info
+            f.seek(stroff)
+            strtab = f.read(strsize)
+            f.seek(symoff)
+            for _ in range(nsyms):
+                sym_bytes = f.read(16)
+                strx, stype, ssect, sdesc, svalue = struct.unpack('<IBBhQ', sym_bytes)
+                if strx < len(strtab):
+                    end = strtab.find(b'\x00', strx)
+                    sname = strtab[strx:end].decode('utf-8', errors='ignore')
+                    symbols[sname] = svalue
 
     def va_to_off(va):
-        for sname, smseg, saddr, ssize, soff in sections:
-            if saddr <= va < saddr + ssize:
-                return soff + (va - saddr)
+        for s in sections:
+            if s['addr'] <= va < s['addr'] + s['size']:
+                return s['off'] + (va - s['addr'])
         return None
 
     # Check 1: hk_draw_band_direct must exist
@@ -120,9 +100,9 @@ def verify_macho(macho_path):
             found_at_guard = True
 
     if not found_at_guard:
-        print("ERROR: hk_draw_band_direct does NOT contain AT S1E1W guard instruction!")
+        print("ERROR: hk_draw_band_direct missing AT S1E1W guard instruction!")
         return False
-    print("  [OK] hk_draw_band_direct verified (direct VA, no MMU toggle, AT guard present)")
+    print("  [OK] hk_draw_band_direct verified: 100% VA space, AT guard present, zero MMU toggles")
 
     # Check 2: el1_sp0_synchronous_vector_long must branch to drawer
     hk_stackless_va = symbols.get('_hk_draw_band_stackless') or symbols.get('hk_draw_band_stackless') or hk_direct_va
