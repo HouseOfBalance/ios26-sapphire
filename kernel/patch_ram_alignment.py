@@ -471,10 +471,10 @@ pmap_next_page(
 		if (avail_page_count > 0) {
 			--avail_page_count;
 		}
-		hk_draw_band(0x0000FFFF, 308, 1); /* Cyan: pmap_next_page returning TRUE */
+		hk_draw_band(0x0000FFFF, 308, 2); /* Cyan: pmap_next_page returning TRUE (rows 308..309) */
 		return TRUE;
 	}
-	hk_draw_band(0x00FF8C00, 309, 1); /* Dark Orange: pmap_next_page returning FALSE */
+	hk_draw_band(0x00FF8C00, 344, 2); /* Dark Orange: pmap_next_page returning FALSE (rows 344..345) */
 	return FALSE;
 }"""
 

@@ -380,7 +380,7 @@ def main():
 \t\t\t}
 \t\t\tumsg[pos] = '\\0';
 \t\t\tfor (uintptr_t p = (uintptr_t)umsg; p < (uintptr_t)umsg + pos + 64; p += 64) {
-\t\t\t\t__asm__ volatile ("dc cvac, %0" : : "r" (p));
+\t\t\t\t__asm__ volatile ("dc civac, %0" : : "r" (p));
 \t\t\t}
 \t\t\t__asm__ volatile ("dsb sy");
 \t\t\thk_render_screen_asm(umsg, pos, iso_font);
@@ -417,7 +417,7 @@ def main():
 \t\t}
 \t\tfmsg[pos] = '\\0';
 \t\tfor (uintptr_t p = (uintptr_t)fmsg; p < (uintptr_t)fmsg + pos + 64; p += 64) {
-\t\t\t__asm__ volatile ("dc cvac, %0" : : "r" (p));
+\t\t\t__asm__ volatile ("dc civac, %0" : : "r" (p));
 \t\t}
 \t\t__asm__ volatile ("dsb sy");
 \t\thk_render_screen_asm(fmsg, pos, iso_font);
@@ -484,7 +484,7 @@ sleh_invalid_stack(arm_context_t *context, uint64_t esr __unused, vm_offset_t fa
 \t\t}
 \t\temsg[pos] = '\\0';
 \t\tfor (uintptr_t p = (uintptr_t)emsg; p < (uintptr_t)emsg + pos + 64; p += 64) {
-\t\t\t__asm__ volatile ("dc cvac, %0" : : "r" (p));
+\t\t\t__asm__ volatile ("dc civac, %0" : : "r" (p));
 \t\t}
 \t\t__asm__ volatile ("dsb sy");
 \t\thk_render_screen_asm(emsg, pos, iso_font);
@@ -1284,7 +1284,7 @@ loader_return(void)
 
 \t\t/* Clean data cache to DRAM before MMU-off read */
 \t\tfor (uintptr_t p = (uintptr_t)panic_onscreen; p < (uintptr_t)panic_onscreen + n + 64; p += 64) {
-\t\t\t__asm__ volatile ("dc cvac, %0" : : "r" (p));
+\t\t\t__asm__ volatile ("dc civac, %0" : : "r" (p));
 \t\t}
 \t\t__asm__ volatile ("dsb sy");
 
@@ -1429,7 +1429,7 @@ loader_return(void)
 \t\t\thk_pmsg[pn++] = '\\n';
 \t\t\thk_pmsg[pn] = 0;
 \t\t\tfor (uintptr_t p = (uintptr_t)hk_pmsg; p < (uintptr_t)hk_pmsg + pn + 64; p += 64) {
-\t\t\t\t__asm__ volatile ("dc cvac, %0" : : "r" (p));
+\t\t\t\t__asm__ volatile ("dc civac, %0" : : "r" (p));
 \t\t\t}
 \t\t\t__asm__ volatile ("dsb sy");
 \t\t\thk_render_screen_asm(hk_pmsg, pn, iso_font);
@@ -1463,7 +1463,7 @@ loader_return(void)
 \t\t\t\thk_epmsg[epn++] = '\\n';
 \t\t\t\thk_epmsg[epn] = 0;
 \t\t\t\tfor (uintptr_t p = (uintptr_t)hk_epmsg; p < (uintptr_t)hk_epmsg + epn + 64; p += 64) {
-\t\t\t\t\t__asm__ volatile ("dc cvac, %0" : : "r" (p));
+\t\t\t\t\t__asm__ volatile ("dc civac, %0" : : "r" (p));
 \t\t\t\t}
 \t\t\t\t__asm__ volatile ("dsb sy");
 \t\t\t\thk_render_screen_asm(hk_epmsg, epn, iso_font);
@@ -1696,7 +1696,7 @@ kernel_debug_string_early(const char *message)
 \t\tboolean_t pnext_ret = pmap_next_page(&phys_page);
 \t\tif (i == 0) {
 \t\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
-\t\t\thk_draw_band(0x00800080, 311, 1); /* Purple: call-site returned (Row 311, 1 row) */
+\t\t\thk_draw_band(0x00800080, 310, 2); /* Purple: call-site returned (Rows 310..311, 2 rows) */
 \t\t}
 \t\tif (!pnext_ret) {
 \t\t\tbreak;

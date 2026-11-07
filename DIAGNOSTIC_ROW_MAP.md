@@ -10,18 +10,19 @@
 ## 1. Fast Diagnostic Reading Order (Post-Boot Inspection)
 
 After booting with `fastboot boot enxerto-boot.img`:
-1. **Check Exception Vectors (Rows 198 .. 216):**
+1. **Check Exception Vectors (Rows 198 .. 220):**
    - Did an exception occur? Look at **Rows 198, 204, 210, 216, 220**.
    - If **none** of 198..220 are drawn, no sync exception or double fault fired in early boot.
-2. **Check `pmap_next_page` Execution (Rows 306 .. 312):**
-   - **Row 304 (Vivid Magenta):** POST-LOCK reached.
-   - **Row 306 (White):** `pmap_next_page()` entered.
-   - **Row 308 (Cyan):** `pmap_next_page()` returning `TRUE`.
-   - **Row 309 (Dark Orange):** `pmap_next_page()` returning `FALSE`.
-   - **Row 311 (Purple):** Call-site in `pmap_startup` successfully received return value.
-   - **Row 312 (Deep Sky Blue):** First iteration (`i == 0`) of page init loop entered.
+   - If **Row 220** (Magenta) is visible: On-screen panic text is rendered at `y = 720` (ASCII font) showing `pc`, `lr`, `sp`, `esr`, `far`, `x0`.
+2. **Check `pmap_next_page` Execution (Rows 304 .. 315 & 344):**
+   - **Row 304..305 (2 rows, Vivid Magenta):** `POST-LOCK` reached.
+   - **Row 306..307 (2 rows, White):** `pmap_next_page()` entered.
+   - **Row 308..309 (2 rows, Cyan):** `pmap_next_page()` returning `TRUE`.
+   - **Row 310..311 (2 rows, Purple):** Call-site in `pmap_startup` successfully received return value.
+   - **Row 312..315 (4 rows, Deep Sky Blue):** First iteration (`i == 0`) of page init loop entered.
+   - **Row 344..345 (2 rows, Dark Orange):** `pmap_next_page()` returning `FALSE` (no more physical pages).
 3. **Check Diagnostic Gauge (Rows 410 .. 440):**
-   - **Row 410 (White, 4 rows):** Calibration marker.
+   - **Row 410 (White, 4 rows: 410..413):** Calibration reference marker.
    - **Rows 416..423 (8 rows):** 8 nibbles of `first_avail` (MSB first, using 16-color palette below).
    - **Rows 426..433 (8 rows):** 8 nibbles of `avail_end` (MSB first, using 16-color palette below).
    - **Row 436 (2 rows):** `need_ram_ranges_init` (Lime Green = 1, Vivid Red = 0).
@@ -56,7 +57,7 @@ Each row in the gauge represents one hexadecimal nibble (4 bits, values 0x0 thro
 
 ## 3. Comprehensive Diagnostic Ladder Map
 
-All rows are strictly non-overlapping and verified:
+All rows are strictly $\ge 2$ rows thick and non-overlapping:
 
 | Row Range | Height | Color Name | Hex (ARGB) | Milestone Description |
 |:---------:|:------:|:-----------|:----------:|:----------------------|
@@ -82,15 +83,14 @@ All rows are strictly non-overlapping and verified:
 | `296..301`| 6      | Vivid Yellow | `0x00FFFF00` | `PRE-LOCK`: Before acquiring `vm_free_page_lock()` |
 | `304..305`| 2      | Vivid Magenta | `0x00FF00FF` | `POST-LOCK`: `vm_free_page_lock()` acquired |
 | `306..307`| 2      | White      | `0x00FFFFFF` | `pmap_next_page(&phys_page)` entered |
-| `308`     | 1      | Cyan       | `0x0000FFFF` | `pmap_next_page` returning `TRUE` |
-| `309`     | 1      | Dark Orange | `0x00FF8C00` | `pmap_next_page` returning `FALSE` |
-| `310`     | 1      | *(Gap)*    | — | Reserved separator gap |
-| `311`     | 1      | Purple     | `0x00800080` | `pmap_startup` call-site returned from `pmap_next_page` (`i == 0`) |
+| `308..309`| 2      | Cyan       | `0x0000FFFF` | `pmap_next_page` returning `TRUE` |
+| `310..311`| 2      | Purple     | `0x00800080` | `pmap_startup` call-site returned from `pmap_next_page` (`i == 0`) |
 | `312..315`| 4      | Deep Sky Blue | `0x0000BFFF` | `pmap_startup` loop body entered (`i == 0`) |
 | `316..319`| 4      | Lime       | `0x0000FF00` | `vm_pages_first_pnum` set |
 | `320..323`| 4      | Magenta    | `0x00FF00FF` | `patch_low_glo_vm_page_info` completed |
 | `324..327`| 4      | Yellow     | `0x00FFFF00` | Before `vm_page_init(0)` |
 | `328..331`| 4      | Orange     | `0x00FF8C00` | After `vm_page_init(0)` |
+| `344..345`| 2      | Dark Orange | `0x00FF8C00` | `pmap_next_page` returning `FALSE` (no more physical pages) |
 | `348..351`| 4      | Lime       | `0x0000FF00` | Loop finished, `vm_free_page_unlock()` released |
 | `360..361`| 2      | Lime Green | `0x0000FF00` | `vm_page_bootstrap` returned |
 | `410..413`| 4      | White      | `0x00FFFFFF` | Gauge Calibration Reference Marker |
