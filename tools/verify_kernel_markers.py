@@ -95,8 +95,8 @@ def verify_macho(macho_path):
         if (insn & 0xFFF00000) == 0xD5080000 and (insn & 0x00008000):
             print("ERROR: hk_draw_band_direct contains forbidden tlbi instruction!")
             return False
-        # at s1e1w, Xt -> 0xd5087800 | reg
-        if (insn & 0xFFFFFFE0) == 0xD5087800:
+        # at s1e1w, Xt -> 0xd5087820 | reg (or s1e1r -> 0xd5087800 | reg)
+        if (insn & 0xFFFFFFE0) in (0xD5087800, 0xD5087820):
             found_at_guard = True
 
     if not found_at_guard:
