@@ -361,7 +361,7 @@ def main():
 \t\t\tuint64_t vals[7] = {
 \t\t\t\tpc,
 \t\t\t\t(pc >= 0xffff000000000000ULL) ? (uint64_t)*(volatile uint32_t *)pc : 0ULL,
-\t\t\t\t(uint64_t)get_saved_state_lr(state),
+\t\t\t\t(uint64_t)get_saved_state_reg(state, 30),
 \t\t\t\t(uint64_t)get_saved_state_sp(state),
 \t\t\t\t(uint64_t)esr,
 \t\t\t\t(uint64_t)far,
@@ -398,7 +398,7 @@ def main():
 \t\tuint64_t vals[7] = {
 \t\t\t(uint64_t)class,
 \t\t\t(uint64_t)get_saved_state_pc(state),
-\t\t\t(uint64_t)get_saved_state_lr(state),
+\t\t\t(uint64_t)get_saved_state_reg(state, 30),
 \t\t\t(uint64_t)get_saved_state_sp(state),
 \t\t\t(uint64_t)esr,
 \t\t\t(uint64_t)far,
@@ -468,7 +468,7 @@ sleh_invalid_stack(arm_context_t *context, uint64_t esr __unused, vm_offset_t fa
 \t\twhile (*hdr) emsg[pos++] = *hdr++;
 \t\tuint64_t pc = (context != NULL) ? (uint64_t)get_saved_state_pc(&context->ss) : 0ULL;
 \t\tuint64_t sp_val = (context != NULL) ? (uint64_t)get_saved_state_sp(&context->ss) : 0ULL;
-\t\tuint64_t lr_val = (context != NULL) ? (uint64_t)get_saved_state_lr(&context->ss) : 0ULL;
+\t\tuint64_t lr_val = (context != NULL) ? (uint64_t)get_saved_state_reg(&context->ss, 30) : 0ULL;
 \t\tuint64_t x0_val = (context != NULL) ? (uint64_t)get_saved_state_reg(&context->ss, 0) : 0ULL;
 \t\tuint64_t vals[6] = { pc, lr_val, sp_val, (uint64_t)esr, (uint64_t)far, x0_val };
 \t\tconst char *names[6] = { "pc : 0x", "lr : 0x", "sp : 0x", "esr: 0x", "far: 0x", "x0 : 0x" };
@@ -1662,7 +1662,7 @@ kernel_debug_string_early(const char *message)
 
 \t\textern vm_offset_t first_avail;
 \t\textern vm_offset_t avail_end;
-\t\textern boolean_t need_ram_ranges_init;
+\t\textern bool need_ram_ranges_init;
 \t\tuint32_t fa32 = (uint32_t)first_avail;
 \t\tuint32_t ae32 = (uint32_t)avail_end;
 \t\tfor (int k = 0; k < 8; k++) {

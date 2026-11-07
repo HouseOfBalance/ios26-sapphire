@@ -505,6 +505,10 @@ pmap_next_page(
             "first_avail += PAGE_SIZE;",
         )
         if all(marker in content for marker in markers):
+            if re.search(r'static\s+(bool|boolean_t)\s+need_ram_ranges_init', content):
+                content = re.sub(r'static\s+(bool|boolean_t)\s+need_ram_ranges_init', r'\1 need_ram_ranges_init', content)
+                with open(target_path, "w", encoding="utf-8", newline="\n") as f:
+                    f.write(content)
             print(f"  [ALREADY PATCHED] {rel_path}: RAM range functions already patched")
             return True
         print(f"  [ERROR] {rel_path}: partial patch detected; source left unchanged")
@@ -517,6 +521,9 @@ pmap_next_page(
         edits.append((source_start, source_end, replacement[replacement_start:replacement_end]))
     for start, end, body in sorted(edits, reverse=True):
         content = content[:start] + body + content[end:]
+
+    # Make need_ram_ranges_init non-static so it can be observed across translation units (e.g. vm_resident.c)
+    content = re.sub(r'static\s+(bool|boolean_t)\s+need_ram_ranges_init', r'\1 need_ram_ranges_init', content)
 
     with open(target_path, "w", encoding="utf-8", newline="\n") as f:
         f.write(content)
