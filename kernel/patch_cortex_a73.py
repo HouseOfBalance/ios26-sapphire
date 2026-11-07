@@ -1766,9 +1766,25 @@ loader_return(void)
             ("\t(void) spllo();",
              "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x007FFF00, 562, 4); } /* Chartreuse: about to spllo */\n\t(void) spllo();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000BFFF, 564, 4); } /* DeepSkyBlue: spllo returned */"),
             ("\tinitialize_screen(NULL, kPEAcquireScreen);",
-             "\tinitialize_screen(NULL, kPEAcquireScreen);\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00BA55D3, 566, 4); } /* MediumOrchid: initialize_screen done */"),
+             "\tinitialize_screen(NULL, kPEAcquireScreen);\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00BA55D3, 566, 2); } /* MediumOrchid: initialize_screen done */"),
+            ("\tvm_commpage_text_init();",
+             "\tvm_commpage_text_init();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000FFFF, 568, 2); } /* Cyan: vm_commpage done */"),
+            ("\tload_static_trust_cache();",
+             "\tload_static_trust_cache();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF7F50, 570, 2); } /* Coral: trust_cache done */"),
+            ("\tkernel_startup_initialize_upto(STARTUP_SUB_LOCKDOWN);",
+             "\tkernel_startup_initialize_upto(STARTUP_SUB_LOCKDOWN);\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FFD700, 572, 2); } /* Gold: STARTUP_SUB_LOCKDOWN done */"),
+            ("\tOSKextRemoveKextBootstrap();",
+             "\tOSKextRemoveKextBootstrap();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000FF00, 574, 2); } /* Lime: OSKextRemoveKextBootstrap done */"),
+            ("\tmachine_lockdown();",
+             "\tmachine_lockdown();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x007FFF00, 576, 2); } /* Chartreuse: machine_lockdown done */"),
+            ("\tPE_lockdown_iokit();",
+             "\tPE_lockdown_iokit();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000BFFF, 578, 2); } /* DeepSkyBlue: PE_lockdown_iokit done */"),
+            ("\tvm_set_restrictions(machine_info.max_cpus);",
+             "\tvm_set_restrictions(machine_info.max_cpus);\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF8C00, 580, 2); } /* DarkOrange: vm_set_restrictions done */"),
+            ("\tkperf_init_early();",
+             "\tkperf_init_early();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF1493, 582, 2); } /* DeepPink: kperf_init_early done */"),
             ("\tbsd_init();",
-             "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FFFFFF, 570, 8); } /* Thick White: ENTERING bsd_init! */\n\tbsd_init();"),
+             "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FFFFFF, 585, 10); } /* Thick White: ENTERING bsd_init! */\n\tbsd_init();"),
         ]
         for t_step, r_step in kbt_steps:
             if t_step in c10:
@@ -2512,6 +2528,40 @@ lck_mtx_assert(lck_mtx_t *lock, unsigned int type)
             print("  [OK] pexpert/arm/pe_init.c: forced kPETextMode for video_console display")
         else:
             print("  [WARN] t23 pattern not found in pe_init.c")
+
+    # 24. iokit/Kernel/GenericARMPE.cpp (ensure max_cpus settled even for single-core or missing cpu0 nub)
+    p24 = os.path.join(src, "iokit", "Kernel", "GenericARMPE.cpp")
+    if os.path.isfile(p24):
+        with open(p24, "r", encoding="utf-8", errors="replace") as f:
+            c24 = f.read().replace("\r\n", "\n")
+        t24 = "\tif (cpus[master_cpu] != NULL) {\n\t\t/* Unblocks everything that waits for the CPU count to be known. */\n\t\tml_set_max_cpus(count);"
+        r24 = "\tif (cpus[master_cpu] != NULL) {\n\t\t/* Unblocks everything that waits for the CPU count to be known. */\n\t\tml_set_max_cpus(count);\n\t} else {\n\t\t/* hakios: fallback for single-core bring-up to unblock ml_wait_max_cpus */\n\t\tml_set_max_cpus(1);"
+        if "/* hakios: fallback for single-core bring-up" in c24:
+            print("  [ALREADY PATCHED] iokit/Kernel/GenericARMPE.cpp: max_cpus fallback unblock already present")
+        elif t24 in c24:
+            c24 = c24.replace(t24, r24, 1)
+            with open(p24, "w", encoding="utf-8", newline="\n") as f:
+                f.write(c24)
+            print("  [OK] iokit/Kernel/GenericARMPE.cpp: max_cpus fallback unblock installed")
+        else:
+            print("  [WARN] t24 pattern not found in GenericARMPE.cpp")
+
+    # 25. osfmk/arm64/machine_routines.c & osfmk/arm/machine_routines.c (safeguard ml_wait_max_cpus against infinite wait)
+    for mr_rel in [("osfmk", "arm64", "machine_routines.c"), ("osfmk", "arm", "machine_routines.c")]:
+        p_mr = os.path.join(src, *mr_rel)
+        if os.path.isfile(p_mr):
+            with open(p_mr, "r", encoding="utf-8", errors="replace") as f:
+                c_mr = f.read().replace("\r\n", "\n")
+            if "ml_wait_max_cpus" in c_mr:
+                t_mr = "ml_wait_max_cpus(void)\n{"
+                r_mr = "ml_wait_max_cpus(void)\n{\n\tif (!max_cpus_initialized) ml_set_max_cpus(1); /* hakios: unblock single-core */"
+                if "/* hakios: unblock single-core */" in c_mr:
+                    print(f"  [ALREADY PATCHED] {os.path.join(*mr_rel)}: ml_wait_max_cpus safeguard already present")
+                elif t_mr in c_mr:
+                    c_mr = c_mr.replace(t_mr, r_mr, 1)
+                    with open(p_mr, "w", encoding="utf-8", newline="\n") as f:
+                        f.write(c_mr)
+                    print(f"  [OK] {os.path.join(*mr_rel)}: ml_wait_max_cpus safeguard installed")
 
     # Post-patch verification assertions: verify files on disk actually contain the patches!
     print("=== Post-patch Verification on Disk ===")

@@ -164,8 +164,8 @@ def patch_startup(src_dir):
         "kernel_startup_initialize_upto(STARTUP_SUB_LOCKDOWN);\n"
         "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0040E0D0, 376, 4); } /* Turquoise: past lockdown */"
     )
-    if m2 in c:
-        print("  [ALREADY PATCHED] osfmk/kern/startup.c: lockdown band already present (row 376)")
+    if m2 in c or "hk_draw_band_direct(0x00FFD700, 572, 2)" in c:
+        print("  [ALREADY PATCHED] osfmk/kern/startup.c: lockdown band already present (row 572/376)")
     elif t2 in c:
         c = c.replace(t2, r2, 1)
         print("  [OK] osfmk/kern/startup.c: lockdown band installed (row 376)")

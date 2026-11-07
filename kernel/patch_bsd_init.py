@@ -39,11 +39,11 @@ def patch_bsd_init(src_dir):
     r_entry = (
         "bsd_init(void)\n{\n"
         "\t/* hakios: bsd_init lifecycle milestone ladder bands */\n"
-        "\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00DAA520, 500, 4); } /* Goldenrod: bsd_init entered */\n"
+        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00DAA520, 600, 4); } /* Goldenrod: bsd_init entered */\n"
     )
     if t_entry in c:
         c = c.replace(t_entry, r_entry, 1)
-        print("  [OK] bsd/kern/bsd_init.c: bsd_init entry band installed (row 500)")
+        print("  [OK] bsd/kern/bsd_init.c: bsd_init entry band installed (row 600)")
     else:
         print("  [WARN] bsd/kern/bsd_init.c: bsd_init(void) entry pattern not found")
 
@@ -51,11 +51,11 @@ def patch_bsd_init(src_dir):
     t_bcache = "bcache_init();"
     r_bcache = (
         "bcache_init();\n"
-        "\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FFA500, 510, 4); } /* Orange: bcache_init done */"
+        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FFA500, 606, 4); } /* Orange: bcache_init done */"
     )
     if t_bcache in c:
         c = c.replace(t_bcache, r_bcache, 1)
-        print("  [OK] bsd/kern/bsd_init.c: bcache_init band installed (row 510)")
+        print("  [OK] bsd/kern/bsd_init.c: bcache_init band installed (row 606)")
     else:
         print("  [WARN] bsd/kern/bsd_init.c: bcache_init() pattern not found")
 
@@ -63,11 +63,11 @@ def patch_bsd_init(src_dir):
     t_vfs = "vfs_init();"
     r_vfs = (
         "vfs_init();\n"
-        "\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x009ACD32, 520, 4); } /* Yellow Green: vfs_init done */"
+        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x009ACD32, 612, 4); } /* Yellow Green: vfs_init done */"
     )
     if t_vfs in c:
         c = c.replace(t_vfs, r_vfs, 1)
-        print("  [OK] bsd/kern/bsd_init.c: vfs_init band installed (row 520)")
+        print("  [OK] bsd/kern/bsd_init.c: vfs_init band installed (row 612)")
     else:
         print("  [WARN] bsd/kern/bsd_init.c: vfs_init() pattern not found")
 
@@ -75,11 +75,11 @@ def patch_bsd_init(src_dir):
     t_devfs = "devfs_kernel_mount(mounthere);"
     r_devfs = (
         "devfs_kernel_mount(mounthere);\n"
-        "\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x001E90FF, 530, 4); } /* Dodger Blue: devfs mounted */"
+        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x001E90FF, 618, 4); } /* Dodger Blue: devfs mounted */"
     )
     if t_devfs in c:
         c = c.replace(t_devfs, r_devfs, 1)
-        print("  [OK] bsd/kern/bsd_init.c: devfs band installed (row 530)")
+        print("  [OK] bsd/kern/bsd_init.c: devfs band installed (row 618)")
     else:
         print("  [WARN] bsd/kern/bsd_init.c: devfs_kernel_mount pattern not found")
 
@@ -87,11 +87,11 @@ def patch_bsd_init(src_dir):
     t_mbuf = "mbuf_init();"
     r_mbuf = (
         "mbuf_init();\n"
-        "\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00BA55D3, 540, 4); } /* Medium Orchid: mbuf_init done */"
+        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00BA55D3, 624, 4); } /* Medium Orchid: mbuf_init done */"
     )
     if t_mbuf in c:
         c = c.replace(t_mbuf, r_mbuf, 1)
-        print("  [OK] bsd/kern/bsd_init.c: mbuf_init band installed (row 540)")
+        print("  [OK] bsd/kern/bsd_init.c: mbuf_init band installed (row 624)")
     else:
         print("  [WARN] bsd/kern/bsd_init.c: mbuf_init() pattern not found")
 
@@ -99,84 +99,84 @@ def patch_bsd_init(src_dir):
     t_net = "net_init();"
     r_net = (
         "net_init();\n"
-        "\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FF69B4, 550, 4); } /* Hot Pink: net_init done */"
+        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF69B4, 630, 4); } /* Hot Pink: net_init done */"
     )
     if t_net in c:
         c = c.replace(t_net, r_net, 1)
-        print("  [OK] bsd/kern/bsd_init.c: net_init band installed (row 550)")
+        print("  [OK] bsd/kern/bsd_init.c: net_init band installed (row 630)")
     else:
         print("  [WARN] bsd/kern/bsd_init.c: net_init() pattern not found")
 
-    # 7. bsd_init completed band (Row 580: Cyan)
+    # 7. bsd_init completed band (Row 636: Cyan)
     t_done = 'bsd_init_kprintf("calling bsd_autoconf\\n");'
     r_done = (
         'bsd_init_kprintf("calling bsd_autoconf\\n");\n'
-        '\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x0000FFFF, 580, 4); } /* Cyan: bsd_init autoconf -> launchd */'
+        '\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000FFFF, 636, 4); } /* Cyan: bsd_init autoconf -> launchd */'
     )
     if t_done in c:
         c = c.replace(t_done, r_done, 1)
-        print("  [OK] bsd/kern/bsd_init.c: bsd_init completed band installed (row 580)")
+        print("  [OK] bsd/kern/bsd_init.c: bsd_init completed band installed (row 636)")
     else:
         # Fallback to devfs_kernel_mount follow-up
         t_done_alt = 'bsd_init_kprintf("devfs_kernel_mount returned %d\\n", error);'
         r_done_alt = (
             'bsd_init_kprintf("devfs_kernel_mount returned %d\\n", error);\n'
-            '\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x0000FFFF, 580, 4); } /* Cyan: bsd_init autoconf -> launchd */'
+            '\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000FFFF, 636, 4); } /* Cyan: bsd_init autoconf -> launchd */'
         )
         if t_done_alt in c:
             c = c.replace(t_done_alt, r_done_alt, 1)
-            print("  [OK] bsd/kern/bsd_init.c: bsd_init completed band installed via alt anchor (row 580)")
+            print("  [OK] bsd/kern/bsd_init.c: bsd_init completed band installed via alt anchor (row 636)")
         else:
             print("  [WARN] bsd/kern/bsd_init.c: bsd_init autoconf completion pattern not found")
 
-    # 8. vfs_mountroot succeeded band (Row 615: Spring Green)
+    # 8. vfs_mountroot succeeded band (Row 642: Spring Green)
     t_vfsroot = "if (0 == (err = vfs_mountroot())) {"
     r_vfsroot = (
         "if (0 == (err = vfs_mountroot())) {\n"
-        "\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x0000FF7F, 615, 4); } /* Spring Green: vfs_mountroot succeeded */"
+        "\t\t\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000FF7F, 642, 4); } /* Spring Green: vfs_mountroot succeeded */"
     )
     if t_vfsroot in c:
         c = c.replace(t_vfsroot, r_vfsroot, 1)
-        print("  [OK] bsd/kern/bsd_init.c: vfs_mountroot success band installed (row 615)")
+        print("  [OK] bsd/kern/bsd_init.c: vfs_mountroot success band installed (row 642)")
     else:
         print("  [WARN] bsd/kern/bsd_init.c: vfs_mountroot pattern not found")
 
-    # 9. bsd_utaskbootstrap band (Row 620: Deep Sky Blue)
+    # 9. bsd_utaskbootstrap band (Row 648: Deep Sky Blue)
     t_utask = "bsd_utaskbootstrap();"
     r_utask = (
         "bsd_utaskbootstrap();\n"
-        "\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x0000BFFF, 620, 4); } /* Deep Sky Blue: PID 1 process created */"
+        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000BFFF, 648, 4); } /* Deep Sky Blue: PID 1 process created */"
     )
     if t_utask in c:
         c = c.replace(t_utask, r_utask, 1)
-        print("  [OK] bsd/kern/bsd_init.c: bsd_utaskbootstrap band installed (row 620)")
+        print("  [OK] bsd/kern/bsd_init.c: bsd_utaskbootstrap band installed (row 648)")
     else:
         print("  [WARN] bsd/kern/bsd_init.c: bsd_utaskbootstrap pattern not found")
 
-    # 10. bsdinit_task entry band (Row 630: Dark Orange)
+    # 10. bsdinit_task entry band (Row 654: Dark Orange)
     t_bsdinit = "bsdinit_task(void)\n{\n"
     r_bsdinit = (
         "bsdinit_task(void)\n{\n"
         "\t/* hakios: PID 1 kernel bootstrap */\n"
         "\t/* hakios/claude: clear diagnostic bit 63 in TPIDR_EL0 before userland */\n"
         "\t__asm__ volatile (\"mrs x0, tpidr_el0; bic x0, x0, #(1ULL << 63); msr tpidr_el0, x0\" ::: \"x0\");\n"
-        "\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FF8C00, 630, 4); } /* Dark Orange: bsdinit_task entered */\n"
+        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF8C00, 654, 4); } /* Dark Orange: bsdinit_task entered */\n"
     )
     if t_bsdinit in c:
         c = c.replace(t_bsdinit, r_bsdinit, 1)
-        print("  [OK] bsd/kern/bsd_init.c: bsdinit_task entry band installed (row 630)")
+        print("  [OK] bsd/kern/bsd_init.c: bsdinit_task entry band installed (row 654)")
     else:
         print("  [WARN] bsd/kern/bsd_init.c: bsdinit_task entry pattern not found")
 
-    # 11. load_init_program return band (Row 640: Magenta)
+    # 11. load_init_program return band (Row 660: Magenta)
     t_loadinit = "load_init_program(p);\n"
     r_loadinit = (
         "load_init_program(p);\n"
-        "\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FF00FF, 640, 4); } /* Magenta: load_init_program handoff to EL0 */\n"
+        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF00FF, 660, 4); } /* Magenta: load_init_program handoff to EL0 */\n"
     )
     if t_loadinit in c:
         c = c.replace(t_loadinit, r_loadinit, 1)
-        print("  [OK] bsd/kern/bsd_init.c: load_init_program band installed (row 640)")
+        print("  [OK] bsd/kern/bsd_init.c: load_init_program band installed (row 660)")
     else:
         print("  [WARN] bsd/kern/bsd_init.c: load_init_program pattern not found")
 
