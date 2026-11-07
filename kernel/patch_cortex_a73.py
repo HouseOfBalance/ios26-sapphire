@@ -1660,6 +1660,8 @@ kernel_debug_string_early(const char *message)
 \t\t};
 \t\thk_draw_band(0x00FFFFFF, 410, 4); /* Calibration marker (White, 4 rows: 410..413) */
 
+\t\textern vm_offset_t first_avail;
+\t\textern pmap_paddr_t avail_end;
 \t\textern bool need_ram_ranges_init;
 \t\tuint32_t fa32 = (uint32_t)first_avail;
 \t\tuint32_t ae32 = (uint32_t)avail_end;
