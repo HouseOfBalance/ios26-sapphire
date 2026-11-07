@@ -2153,6 +2153,8 @@ kernel_debug_string_early(const char *message)
 \t\t\thk_draw_band_direct(0x00800080, 310, 2); /* Purple: call-site returned (Rows 310..311, 2 rows) */
 \t\t}
 \t\tif (!pnext_ret) {
+\t\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
+\t\t\thk_draw_band_direct(0x00FF8C00, 356, 2); /* Dark Orange: pmap_next_page returned FALSE (page loop break) */
 \t\t\tbreak;
 \t\t}
 \t\tif (i == 0) {
@@ -2193,13 +2195,50 @@ kernel_debug_string_early(const char *message)
 \t\t\tvm_page_release_startup(vm_page_get(i));
 \t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); if (i == 0) { extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00ADFF2F, 336, 4); } } /* GreenYellow: after vm_page_release_startup(0) */
 \t\t}
+		/* hakios: logarithmic milestones, gauges, and live clock heartbeat */
 \t\tif (i == 1) {
-\t\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
-\t\t\thk_draw_band_direct(0x00FF1493, 340, 4); /* Deep Pink: iteration 1 reached! */
+\t\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
+\t\t\thk_draw_band_direct(0x00FF1493, 340, 2); /* Deep Pink: i=1 reached */
+\t\t} else if (i == 10) {
+\t\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
+\t\t\thk_draw_band_direct(0x00FFFF00, 342, 2); /* Yellow: i=10 reached */
+\t\t} else if (i == 100) {
+\t\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
+\t\t\thk_draw_band_direct(0x0000FF00, 344, 2); /* Lime: i=100 reached */
+\t\t} else if (i == 1000) {
+\t\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
+\t\t\thk_draw_band_direct(0x0000FFFF, 346, 2); /* Cyan: i=1,000 reached */
+\t\t\textern vm_offset_t first_avail;
+\t\t\tuint32_t fa = (uint32_t)first_avail;
+\t\t\tfor (int k = 0; k < 8; k++) {
+\t\t\t\tuint32_t nib = (fa >> ((7 - k) * 4)) & 0xf;
+\t\t\t\thk_draw_band_direct(nibble_pal[nib], 450 + k, 1);
+\t\t\t}
+\t\t} else if (i == 10000) {
+\t\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
+\t\t\thk_draw_band_direct(0x001E90FF, 348, 2); /* Dodger Blue: i=10,000 reached */
+\t\t\textern vm_offset_t first_avail;
+\t\t\tuint32_t fa = (uint32_t)first_avail;
+\t\t\tfor (int k = 0; k < 8; k++) {
+\t\t\t\tuint32_t nib = (fa >> ((7 - k) * 4)) & 0xf;
+\t\t\t\thk_draw_band_direct(nibble_pal[nib], 460 + k, 1);
+\t\t\t}
+\t\t} else if (i == 50000) {
+\t\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
+\t\t\thk_draw_band_direct(0x00BA55D3, 350, 2); /* Medium Orchid: i=50,000 reached */
+\t\t} else if (i == 100000) {
+\t\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
+\t\t\thk_draw_band_direct(0x00FFD700, 352, 2); /* Gold: i=100,000 reached */
+\t\t} else if (i == (npages >> 1)) {
+\t\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
+\t\t\thk_draw_band_direct(0x00FF8C00, 354, 2); /* Dark Orange: i=50% reached */
 \t\t}
-\t\tif (i == (npages >> 1)) {
-\t\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
-\t\t\thk_draw_band_direct(0x001E90FF, 344, 4); /* Dodger Blue: page loop 50% */
+\t\tif ((i & 0x0FFF) == 0 && i >= 1000) {
+\t\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
+\t\t\tuint64_t timer_val;
+\t\t\t__asm__ volatile ("mrs %0, cntvct_el0" : "=r" (timer_val));
+\t\t\tuint32_t hb_col = (timer_val & (1ULL << 18)) ? 0x0000FF00 : 0x00FF00FF;
+\t\t\thk_draw_band_direct(hb_col, 470, 2);
 \t\t}"""
         if t16_rel in c16:
             c16 = c16.replace(t16_rel, r16_rel, 1)
@@ -2218,10 +2257,17 @@ kernel_debug_string_early(const char *message)
         # Anchor unlock replacement specifically to the unlock following r16_loop in pmap_startup
         idx_loop = c16.find(r16_loop)
         t16_unlock = '\tvm_free_page_unlock();'
+        # Guard backward loop to vm_pages_count
+        t16_bwd = 'for (uint32_t i = npages; i-- > 0;)'
+        r16_bwd = 'for (uint32_t i = vm_pages_count; i-- > 0;)'
+        if t16_bwd in c16:
+            c16 = c16.replace(t16_bwd, r16_bwd, 1)
+            print("  [OK] osfmk/vm/vm_resident.c: backward loop bounded to vm_pages_count")
+
         r16_unlock = """\tvm_free_page_unlock();
 \t{
-\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
-\t\thk_draw_band_direct(0x0000FF00, 348, 6); /* Lime: page loop & unlock complete */
+\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
+\t\thk_draw_band_direct(0x0000FF7F, 358, 4); /* Spring Green: page loop & unlock complete */
 \t}"""
         if idx_loop != -1 and t16_unlock in c16[idx_loop:]:
             c16 = c16[:idx_loop] + c16[idx_loop:].replace(t16_unlock, r16_unlock, 1)
