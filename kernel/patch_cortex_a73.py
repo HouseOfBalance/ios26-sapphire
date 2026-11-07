@@ -1148,21 +1148,14 @@ LEXT(hk_draw_band_stackless)
                 r_vec_entry = """el1_sp0_synchronous_vector_long:
 \tstp\t\tx0, x1, [sp, #-16]!\t\t\t\t// Save x0 and x1 to the exception stack
 \tmrs\t\tx1, ESR_EL1\t\t\t\t\t\t\t// Get the exception syndrome
-\t/* hakios/claude: EC diagnostic for early sync faults */
+\t/* hakios/claude: EC diagnostic for early sync faults - 100% STACKLESS */
 \tlsr\t\tx0, x1, #26\t\t\t\t\t\t\t// x0 = EC
 \tcbz\t\tx0, 88f\t\t\t\t\t\t\t\t// If EC == 0 (LSE/PAC trap), bypass completely!
 \tmrs\t\tx0, TPIDR_EL0\t\t\t\t\t\t// Read temporary one-shot flag
 \ttbnz\tx0, #63, 88f\t\t\t\t\t\t// If bit 63 set, already drawn, bypass!
 \torr\t\tx0, x0, #(1ULL << 63)
 \tmsr\t\tTPIDR_EL0, x0\t\t\t\t\t\t// Set one-shot bit 63
-\tstp\t\tx2, x3, [sp, #-16]!
-\tstp\t\tx4, x5, [sp, #-16]!
-\tstp\t\tx6, x7, [sp, #-16]!
-\tstp\t\tx8, x9, [sp, #-16]!
-\tstp\t\tx10, x11, [sp, #-16]!
-\tstp\t\tx12, x13, [sp, #-16]!
-\tstp\t\tx14, x15, [sp, #-16]!
-\tstp\t\tx29, x30, [sp, #-16]!
+\tmov\t\tx28, lr\t\t\t\t\t\t\t// Save lr in x28 (untouched by hk_draw_band_stackless)
 \tlsr\t\tw0, w1, #26
 \tlsl\t\tw0, w0, #16
 \tmovz\tw2, #0x00ff
@@ -1171,14 +1164,7 @@ LEXT(hk_draw_band_stackless)
 \tmov\t\tw1, #198\t\t\t\t\t\t\t// Row 198
 \tmov\t\tw2, #4\t\t\t\t\t\t\t\t// 4 rows (198..201)
 \tbl\t\tEXT(hk_draw_band_stackless)
-\tldp\t\tx29, x30, [sp], #16
-\tldp\t\tx14, x15, [sp], #16
-\tldp\t\tx12, x13, [sp], #16
-\tldp\t\tx10, x11, [sp], #16
-\tldp\t\tx8, x9, [sp], #16
-\tldp\t\tx6, x7, [sp], #16
-\tldp\t\tx4, x5, [sp], #16
-\tldp\t\tx2, x3, [sp], #16
+\tmov\t\tlr, x28\t\t\t\t\t\t\t// Restore lr from x28
 \tmrs\t\tx1, ESR_EL1\t\t\t\t\t\t\t// Reload ESR
 88:"""
                 if t_vec_entry in c8:

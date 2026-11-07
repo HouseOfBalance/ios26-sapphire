@@ -474,7 +474,7 @@ pmap_next_page(
 		hk_draw_band(0x0000FFFF, 308, 2); /* Cyan: pmap_next_page returning TRUE (rows 308..309) */
 		return TRUE;
 	}
-	hk_draw_band(0x00FF8C00, 344, 2); /* Dark Orange: pmap_next_page returning FALSE (rows 344..345) */
+	hk_draw_band(0x00FF8C00, 330, 2); /* Dark Orange: pmap_next_page returning FALSE (rows 330..331) */
 	return FALSE;
 }"""
 

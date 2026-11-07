@@ -10,17 +10,21 @@
 ## 1. Fast Diagnostic Reading Order (Post-Boot Inspection)
 
 After booting with `fastboot boot enxerto-boot.img`:
-1. **Check Exception Vectors (Rows 198 .. 220):**
+1. **Check Exception Vectors (Rows 198 .. 220) [100% STACKLESS]:**
    - Did an exception occur? Look at **Rows 198, 204, 210, 216, 220**.
-   - If **none** of 198..220 are drawn, no sync exception or double fault fired in early boot.
-   - If **Row 220** (Magenta) is visible: On-screen panic text is rendered at `y = 720` (ASCII font) showing `pc`, `lr`, `sp`, `esr`, `far`, `x0`.
-2. **Check `pmap_next_page` Execution (Rows 304 .. 315 & 344):**
+   - **Row 198 (4 rows, Cyan+EC):** `el1_sp0_synchronous_vector_long` entry (100% stackless, preserves LR in x28, zero memory/SP access).
+   - **Row 204 (4 rows, Vivid Yellow):** `Lcorrupt_stack` in `CHECK_KERNEL_STACK` (`TPIDR_EL1 == 0` early boot path).
+   - **Row 210 (4 rows, Vivid Red):** `el1_sp1_synchronous_vector_long_spill_failed` (Double fault watchdog spin `wfe`).
+   - **Row 216 (4 rows, Dark Orange):** `sleh_invalid_stack` entry.
+   - **Row 220 (4 rows, Magenta):** On-screen panic text rendered at `y = 720` (ASCII font) showing `pc`, `lr`, `sp`, `esr`, `far`, `x0`.
+   - *Note:* Because Row 198 is 100% stackless, if an exception fires, Row 198 is guaranteed to be drawn regardless of stack validity.
+2. **Check `pmap_next_page` Execution (Rows 304 .. 315 & 330):**
    - **Row 304..305 (2 rows, Vivid Magenta):** `POST-LOCK` reached.
    - **Row 306..307 (2 rows, White):** `pmap_next_page()` entered.
    - **Row 308..309 (2 rows, Cyan):** `pmap_next_page()` returning `TRUE`.
    - **Row 310..311 (2 rows, Purple):** Call-site in `pmap_startup` successfully received return value.
    - **Row 312..315 (4 rows, Deep Sky Blue):** First iteration (`i == 0`) of page init loop entered.
-   - **Row 344..345 (2 rows, Dark Orange):** `pmap_next_page()` returning `FALSE` (no more physical pages).
+   - **Row 330..331 (2 rows, Dark Orange):** `pmap_next_page()` returning `FALSE` (no more physical pages).
 3. **Check Diagnostic Gauge (Rows 410 .. 440):**
    - **Row 410 (White, 4 rows: 410..413):** Calibration reference marker.
    - **Rows 416..423 (8 rows):** 8 nibbles of `first_avail` (MSB first, using 16-color palette below).
@@ -69,7 +73,7 @@ All rows are strictly $\ge 2$ rows thick and non-overlapping:
 | `184`     | 2      | Cyan       | `0x0000FFFF` | `kernel_bootstrap` entry |
 | `186`     | 2      | Hot Pink   | `0x00FF69B4` | `kernel_bootstrap_thread` entry |
 | `194`     | 2      | Cyan       | `0x0000FFFF` | `STARTUP_SUB_LOCKS` (Subsystem 3 passed) |
-| `198..201`| 4      | Cyan+EC    | `0x00ECFFFF` | `el1_sp0_synchronous_vector_long` entry (non-trap sync exception) |
+| `198..201`| 4      | Cyan+EC    | `0x00ECFFFF` | `el1_sp0_synchronous_vector_long` entry (100% stackless, LR in x28) |
 | `204..207`| 4      | Vivid Yellow | `0x00FFFF00` | `Lcorrupt_stack` in `CHECK_KERNEL_STACK` (TPIDR_EL1 == 0 or corrupt SP) |
 | `210..213`| 4      | Vivid Red  | `0x00FF0000` | `el1_sp1_synchronous_vector_long_spill_failed` (Double Fault spin `wfe`) |
 | `216..219`| 4      | Dark Orange | `0x00FF8C00` | `sleh_invalid_stack` entered |
@@ -90,7 +94,7 @@ All rows are strictly $\ge 2$ rows thick and non-overlapping:
 | `320..323`| 4      | Magenta    | `0x00FF00FF` | `patch_low_glo_vm_page_info` completed |
 | `324..327`| 4      | Yellow     | `0x00FFFF00` | Before `vm_page_init(0)` |
 | `328..331`| 4      | Orange     | `0x00FF8C00` | After `vm_page_init(0)` |
-| `344..345`| 2      | Dark Orange | `0x00FF8C00` | `pmap_next_page` returning `FALSE` (no more physical pages) |
+| `330..331`| 2      | Dark Orange | `0x00FF8C00` | `pmap_next_page` returning `FALSE` (isolated from 304..315) |
 | `348..351`| 4      | Lime       | `0x0000FF00` | Loop finished, `vm_free_page_unlock()` released |
 | `360..361`| 2      | Lime Green | `0x0000FF00` | `vm_page_bootstrap` returned |
 | `410..413`| 4      | White      | `0x00FFFFFF` | Gauge Calibration Reference Marker |
