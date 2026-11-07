@@ -1046,116 +1046,13 @@ Lhk_fb_fill:
 /*
  * hakios: visual marker band drawer (accessible from both start.s and arm_init.c)
  * void hk_draw_band(uint32_t color, uint32_t row_start, uint32_t row_count);
- * Temporarily restores TTBR0_EL1 to PA(bootstrap_pagetables) when MMU is ON so
- * PA transition works both before and after arm_vm_init() switches TTBR0_EL1.
+ * 100% direct VA drawer via hk_draw_band_direct. Zero MMU toggles, zero TTBR switches, zero stack.
  */
 \t.text
 \t.align 2
 \t.globl EXT(hk_draw_band)
 LEXT(hk_draw_band)
-\t/* If row_start >= 290, forward directly to hk_draw_band_direct (no MMU toggle) */
-\tcmp\t\tw1, #290
-\tb.hs\tEXT(hk_draw_band_direct)
-
-\tstp\t\tx29, x30, [sp, #-64]!
-\tstp\t\tx19, x20, [sp, #16]
-\tstp\t\tx21, x22, [sp, #32]
-\tstp\t\tx23, x24, [sp, #48]
-
-\t/* Ensure row_start and row_count are treated as 32-bit unsigned integers */
-\tand\t\tx1, x1, #0xffffffff
-\tand\t\tx2, x2, #0xffffffff
-
-\t/* Keep callers from writing beyond the 2400-row framebuffer. */
-\tmov\t\tx22, #2400
-\tcmp\t\tx1, x22
-\tb.hs\t5f
-\tsub\t\tx22, x22, x1
-\tcmp\t\tx2, x22
-\tcsel\t\tx2, x2, x22, lo
-\tcbz\t\tx2, 5f
-
-\tand\t\tx0, x0, #0xffffffff
-\torr\t\tx19, x0, x0, lsl #32
-
-\tmov\t\tx20, #4320
-\tmul\t\tx20, x1, x20
-\tmovz\tx21, #0x5c00, lsl #16
-\tadd\t\tx20, x20, x21
-
-\tmov\t\tw21, #270
-\tmul\t\tw21, w2, w21
-
-\tmrs\t\tx23, DAIF
-\tmsr\t\tDAIFSet, #0xf
-
-\tmrs\t\tx22, SCTLR_EL1
-\ttbz\t\tx22, #0, 1f
-
-\tmrs\t\tx24, TTBR0_EL1
-\tadrp\tx11, EXT(loader_stub_slot)@page
-\tadd\tx11, x11, EXT(loader_stub_slot)@pageoff
-\tldr\tx11, [x11, #24]
-\tadrp\tx12, EXT(bootstrap_pagetables)@page
-\tadd\tx12, x12, EXT(bootstrap_pagetables)@pageoff
-\tsub\tx12, x12, x11
-\tmsr\t\tTTBR0_EL1, x12
-\tisb
-\ttlbi\tvmalle1
-\tdsb\t\tsy
-\tisb
-
-\tadr\t\tx13, 3f
-\tadr\t\tx10, 1f
-\tsub\t\tx10, x10, x11
-\tbr\t\tx10
-
-1:
-\tmrs\t\tx9, SCTLR_EL1
-\tbic\t\tx10, x9, #1
-\tmsr\t\tSCTLR_EL1, x10
-\tisb
-
-\tmov\t\tx11, x20
-\tmov\t\tw12, w21
-2:
-\tstp\tx19, x19, [x11], #16
-\tsubs\tw12, w12, #1
-\tb.ne\t2b
-\tdsb\t\tsy
-
-\tmsr\t\tSCTLR_EL1, x9
-\tisb
-
-\ttbz\t\tx22, #0, 4f
-\tbr\t\tx13
-
-3:
-\tmsr\t\tTTBR0_EL1, x24
-\tisb
-\ttlbi\tvmalle1
-\tdsb\t\tsy
-\tisb
-4:
-\tmrs\t\tx10, TPIDR_EL1
-\tcbnz\tx10, 41f
-\tmsr\t\tDAIFSet, #0xf
-\tb\t\t42f
-41:
-\tmsr\t\tDAIF, x23
-42:
-\tldp\t\tx23, x24, [sp, #48]
-\tldp\t\tx21, x22, [sp, #32]
-\tldp\t\tx19, x20, [sp, #16]
-\tldp\t\tx29, x30, [sp], #64
-\tret
-
-5:
-\tldp\t\tx23, x24, [sp, #48]
-\tldp\t\tx21, x22, [sp, #32]
-\tldp\t\tx19, x20, [sp, #16]
-\tldp\t\tx29, x30, [sp], #64
-\tret
+\tb\tEXT(hk_draw_band_direct)
 """
         hk_render_screen_asm_code = """
 /*
@@ -1806,13 +1703,41 @@ loader_return(void)
         if m_log:
             c10 = c10.replace(m_log.group(0), m_log.group(0) + """
 \t{
-\t\textern void hk_draw_band(uint32_t color, uint32_t row_start, uint32_t row_count);
+\t\textern void hk_draw_band_direct(uint32_t color, uint32_t row_start, uint32_t row_count);
 \t\tstatic uint32_t hk_bstep = 0;
-\t\thk_draw_band(0x00FF8C00, 240 + ((hk_bstep++ & 0x3f) * 2), 2); /* Dark Orange line for each milestone */
+\t\thk_draw_band_direct(0x00FF8C00, 240 + ((hk_bstep++ & 0x1f) * 2), 2); /* Dark Orange line for each milestone */
 \t}""", 1)
             print("  [OK] osfmk/kern/startup.c: kernel_bootstrap_log visual milestone ladder installed")
         else:
             print("  [WARN] kernel_bootstrap_log not found in startup.c")
+
+        # Step-by-step milestones in kernel_bootstrap
+        kb_steps = [
+            ("\tconsole_init();", "\tconsole_init();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000FFFF, 500, 4); } /* Cyan: console_init */"),
+            ("\tsched_init();", "\tsched_init();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000FF00, 506, 4); } /* Lime: sched_init */"),
+            ("\tmapping_free_prime();", "\tmapping_free_prime();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FFFF00, 512, 4); } /* Yellow: mapping_free_prime */"),
+            ("\tmachine_init();", "\tmachine_init();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000BFFF, 518, 4); } /* DeepSkyBlue: machine_init */"),
+            ("\tclock_init();", "\tclock_init();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00BA55D3, 524, 4); } /* MediumOrchid: clock_init */"),
+            ("\ttask_init();", "\ttask_init();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x001E90FF, 530, 4); } /* DodgerBlue: task_init */"),
+            ("\tthread_init();", "\tthread_init();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF1493, 536, 4); } /* DeepPink: thread_init */"),
+            ("\tresult = kernel_thread_create((thread_continue_t)kernel_bootstrap_thread, NULL, MAXPRI_KERNEL, &thread);",
+             "\tresult = kernel_thread_create((thread_continue_t)kernel_bootstrap_thread, NULL, MAXPRI_KERNEL, &thread);\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000FF7F, 542, 4); } /* SpringGreen: kernel_thread_create */"),
+        ]
+        for t_step, r_step in kb_steps:
+            if t_step in c10:
+                c10 = c10.replace(t_step, r_step, 1)
+                print(f"  [OK] osfmk/kern/startup.c: {t_step.strip()[:30]} instrumented")
+
+        # Step milestones in kernel_bootstrap_thread
+        kbt_steps = [
+            ("\tidle_thread_create(processor);", "\tidle_thread_create(processor);\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FFD700, 550, 4); } /* Gold: idle_thread_create */"),
+            ("\tsched_startup();", "\tsched_startup();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF8C00, 556, 4); } /* DarkOrange: sched_startup */"),
+            ("\tbsd_init();", "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FFFFFF, 570, 8); } /* White: entering bsd_init! */\n\tbsd_init();"),
+        ]
+        for t_step, r_step in kbt_steps:
+            if t_step in c10:
+                c10 = c10.replace(t_step, r_step, 1)
+                print(f"  [OK] osfmk/kern/startup.c: {t_step.strip()[:30]} instrumented")
 
         with open(p10, "w", encoding="utf-8", newline="\n") as f:
             f.write(c10)
