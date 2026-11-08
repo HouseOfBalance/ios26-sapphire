@@ -50,19 +50,24 @@ def main():
 
         replacement_init = """\textern void hk_draw_band(uint32_t color, uint32_t row_start, uint32_t row_count);
 	extern void hk_draw_band_direct(uint32_t color, uint32_t row_start, uint32_t row_count);
-	hk_draw_band(0x00FFA500, 50, 4);   /* hakios visual marker: Orange at rows 50-53 (legacy drawer) */
+	extern void hk_con_clear(void);
+	extern void hk_con_puts(const char *s);
+	extern void hk_con_hex(uint64_t val);
 	__asm__ volatile ("msr cpacr_el1, %0; isb" : : "r" (3ULL << 20) : "memory");
-	hk_draw_band_direct(0x00FFFF00, 55, 4); /* hakios visual marker: Yellow at rows 55-58 (Phase 1 direct VA drawer) */
-\tloader_checkpoint(30);   /* hakios: reached arm_init (C) at all (ret from start.s worked) */
-\thk_draw_band(0x0000FF00, 60, 10);   /* hakios visual marker: Green at rows 60-69 (past CP30, about to slide/rebase) */
-\tarm_slide_rebase_and_sign_image();
-\tloader_checkpoint(31);   /* past slide/rebase/sign */
-\thk_draw_band(0x00800080, 70, 10);   /* hakios visual marker: Purple at rows 70-79 (past slide/rebase) */
-
-\t// hakios: bypass arm_static_if_init on Cortex-A73 (uses blraa with chained fixup pointers)
-\t// arm_static_if_init(args);
-\tloader_checkpoint(32);   /* past static_if_init */
-\thk_draw_band(0x00FFFF00, 80, 10);   /* hakios visual marker: Yellow at rows 80-89 (past static_if_init) */"""
+	hk_con_clear();
+	hk_con_puts("========================================\n");
+	hk_con_puts("   HakiOS 12377 (iOS 26) on Sapphire    \n");
+	hk_con_puts("========================================\n");
+	hk_con_puts("[*] arm_init: screen cleared to console\n");
+	hk_con_puts("[*] CPACR_EL1 FP/SIMD enabled\n");
+	hk_draw_band_direct(0x00FFFF00, 55, 4);
+	loader_checkpoint(30);
+	arm_slide_rebase_and_sign_image();
+	loader_checkpoint(31);
+	hk_con_puts("[*] Slide and rebase OK\n");
+	// arm_static_if_init(args);
+	loader_checkpoint(32);
+	hk_con_puts("[*] static_if_init bypassed\n");"""
 
         target_cpu = """\tloader_checkpoint(4);   /* before cpu_data_init */
 \tcpu_data_init(&BootCpuData);
@@ -140,6 +145,7 @@ def main():
         replacement_vm = """	extern void hk_draw_band_direct(uint32_t color, uint32_t row_start, uint32_t row_count);
 	hk_draw_band_direct(0x0000FA9A, 158, 2);  /* hakios visual marker: Medium Spring Green at rows 158-159 (before arm_vm_init) */
 \tarm_vm_init(xmaxmem, args);
+	hk_con_puts("[*] arm_vm_init OK\n");
 	hk_draw_band_direct(0x00FF007F, 160, 3);  /* hakios visual marker: Rose at rows 160-162 (past arm_vm_init) */"""
 
         target_serial = """\tconst unsigned int serial_exists = serial_init();
@@ -251,6 +257,7 @@ def main():
         else:
             print("  [WARN] target_mstart not found in arm_init.c")
 
+        c_norm += '\n/* ====================================================================\n * hakios: direct on-screen framebuffer text console\n * ==================================================================== */\nextern const unsigned char iso_font[];\nstatic uint32_t hk_con_x = 24;\nstatic uint32_t hk_con_y = 60;\n\nvoid hk_con_clear(void)\n{\n\tvolatile uint32_t *fb = (volatile uint32_t *)0xfffffff004000000ULL;\n\tfor (uint32_t i = 0; i < 1080 * 2400; i++) {\n\t\tfb[i] = 0x00000000;\n\t}\n\thk_con_x = 24;\n\thk_con_y = 60;\n}\n\nvoid hk_con_putc(char c)\n{\n\tvolatile uint32_t *fb = (volatile uint32_t *)0xfffffff004000000ULL;\n\n\tif (c == \'\\r\') {\n\t\thk_con_x = 24;\n\t\treturn;\n\t}\n\tif (c == \'\\n\') {\n\t\thk_con_x = 24;\n\t\thk_con_y += 34;\n\t\tif (hk_con_y >= 2350) {\n\t\t\thk_con_y = 60;\n\t\t}\n\t\treturn;\n\t}\n\tif ((unsigned char)c < 32 || (unsigned char)c > 126) {\n\t\tc = \' \';\n\t}\n\n\tconst unsigned char *glyph = &iso_font[(unsigned char)c * 16];\n\tuint32_t base_offset = (hk_con_y * 1080) + hk_con_x;\n\n\tfor (int row = 0; row < 16; row++) {\n\t\tunsigned char bits = glyph[row];\n\t\tuint32_t y0 = base_offset + (row * 2 * 1080);\n\t\tuint32_t y1 = y0 + 1080;\n\t\tfor (int col = 0; col < 8; col++) {\n\t\t\tuint32_t color = (bits & (1u << col)) ? 0x00FFFFFF : 0x00000000;\n\t\t\tuint32_t x0 = col * 2;\n\t\t\tfb[y0 + x0] = color;\n\t\t\tfb[y0 + x0 + 1] = color;\n\t\t\tfb[y1 + x0] = color;\n\t\t\tfb[y1 + x0 + 1] = color;\n\t\t}\n\t}\n\n\thk_con_x += 16;\n\tif (hk_con_x + 16 >= 1060) {\n\t\thk_con_x = 24;\n\t\thk_con_y += 34;\n\t\tif (hk_con_y >= 2350) {\n\t\t\thk_con_y = 60;\n\t\t}\n\t}\n}\n\nvoid hk_con_puts(const char *s)\n{\n\tif (!s) return;\n\twhile (*s) {\n\t\thk_con_putc(*s++);\n\t}\n}\n\nvoid hk_con_hex(uint64_t val)\n{\n\tstatic const char hexchars[] = "0123456789abcdef";\n\thk_con_puts("0x");\n\tfor (int i = 60; i >= 0; i -= 4) {\n\t\thk_con_putc(hexchars[(val >> i) & 0xf]);\n\t}\n}\n'
         with open(p1, "w", encoding="utf-8", newline="\n") as f:
             f.write(c_norm)
 
@@ -488,7 +495,8 @@ def main():
 \t\t\thk_fmsg[n++] = '\\n';
 
 \t\t\thk_fmsg[n] = '\\0';
-\t\t\thk_render_screen_asm(hk_fmsg, n, iso_font);
+\t\t\t{ extern void hk_con_puts(const char *); hk_con_puts(hk_fmsg); }
+			hk_render_screen_asm(hk_fmsg, n, iso_font);
 \t\t}
 \t\t}
 \t\t/* Check repetitive abort loop on identical PC */
@@ -567,7 +575,8 @@ sleh_invalid_stack(arm_context_t *context, uint64_t esr __unused, vm_offset_t fa
 \t\t\t__asm__ volatile ("dc civac, %0" : : "r" (p));
 \t\t}
 \t\t__asm__ volatile ("dsb sy");
-\t\thk_render_screen_asm(emsg, pos, iso_font);
+\t\t{ extern void hk_con_puts(const char *); hk_con_puts(emsg); }
+		hk_render_screen_asm(emsg, pos, iso_font);
 \t\thk_draw_band_stackless(0x00FF00FF, 220, 4); /* Magenta: early panic rendered (220..223) */
 \t\tfor (;;) {
 \t\t\t__asm__ volatile ("wfe");
@@ -2037,7 +2046,9 @@ kernel_debug_string_early(const char *message)
 \t__asm__ volatile ("msr daifset, #0xf; isb");
 \t{
 \t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
-\t\thk_draw_band(0x00FF7F50, 288, 2); /* Coral: vm_page_bootstrap entered */
+\t\thk_draw_band(0x00FF7F50, 288, 2);
+		extern void hk_con_puts(const char *s);
+		hk_con_puts("[*] vm_page_bootstrap entered\n");
 \t}"""
         if t16_entry in c16:
             c16 = c16.replace(t16_entry, r16_entry, 1)
@@ -2050,12 +2061,16 @@ kernel_debug_string_early(const char *message)
         r16_pms_call = """	kernel_debug_string_early("pmap_startup");
 	{
 		extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
-		hk_draw_band_direct(0x0000FFFF, 294, 2); /* Cyan: pmap_startup entered */
+		hk_draw_band_direct(0x0000FFFF, 294, 2);
+		extern void hk_con_puts(const char *s);
+		hk_con_puts("[*] pmap_startup entered\n");
 	}
 	pmap_startup(&virtual_space_start, &virtual_space_end);
 	{
 		extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
-		hk_draw_band_direct(0x0032CD32, 292, 4); /* Lime: pmap_startup returned to vm_page_bootstrap */
+		hk_draw_band_direct(0x0032CD32, 292, 4);
+		extern void hk_con_puts(const char *s);
+		hk_con_puts("[*] pmap_startup returned OK\n");
 	}"""
         if t16_pms_call in c16:
             c16 = c16.replace(t16_pms_call, r16_pms_call, 1)
@@ -2085,7 +2100,9 @@ kernel_debug_string_early(const char *message)
 \t/* hakios: bypass premature printf before kmem/console init and draw milestone */
 \t{
 \t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
-\t\thk_draw_band_direct(0x00FFFFFF, 356, 4); /* White: vm_page_bootstrap about to complete */
+\t\thk_draw_band_direct(0x00FFFFFF, 356, 4);
+		extern void hk_con_puts(const char *s);
+		hk_con_puts("[*] vm_page_bootstrap completed OK\n");
 \t}
 
 \tkernel_debug_string_early("vm_page_bootstrap complete");"""
@@ -2349,18 +2366,20 @@ kernel_debug_string_early(const char *message)
 \tvm_page_bootstrap(&start, &end);
 \t{
 \t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
-\t\thk_draw_band_direct(0x0000FF00, 360, 6); /* Lime Green: vm_page_bootstrap returned */
+\t\thk_draw_band_direct(0x0000FF00, 360, 6);
+		extern void hk_con_puts(const char *s);
+		hk_con_puts("[*] vm_page_bootstrap returned to vm_init\n");
 \t}"""
         if t17 in c17:
             c17 = c17.replace(t17, r17, 1)
-            c17 = c17.replace('zone_bootstrap();', 'zone_bootstrap();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000FFFF, 368, 6); }', 1)
-            c17 = c17.replace('vm_object_bootstrap();', 'vm_object_bootstrap();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF1493, 376, 6); }', 1)
-            c17 = c17.replace('vm_retire_boot_pages();', 'vm_retire_boot_pages();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FFFF00, 384, 6); }', 1)
-            c17 = c17.replace('vm_map_init();', 'vm_map_init();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x009400D3, 392, 6); }', 1)
-            c17 = c17.replace('kmem_init(start, end);', 'kmem_init(start, end);\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000BFFF, 400, 6); }', 1)
-            c17 = c17.replace('kernel_startup_initialize_upto(STARTUP_SUB_KMEM);', '{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF8C00, 408, 6); } /* Dark Orange: entering STARTUP_SUB_KMEM */\n\tkernel_startup_initialize_upto(STARTUP_SUB_KMEM);\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FFFFFF, 416, 6); } /* White: STARTUP_SUB_KMEM done */', 1)
+            c17 = c17.replace('zone_bootstrap();', 'zone_bootstrap();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000FFFF, 368, 6); extern void hk_con_puts(const char *s); hk_con_puts("[*] zone_bootstrap completed OK\n"); }', 1)
+            c17 = c17.replace('vm_object_bootstrap();', 'vm_object_bootstrap();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF1493, 376, 6); extern void hk_con_puts(const char *s); hk_con_puts("[*] vm_object_bootstrap completed OK\n"); }', 1)
+            c17 = c17.replace('vm_retire_boot_pages();', 'vm_retire_boot_pages();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FFFF00, 384, 6); extern void hk_con_puts(const char *s); hk_con_puts("[*] vm_retire_boot_pages completed OK\n"); }', 1)
+            c17 = c17.replace('vm_map_init();', 'vm_map_init();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x009400D3, 392, 6); extern void hk_con_puts(const char *s); hk_con_puts("[*] vm_map_init completed OK\n"); }', 1)
+            c17 = c17.replace('kmem_init(start, end);', 'kmem_init(start, end);\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000BFFF, 400, 6); extern void hk_con_puts(const char *s); hk_con_puts("[*] kmem_init completed OK\n"); }', 1)
+            c17 = c17.replace('kernel_startup_initialize_upto(STARTUP_SUB_KMEM);', '{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF8C00, 408, 6); } /* Dark Orange: entering STARTUP_SUB_KMEM */\n\tkernel_startup_initialize_upto(STARTUP_SUB_KMEM);\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FFFFFF, 416, 6); extern void hk_con_puts(const char *s); hk_con_puts("[*] STARTUP_SUB_KMEM completed OK\n"); }', 1)
             c17 = c17.replace('vm_fault_init();', 'vm_fault_init();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FFA500, 424, 6); }', 1)
-            c17 = c17.replace('kernel_startup_initialize_upto(STARTUP_SUB_ZALLOC);', '{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x007FFF00, 432, 6); } /* Chartreuse: entering STARTUP_SUB_ZALLOC */\n\tkernel_startup_initialize_upto(STARTUP_SUB_ZALLOC);\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000FF7F, 440, 6); } /* Spring Green: STARTUP_SUB_ZALLOC done */', 1)
+            c17 = c17.replace('kernel_startup_initialize_upto(STARTUP_SUB_ZALLOC);', '{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x007FFF00, 432, 6); } /* Chartreuse: entering STARTUP_SUB_ZALLOC */\n\tkernel_startup_initialize_upto(STARTUP_SUB_ZALLOC);\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000FF7F, 440, 6); extern void hk_con_puts(const char *s); hk_con_puts("[*] STARTUP_SUB_ZALLOC completed OK\n"); }', 1)
             with open(p17, "w", encoding="utf-8", newline="\n") as f:
                 f.write(c17)
             print("  [OK] osfmk/vm/vm_init.c: vm_mem_bootstrap milestone bands installed")
@@ -2675,7 +2694,9 @@ lck_mtx_assert(lck_mtx_t *lock, unsigned int type)
         with open(p26, "r", encoding="utf-8", errors="replace") as f:
             c26 = f.read().replace("\r\n", "\n")
         z_pat = re.compile(r'void\s+zone_bootstrap\(void\)\s*\{')
-        rz_entry = """void\nzone_bootstrap(void)\n{\n\textern int PAGE_SHIFT_CONST;\n\tif (PAGE_SHIFT_CONST <= 5) {\n\t\tPAGE_SHIFT_CONST = 14;\n\t}\n\t{\n\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);\n\t\thk_draw_band_direct(0x0032CD32, 362, 4); /* Lime: zone_bootstrap entered */\n\t}"""
+        rz_entry = """void\nzone_bootstrap(void)\n{\n\textern int PAGE_SHIFT_CONST;\n\tif (PAGE_SHIFT_CONST <= 5) {\n\t\tPAGE_SHIFT_CONST = 14;\n\t}\n\t{\n\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);\n\t\thk_draw_band_direct(0x0032CD32, 362, 4);
+		extern void hk_con_puts(const char *s);
+		hk_con_puts("[*] zone_bootstrap starting...\n");\n\t}"""
         if "/* Lime: zone_bootstrap entered */" in c26:
             print("  [ALREADY PATCHED] osfmk/kern/zalloc.c: zone_bootstrap markers already present")
         elif z_pat.search(c26):
@@ -2685,6 +2706,24 @@ lck_mtx_assert(lck_mtx_t *lock, unsigned int type)
             print("  [OK] osfmk/kern/zalloc.c: zone_bootstrap entry marker & PAGE_SHIFT_CONST clamp installed")
         else:
             print("  [WARN] zone_bootstrap not found in zalloc.c")
+
+    # 27. pexpert/arm64/pe_serial.c (mirror serial/kprintf output to on-screen console)
+    p27 = os.path.join(src, "pexpert", "arm64", "pe_serial.c")
+    if os.path.isfile(p27):
+        with open(p27, "r", encoding="utf-8", errors="replace") as f:
+            c27 = f.read().replace("\r\n", "\n")
+        t27 = "loader_log_putc(c);\n\tuart_putc(c);"
+        r27 = "loader_log_putc(c);\n\t{ extern void hk_con_putc(char c); hk_con_putc(c); }\n\tuart_putc(c);"
+        if "hk_con_putc(c);" in c27:
+            print("  [ALREADY PATCHED] pexpert/arm64/pe_serial.c: hk_con_putc mirror already present")
+        elif t27 in c27:
+            c27 = c27.replace(t27, r27, 1)
+            with open(p27, "w", encoding="utf-8", newline="\n") as f:
+                f.write(c27)
+            print("  [OK] pexpert/arm64/pe_serial.c: mirrored serial_putc to on-screen console")
+        else:
+            print("  [WARN] t27 not found in pe_serial.c")
+
 
     # Post-patch verification assertions: verify files on disk actually contain the patches!
     print("=== Post-patch Verification on Disk ===")
