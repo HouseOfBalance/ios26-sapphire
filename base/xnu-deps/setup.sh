@@ -43,7 +43,13 @@ fetch() {
 	rm -rf "$1"
 	git init -q "$1"
 	git -C "$1" remote add origin "$2"
-	git -C "$1" fetch -q --depth 1 origin "$3" || die "cannot fetch $3 from $2"
+	for attempt in 1 2 3 4 5; do
+		if git -C "$1" fetch -q --depth 1 origin "$3"; then
+			break
+		fi
+		[ $attempt -eq 5 ] && die "cannot fetch $3 from $2 after 5 attempts"
+		sleep 2
+	done
 	git -C "$1" -c advice.detachedHead=false checkout -q FETCH_HEAD
 }
 
@@ -83,7 +89,7 @@ stage1() {
 	# would generate, which the macOS SDK of the same XNU release ships ready-made.
 	if [ ! -d MacOSX13.3.sdk/System/Library/Frameworks/Kernel.framework/Headers/DriverKit ]; then
 		log "downloading the macOS 13.3 SDK for its DriverKit headers"
-		curl -L --fail --retry 3 -s -o macos-sdk.tar.xz "$MACOS_SDK_URL" || die "download failed: $MACOS_SDK_URL"
+		curl -L --fail --retry 5 --retry-delay 2 -s -o macos-sdk.tar.xz "$MACOS_SDK_URL" || die "download failed: $MACOS_SDK_URL"
 		tar -xJf macos-sdk.tar.xz --wildcards '*MacOSX13.3.sdk/System/Library/Frameworks/Kernel.framework*' ||
 			die "cannot unpack the macOS SDK"
 		rm -f macos-sdk.tar.xz
