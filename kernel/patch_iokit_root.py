@@ -7,8 +7,10 @@ Target Device: Xiaomi Redmi Note 13 4G (Qualcomm Snapdragon SM6225 Bengal)
 
 Instruments IOFindBSDRoot in iokit/bsddev/IOKitBSDInit.cpp to trace root device resolution
 and ensure immediate detection of memory disk root (rd=md0):
-  - Row 600: IOFindBSDRoot entered (Dark Cyan)
-  - Row 610: Memory disk root (md0) registered and selected (Lime)
+  - Row 638: IOFindBSDRoot entered (Dark Cyan)
+  - Row 640: Memory disk root (rd=md0) boot argument parsed (Lime)
+  - Row 641: RAMDisk registered via mdevadd as md0 (Deep Pink)
+Uses 100% direct VA drawer (hk_draw_band_direct) with zero MMU toggles.
 """
 
 import os
@@ -29,7 +31,7 @@ def patch_iokit_root(src_dir):
         print("  [OK] iokit/bsddev/IOKitBSDInit.cpp: root bands already installed")
         return True
 
-    # 1. IOFindBSDRoot entry band
+    # 1. IOFindBSDRoot entry band (Row 638: Dark Cyan)
     idx = c.find("IOFindBSDRoot(")
     if idx != -1:
         brace_idx = c.find("{\n", idx)
@@ -37,36 +39,38 @@ def patch_iokit_root(src_dir):
             insert_pos = brace_idx + 2
             entry_band = (
                 "\t/* hakios: iokit root resolution visual ladder bands */\n"
-                "\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00008B8B, 600, 4); } /* Dark Cyan: IOFindBSDRoot entered */\n"
+                "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00008B8B, 638, 4); } /* Dark Cyan: IOFindBSDRoot entered (row 638) */\n"
             )
             c = c[:insert_pos] + entry_band + c[insert_pos:]
-            print("  [OK] iokit/bsddev/IOKitBSDInit.cpp: IOFindBSDRoot entry band installed (row 600)")
+            print("  [OK] iokit/bsddev/IOKitBSDInit.cpp: IOFindBSDRoot entry band installed (row 638)")
         else:
             print("  [WARN] iokit/bsddev/IOKitBSDInit.cpp: opening brace for IOFindBSDRoot not found")
     else:
         print("  [WARN] iokit/bsddev/IOKitBSDInit.cpp: IOFindBSDRoot function signature not found")
 
-    # 2. md0 root selection band: hook directly into the rd=md fastpath
-    t_md0 = "rootName[0] = 'm';"
+    # 2. md0 root selection band: hook into the rd=md detection
+    t_md0 = "bsdWait = kSecondScale / 10;"
     r_md0 = (
-        "rootName[0] = 'm';\n"
-        "\t\t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x0000FF00, 610, 4); } /* Lime: rd=md0 selected */"
+        "bsdWait = kSecondScale / 10;\n"
+        "\t\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000FF00, 640, 4); } /* Lime: rd=md root detected (row 640) */"
     )
     if t_md0 in c:
         c = c.replace(t_md0, r_md0, 1)
-        print("  [OK] iokit/bsddev/IOKitBSDInit.cpp: rd=md0 selection band installed (row 610)")
+        print("  [OK] iokit/bsddev/IOKitBSDInit.cpp: rd=md0 detection band installed (row 640)")
     else:
-        # Fallback to alternative anchor
-        t_md0_alt = "bsdWait = kSecondScale / 10;"
-        r_md0_alt = (
-            "bsdWait = kSecondScale / 10;\n"
-            "\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x0000FF00, 610, 4); } /* Lime: rd=md0 selected */"
-        )
-        if t_md0_alt in c:
-            c = c.replace(t_md0_alt, r_md0_alt, 1)
-            print("  [OK] iokit/bsddev/IOKitBSDInit.cpp: rd=md0 selection band installed via bsdWait (row 610)")
-        else:
-            print("  [WARN] iokit/bsddev/IOKitBSDInit.cpp: rootName[0] = 'm' and bsdWait patterns not found")
+        print("  [WARN] iokit/bsddev/IOKitBSDInit.cpp: bsdWait pattern not found")
+
+    # 3. mdevadd RAMDisk registration band (Row 641: Deep Pink)
+    t_mdev = "(void)mdevadd(-1, ml_static_ptovirt(ramdParms[0]) >> 12, (unsigned int) (ramdParms[1] >> 12), 0);"
+    r_mdev = (
+        "(void)mdevadd(-1, ml_static_ptovirt(ramdParms[0]) >> 12, (unsigned int) (ramdParms[1] >> 12), 0);\n"
+        "\t\t\t\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF1493, 641, 4); } /* Deep Pink: RAMDisk registered as md0 (row 641) */"
+    )
+    if t_mdev in c:
+        c = c.replace(t_mdev, r_mdev, 1)
+        print("  [OK] iokit/bsddev/IOKitBSDInit.cpp: RAMDisk registration band installed (row 641)")
+    else:
+        print("  [WARN] iokit/bsddev/IOKitBSDInit.cpp: mdevadd RAMDisk pattern not found")
 
     with open(target, "w", encoding="utf-8", newline="\n") as f:
         f.write(c)

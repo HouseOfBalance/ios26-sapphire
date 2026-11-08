@@ -47,31 +47,51 @@ def patch_bsd_init(src_dir):
     else:
         print("  [WARN] bsd/kern/bsd_init.c: bsd_init(void) entry pattern not found")
 
-    # 2. bcache_init band
-    t_bcache = "bcache_init();"
+    # 2. bsd_bufferinit band (Row 606: Orange)
+    t_bcache = "bsd_bufferinit();"
     r_bcache = (
-        "bcache_init();\n"
-        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FFA500, 606, 4); } /* Orange: bcache_init done */"
+        "bsd_bufferinit();\n"
+        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FFA500, 606, 4); } /* Orange: bsd_bufferinit done */"
     )
     if t_bcache in c:
         c = c.replace(t_bcache, r_bcache, 1)
-        print("  [OK] bsd/kern/bsd_init.c: bcache_init band installed (row 606)")
+        print("  [OK] bsd/kern/bsd_init.c: bsd_bufferinit band installed (row 606)")
     else:
-        print("  [WARN] bsd/kern/bsd_init.c: bcache_init() pattern not found")
+        # Fallback to legacy bcache_init if present
+        t_bcache_alt = "bcache_init();"
+        if t_bcache_alt in c:
+            r_bcache_alt = (
+                "bcache_init();\n"
+                "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FFA500, 606, 4); } /* Orange: bcache_init done */"
+            )
+            c = c.replace(t_bcache_alt, r_bcache_alt, 1)
+            print("  [OK] bsd/kern/bsd_init.c: bcache_init band installed via alt anchor (row 606)")
+        else:
+            print("  [WARN] bsd/kern/bsd_init.c: bsd_bufferinit/bcache_init pattern not found")
 
-    # 3. vfs_init band
-    t_vfs = "vfs_init();"
+    # 3. vfsinit band (Row 612: Yellow Green)
+    t_vfs = "vfsinit();"
     r_vfs = (
-        "vfs_init();\n"
-        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x009ACD32, 612, 4); } /* Yellow Green: vfs_init done */"
+        "vfsinit();\n"
+        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x009ACD32, 612, 4); } /* Yellow Green: vfsinit done */"
     )
     if t_vfs in c:
         c = c.replace(t_vfs, r_vfs, 1)
-        print("  [OK] bsd/kern/bsd_init.c: vfs_init band installed (row 612)")
+        print("  [OK] bsd/kern/bsd_init.c: vfsinit band installed (row 612)")
     else:
-        print("  [WARN] bsd/kern/bsd_init.c: vfs_init() pattern not found")
+        # Fallback to legacy vfs_init if present
+        t_vfs_alt = "vfs_init();"
+        if t_vfs_alt in c:
+            r_vfs_alt = (
+                "vfs_init();\n"
+                "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x009ACD32, 612, 4); } /* Yellow Green: vfs_init done */"
+            )
+            c = c.replace(t_vfs_alt, r_vfs_alt, 1)
+            print("  [OK] bsd/kern/bsd_init.c: vfs_init band installed via alt anchor (row 612)")
+        else:
+            print("  [WARN] bsd/kern/bsd_init.c: vfsinit/vfs_init pattern not found")
 
-    # 4. devfs_kernel_mount band
+    # 4. devfs_kernel_mount band (Row 618: Dodger Blue)
     t_devfs = "devfs_kernel_mount(mounthere);"
     r_devfs = (
         "devfs_kernel_mount(mounthere);\n"
@@ -83,29 +103,49 @@ def patch_bsd_init(src_dir):
     else:
         print("  [WARN] bsd/kern/bsd_init.c: devfs_kernel_mount pattern not found")
 
-    # 5. mbuf_init band
-    t_mbuf = "mbuf_init();"
+    # 5. mbinit band (Row 624: Medium Orchid)
+    t_mbuf = "mbinit();"
     r_mbuf = (
-        "mbuf_init();\n"
-        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00BA55D3, 624, 4); } /* Medium Orchid: mbuf_init done */"
+        "mbinit();\n"
+        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00BA55D3, 624, 4); } /* Medium Orchid: mbinit done */"
     )
     if t_mbuf in c:
         c = c.replace(t_mbuf, r_mbuf, 1)
-        print("  [OK] bsd/kern/bsd_init.c: mbuf_init band installed (row 624)")
+        print("  [OK] bsd/kern/bsd_init.c: mbinit band installed (row 624)")
     else:
-        print("  [WARN] bsd/kern/bsd_init.c: mbuf_init() pattern not found")
+        # Fallback to legacy mbuf_init if present
+        t_mbuf_alt = "mbuf_init();"
+        if t_mbuf_alt in c:
+            r_mbuf_alt = (
+                "mbuf_init();\n"
+                "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00BA55D3, 624, 4); } /* Medium Orchid: mbuf_init done */"
+            )
+            c = c.replace(t_mbuf_alt, r_mbuf_alt, 1)
+            print("  [OK] bsd/kern/bsd_init.c: mbuf_init band installed via alt anchor (row 624)")
+        else:
+            print("  [WARN] bsd/kern/bsd_init.c: mbinit/mbuf_init pattern not found")
 
-    # 6. net_init band
-    t_net = "net_init();"
+    # 6. net_init_run band (Row 630: Hot Pink)
+    t_net = "net_init_run();"
     r_net = (
-        "net_init();\n"
-        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF69B4, 630, 4); } /* Hot Pink: net_init done */"
+        "net_init_run();\n"
+        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF69B4, 630, 4); } /* Hot Pink: net_init_run done */"
     )
     if t_net in c:
         c = c.replace(t_net, r_net, 1)
-        print("  [OK] bsd/kern/bsd_init.c: net_init band installed (row 630)")
+        print("  [OK] bsd/kern/bsd_init.c: net_init_run band installed (row 630)")
     else:
-        print("  [WARN] bsd/kern/bsd_init.c: net_init() pattern not found")
+        # Fallback to legacy net_init if present
+        t_net_alt = "net_init();"
+        if t_net_alt in c:
+            r_net_alt = (
+                "net_init();\n"
+                "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF69B4, 630, 4); } /* Hot Pink: net_init done */"
+            )
+            c = c.replace(t_net_alt, r_net_alt, 1)
+            print("  [OK] bsd/kern/bsd_init.c: net_init band installed via alt anchor (row 630)")
+        else:
+            print("  [WARN] bsd/kern/bsd_init.c: net_init_run/net_init pattern not found")
 
     # 7. bsd_init completed band (Row 636: Cyan)
     t_done = 'bsd_init_kprintf("calling bsd_autoconf\\n");'
@@ -336,17 +376,17 @@ hk_kva_text(const char *s, uint32_t len, uint32_t row)
 void
 hk_run_pid1_diagnostics(void)
 {
-	extern void hk_draw_band(uint32_t, uint32_t, uint32_t);
+	extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
 
 	/* 1. CALIBRATION LADDER (Distinct Colors & Thicknesses) */
-	hk_draw_band(0x00FF0000, 100, 16);  /* Row 100: Red (16 rows) */
-	hk_draw_band(0x00FF8C00, 300, 24);  /* Row 300: Dark Orange (24 rows) */
-	hk_draw_band(0x00FFFF00, 500, 32);  /* Row 500: Yellow (32 rows) */
-	hk_draw_band(0x0000FF00, 700, 40);  /* Row 700: Green (40 rows) */
-	hk_draw_band(0x0000FFFF, 900, 48);  /* Row 900: Cyan (48 rows) */
-	hk_draw_band(0x000000FF, 1100, 56); /* Row 1100: Blue (56 rows) */
-	hk_draw_band(0x00FFFFFF, 1300, 64); /* Row 1300: White (64 rows) */
-	hk_draw_band(0x00FF1493, 2380, 20); /* Row 2380: Deep Pink panel bottom probe */
+	hk_draw_band_direct(0x00FF0000, 100, 16);  /* Row 100: Red (16 rows) */
+	hk_draw_band_direct(0x00FF8C00, 300, 24);  /* Row 300: Dark Orange (24 rows) */
+	hk_draw_band_direct(0x00FFFF00, 500, 32);  /* Row 500: Yellow (32 rows) */
+	hk_draw_band_direct(0x0000FF00, 700, 40);  /* Row 700: Green (40 rows) */
+	hk_draw_band_direct(0x0000FFFF, 900, 48);  /* Row 900: Cyan (48 rows) */
+	hk_draw_band_direct(0x000000FF, 1100, 56); /* Row 1100: Blue (56 rows) */
+	hk_draw_band_direct(0x00FFFFFF, 1300, 64); /* Row 1300: White (64 rows) */
+	hk_draw_band_direct(0x00FF1493, 2380, 20); /* Row 2380: Deep Pink panel bottom probe */
 
 	/* 2. NIBBLE GAUGE: 16 colors for 4-bit nibbles */
 	static const uint32_t nibble_palette[16] = {
@@ -357,39 +397,39 @@ hk_run_pid1_diagnostics(void)
 	};
 
 	/* Gauge Block A: vinfo.v_baseaddr (16 nibbles, rows 1400..1527) */
-	hk_draw_band(0x00FF1493, 1390, 8); /* Pink guide header */
+	hk_draw_band_direct(0x00FF1493, 1390, 8); /* Pink guide header */
 	uint64_t g_val = (uint64_t)vinfo.v_baseaddr;
 	for (int ni = 15; ni >= 0; ni--) {
 		uint32_t n_val = (uint32_t)((g_val >> (ni * 4)) & 0xF);
-		hk_draw_band(nibble_palette[n_val], 1400 + (15 - ni) * 8, 8);
+		hk_draw_band_direct(nibble_palette[n_val], 1400 + (15 - ni) * 8, 8);
 	}
 
 	/* Gauge Block B: vinfo.v_rowbytes (8 nibbles, rows 1540..1603) */
-	hk_draw_band(0x00FF1493, 1534, 4); /* Pink guide header */
+	hk_draw_band_direct(0x00FF1493, 1534, 4); /* Pink guide header */
 	uint32_t g_rb = (uint32_t)vinfo.v_rowbytes;
 	for (int ni = 7; ni >= 0; ni--) {
 		uint32_t n_val = (g_rb >> (ni * 4)) & 0xF;
-		hk_draw_band(nibble_palette[n_val], 1540 + (7 - ni) * 8, 8);
+		hk_draw_band_direct(nibble_palette[n_val], 1540 + (7 - ni) * 8, 8);
 	}
 
 	/* Gauge Block C: State flags (rows 1610..1630) */
 	/* kernel_map status: Lime if != NULL, Red if NULL */
-	hk_draw_band((kernel_map != VM_MAP_NULL) ? 0x0000FF00 : 0x00FF0000, 1610, 8);
+	hk_draw_band_direct((kernel_map != VM_MAP_NULL) ? 0x0000FF00 : 0x00FF0000, 1610, 8);
 	/* makeMapping state: Cyan if TRUE, Magenta if FALSE, Blue if never run */
 	int ms = hk_fb_mapping_state();
-	hk_draw_band((ms > 0) ? 0x0000FFFF : (ms == 0 ? 0x00FF00FF : 0x000000FF), 1620, 8);
+	hk_draw_band_direct((ms > 0) ? 0x0000FFFF : (ms == 0 ? 0x00FF00FF : 0x000000FF), 1620, 8);
 
 	/* 3. TEST ml_io_map_wcomb CALL DIRECTLY */
 	vm_offset_t man_kva = hk_get_manual_kva();
 	/* Row 1640: Lime if manual KVA >= 0xffff000000000000, Red if failed */
-	hk_draw_band(((uint64_t)man_kva >= 0xffff000000000000ULL) ? 0x0000FF00 : 0x00FF0000, 1640, 12);
+	hk_draw_band_direct(((uint64_t)man_kva >= 0xffff000000000000ULL) ? 0x0000FF00 : 0x00FF0000, 1640, 12);
 
 	/* 4. ATTEMPT KVA WRITE (Orange test band on manual KVA) */
 	if ((uint64_t)man_kva >= 0xffff000000000000ULL) {
 		hk_kva_fill(0x00FFA500, 1660, 32); /* 32 rows Orange via KVA */
 	}
-	/* Row 1700: White via MMU-off hk_draw_band to prove CPU survived KVA write! */
-	hk_draw_band(0x00FFFFFF, 1700, 16);
+	/* Row 1700: White via direct VA drawer to prove CPU survived KVA write! */
+	hk_draw_band_direct(0x00FFFFFF, 1700, 16);
 }
 '''
             with open(target_vc, "w", encoding="utf-8", newline="\n") as f:
@@ -430,10 +470,10 @@ hk_run_pid1_diagnostics(void)
                 "\t\t\tuint32_t to_copy = (ulen < sizeof(hk_user_write_buf) - 1) ? (uint32_t)ulen : (sizeof(hk_user_write_buf) - 1);\n"
                 "\t\t\tif (to_copy > 0 && copyin(ubuf, hk_user_write_buf, to_copy) == 0) {\n"
                 "\t\t\t\thk_user_write_buf[to_copy] = '\\0';\n"
-                "\t\t\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);\n"
+                "\t\t\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);\n"
                 "\t\t\t\textern void hk_kva_fill(uint32_t, uint32_t, uint32_t);\n"
                 "\t\t\t\textern void hk_kva_text(const char *, uint32_t, uint32_t);\n"
-                "\t\t\t\thk_draw_band(0x00FFFFFF, 1730, 8);\n"
+                "\t\t\t\thk_draw_band_direct(0x00FFFFFF, 1730, 8);\n"
                 "\t\t\t\thk_kva_fill(0xFF000000, hk_text_row, 32);\n"
                 "\t\t\t\thk_kva_text(hk_user_write_buf, to_copy, hk_text_row);\n"
                 "\t\t\t\thk_text_row += 32;\n"
@@ -451,9 +491,9 @@ hk_run_pid1_diagnostics(void)
                 "\t\t\tgoto hakios_pid1_handled;\n"
                 "\t\t}\n\n"
                 "\t\tif (code == 93 /* SYS_select */) {\n"
-                "\t\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);\n"
+                "\t\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);\n"
                 "\t\t\tstatic uint32_t hb_color = 0x0000FF00;\n"
-                "\t\t\thk_draw_band(hb_color, 1740, 4);\n"
+                "\t\t\thk_draw_band_direct(hb_color, 1740, 4);\n"
                 "\t\t\thb_color = (hb_color == 0x0000FF00) ? 0x0000FFFF : 0x0000FF00;\n"
                 "\t\t}\n"
                 "\t}\n\n"
