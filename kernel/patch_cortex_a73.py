@@ -358,162 +358,58 @@ def main():
 \t\t\treturn;
 \t\t}
 \t}"""
-        sleh_hook_new = """\textern void hk_draw_band(uint32_t color, uint32_t row_start, uint32_t row_count);
-\tif (class == 0) {
+        sleh_hook_new = """\tif (class == 0) {
 \t\tif (pac_patch_handle_trap(state, is_user)) {
 \t\t\treturn;
 \t\t}
 \t\tif (lse_patch_handle_trap(state, is_user)) {
 \t\t\treturn;
 \t\t}
-\t\tif (!is_user) {
-\t\t\tstatic const uint32_t hk_npal[16] = {
-\t\t\t\t0x00000000, 0x000000FF, 0x0000FF00, 0x0000FFFF,
-\t\t\t\t0x00FF0000, 0x00FF00FF, 0x00FFFF00, 0x00FFFFFF,
-\t\t\t\t0x00808080, 0x00000080, 0x00008000, 0x00008080,
-\t\t\t\t0x00800000, 0x00800080, 0x00808000, 0x00FFA500
-\t\t\t};
-\t\t\thk_draw_band(0x00FF0000, 680, 14); /* Thick Red band at Row 680: unhandled kernel UNDEF */
-\t\t\tuint64_t hk_upc = (uint64_t)get_saved_state_pc(state);
-\t\t\tuint64_t hk_uesr = (uint64_t)esr;
-\t\t\tuint64_t hk_ufar = (uint64_t)far;
-\t\t\tuint64_t hk_ulr = (uint64_t)get_saved_state_reg(state, 30);
-\t\t\thk_draw_band(0x00FFFFFF, 820, 8);
-\t\t\thk_draw_band(hk_npal[0], 830, 8);
-\t\t\thk_draw_band(hk_npal[0], 838, 8);
-\t\t\thk_draw_band(0x0000FFFF, 848, 4);
-\t\t\tfor (int ni = 15; ni >= 0; ni--) {
-\t\t\t\thk_draw_band(hk_npal[(hk_upc >> (ni * 4)) & 0xF], 854 + (15 - ni) * 4, 4);
-\t\t\t}
-\t\t\thk_draw_band(0x00FFFF00, 920, 4);
-\t\t\tfor (int ni = 15; ni >= 0; ni--) {
-\t\t\t\thk_draw_band(hk_npal[(hk_uesr >> (ni * 4)) & 0xF], 926 + (15 - ni) * 4, 4);
-\t\t\t}
-\t\t\thk_draw_band(0x00FF69B4, 992, 4);
-\t\t\tfor (int ni = 15; ni >= 0; ni--) {
-\t\t\t\thk_draw_band(hk_npal[(hk_ufar >> (ni * 4)) & 0xF], 998 + (15 - ni) * 4, 4);
-\t\t\t}
-\t\t\thk_draw_band(0x0000FF00, 1064, 4);
-\t\t\tfor (int ni = 15; ni >= 0; ni--) {
-\t\t\t\thk_draw_band(hk_npal[(hk_ulr >> (ni * 4)) & 0xF], 1070 + (15 - ni) * 4, 4);
-\t\t\t}
-\t\t\thk_draw_band(0x00FFFFFF, 1136, 8);
-\t\t\tfor (;;) {
-\t\t\t\t__asm__ volatile ("wfe");
-\t\t\t}
-\t\t}
-\t} else if (!is_user) {
-\t\tstatic const uint32_t hk_npal[16] = {
-\t\t\t0x00000000, 0x000000FF, 0x0000FF00, 0x0000FFFF,
-\t\t\t0x00FF0000, 0x00FF00FF, 0x00FFFF00, 0x00FFFFFF,
-\t\t\t0x00808080, 0x00000080, 0x00008000, 0x00008080,
-\t\t\t0x00800000, 0x00800080, 0x00808000, 0x00FFA500
-\t\t};
+\t}
+\tif (!is_user) {
+\t\textern void hk_con_puts(const char *s);
+\t\textern void hk_con_log(const char *s);
+\t\textern void hk_con_hex(uint64_t val);
+\t\textern void hk_con_putc(char c);
+
 \t\tuint64_t hk_kpc = (uint64_t)get_saved_state_pc(state);
+\t\tuint64_t hk_klr = (uint64_t)get_saved_state_reg(state, 30);
+\t\tuint64_t hk_ksp = (uint64_t)get_saved_state_sp(state);
 \t\tuint64_t hk_kesr = (uint64_t)esr;
 \t\tuint64_t hk_kfar = (uint64_t)far;
-\t\tuint64_t hk_klr = (uint64_t)get_saved_state_reg(state, 30);
-\t\tstatic int hk_gauge_drawn = 0;
-\t\tif (!hk_gauge_drawn) {
-\t\t\thk_gauge_drawn = 1;
-\t\t/* Paint Kernel Fault Diagnostic Gauge in rows 820..1143 */
-\t\thk_draw_band(0x00FFFFFF, 820, 8); /* White header */
-\t\t/* 2 nibbles of class (rows 830..845) */
-\t\thk_draw_band(hk_npal[((uint32_t)class >> 4) & 0xF], 830, 8);
-\t\thk_draw_band(hk_npal[(uint32_t)class & 0xF], 838, 8);
-\t\thk_draw_band(0x0000FFFF, 848, 4); /* Cyan separator */
-\t\t/* 16 nibbles of pc (rows 854..917) */
-\t\tfor (int ni = 15; ni >= 0; ni--) {
-\t\t\thk_draw_band(hk_npal[(hk_kpc >> (ni * 4)) & 0xF], 854 + (15 - ni) * 4, 4);
+
+\t\thk_con_log("=== KERNEL EXCEPTION (EL1) ===");
+\t\thk_con_puts("CLASS: 0x");
+\t\thk_con_hex((uint64_t)class);
+\t\tif (class == 0x25) {
+\t\t\thk_con_puts(" (Data Abort EL1)");
+\t\t} else if (class == 0x21) {
+\t\t\thk_con_puts(" (Inst Abort EL1)");
+\t\t} else if (class == 0x00) {
+\t\t\thk_con_puts(" (Undefined / PAC)");
+\t\t} else if (class == 0x22) {
+\t\t\thk_con_puts(" (PC Alignment)");
+\t\t} else if (class == 0x26) {
+\t\t\thk_con_puts(" (SP Alignment)");
 \t\t}
-\t\thk_draw_band(0x00FFFF00, 920, 4); /* Yellow separator */
-\t\t/* 16 nibbles of esr (rows 926..989) */
-\t\tfor (int ni = 15; ni >= 0; ni--) {
-\t\t\thk_draw_band(hk_npal[(hk_kesr >> (ni * 4)) & 0xF], 926 + (15 - ni) * 4, 4);
-\t\t}
-\t\thk_draw_band(0x00FF69B4, 992, 4); /* Hot Pink separator */
-\t\t/* 16 nibbles of far (rows 998..1061) */
-\t\tfor (int ni = 15; ni >= 0; ni--) {
-\t\t\thk_draw_band(hk_npal[(hk_kfar >> (ni * 4)) & 0xF], 998 + (15 - ni) * 4, 4);
-\t\t}
-\t\thk_draw_band(0x0000FF00, 1064, 4); /* Lime separator */
-\t\t/* 16 nibbles of lr (rows 1070..1133) */
-\t\tfor (int ni = 15; ni >= 0; ni--) {
-\t\t\thk_draw_band(hk_npal[(hk_klr >> (ni * 4)) & 0xF], 1070 + (15 - ni) * 4, 4);
-\t\t}
-\t\thk_draw_band(0x00FFFFFF, 1136, 8); /* White footer */
+\t\thk_con_putc(10);
 
-\t\t/* hakios: Direct on-screen text diagnostic dump */
-\t\t{
-\t\t\textern void hk_render_screen_asm(const char *str, uint32_t len, const unsigned char *font);
-\t\t\textern const unsigned char iso_font[];
-\t\t\tstatic char hk_fmsg[384];
-\t\t\tint n = 0;
-\t\t\tconst char *hdr = "=== HAKIOS EXCEPTION ===\\n";
-\t\t\twhile (*hdr) hk_fmsg[n++] = *hdr++;
+\t\thk_con_puts("PC   : "); hk_con_hex(hk_kpc); hk_con_putc(10);
+\t\thk_con_puts("LR   : "); hk_con_hex(hk_klr); hk_con_putc(10);
+\t\thk_con_puts("SP   : "); hk_con_hex(hk_ksp); hk_con_putc(10);
+\t\thk_con_puts("ESR  : "); hk_con_hex(hk_kesr); hk_con_putc(10);
+\t\thk_con_puts("FAR  : "); hk_con_hex(hk_kfar); hk_con_putc(10);
 
-\t\t\tconst char *cl_pfx = "CLASS: 0x";
-\t\t\twhile (*cl_pfx) hk_fmsg[n++] = *cl_pfx++;
-\t\t\tstatic const char hk_hex[] = "0123456789ABCDEF";
-\t\t\thk_fmsg[n++] = hk_hex[((uint32_t)class >> 4) & 0xF];
-\t\t\thk_fmsg[n++] = hk_hex[(uint32_t)class & 0xF];
-\t\t\tif (class == 0x25) {
-\t\t\t\tconst char *d = " (Data Abort EL1)\\n";
-\t\t\t\twhile (*d) hk_fmsg[n++] = *d++;
-\t\t\t} else if (class == 0x21) {
-\t\t\t\tconst char *d = " (Inst Abort EL1)\\n";
-\t\t\t\twhile (*d) hk_fmsg[n++] = *d++;
-\t\t\t} else {
-\t\t\t\thk_fmsg[n++] = '\\n';
-\t\t\t}
-
-\t\t\tconst char *pc_pfx = "PC   : 0x";
-\t\t\twhile (*pc_pfx) hk_fmsg[n++] = *pc_pfx++;
-\t\t\tfor (int ni = 15; ni >= 0; ni--) hk_fmsg[n++] = hk_hex[(hk_kpc >> (ni * 4)) & 0xF];
-\t\t\thk_fmsg[n++] = '\\n';
-
-\t\t\tconst char *lr_pfx = "LR   : 0x";
-\t\t\twhile (*lr_pfx) hk_fmsg[n++] = *lr_pfx++;
-\t\t\tfor (int ni = 15; ni >= 0; ni--) hk_fmsg[n++] = hk_hex[(hk_klr >> (ni * 4)) & 0xF];
-\t\t\thk_fmsg[n++] = '\\n';
-
-\t\t\tconst char *esr_pfx = "ESR  : 0x";
-\t\t\twhile (*esr_pfx) hk_fmsg[n++] = *esr_pfx++;
-\t\t\tfor (int ni = 15; ni >= 0; ni--) hk_fmsg[n++] = hk_hex[(hk_kesr >> (ni * 4)) & 0xF];
-\t\t\thk_fmsg[n++] = '\\n';
-
-\t\t\tconst char *far_pfx = "FAR  : 0x";
-\t\t\twhile (*far_pfx) hk_fmsg[n++] = *far_pfx++;
-\t\t\tfor (int ni = 15; ni >= 0; ni--) hk_fmsg[n++] = hk_hex[(hk_kfar >> (ni * 4)) & 0xF];
-\t\t\thk_fmsg[n++] = '\\n';
-
-\t\t\thk_fmsg[n] = '\\0';
-\t\t\t{ extern void hk_con_puts(const char *); hk_con_puts(hk_fmsg); }
-			hk_render_screen_asm(hk_fmsg, n, iso_font);
-\t\t}
-\t\t}
-\t\t/* Check repetitive abort loop on identical PC */
-\t\tstatic uint64_t hk_prev_pc = 0;
-\t\tstatic int hk_pc_repeat = 0;
-\t\tif (hk_kpc == hk_prev_pc) {
-\t\t\tif (++hk_pc_repeat >= 3) {
-\t\t\t\thk_draw_band(0x00FF00FF, 680, 14); /* Thick Magenta band: loop halt */
-\t\t\t\tfor (;;) {
-\t\t\t\t\t__asm__ volatile ("wfe");
-\t\t\t\t}
-\t\t\t}
-\t\t} else {
-\t\t\thk_prev_pc = hk_kpc;
-\t\t\thk_pc_repeat = 1;
+\t\tfor (;;) {
+\t\t\t__asm__ volatile ("wfe");
 \t\t}
 \t}"""
         if sleh_hook_old in c_norm:
             c_norm = c_norm.replace(sleh_hook_old, sleh_hook_new)
-            print("  [OK] osfmk/arm64/sleh.c: early kernel fault visual bands installed")
+            print("  [OK] osfmk/arm64/sleh.c: early kernel fault console dump installed")
         else:
             print("  [WARN] sleh_hook_old not found in sleh.c")
 
-        
         sleh_inv_old = """void
 sleh_invalid_stack(arm_context_t *context, uint64_t esr __unused, vm_offset_t far __unused)
 {
@@ -532,45 +428,28 @@ sleh_invalid_stack(arm_context_t *context, uint64_t esr __unused, vm_offset_t fa
 \tsp = get_saved_state_sp(&context->ss);
 \tvm_offset_t kstackptr = (vm_offset_t)thread->machine.kstackptr;
 \tkernel_stack_bottom = round_page(kstackptr) - KERNEL_STACK_SIZE;"""
+
         sleh_inv_new = """void
 sleh_invalid_stack(arm_context_t *context, uint64_t esr __unused, vm_offset_t far __unused)
 {
-\textern void hk_draw_band_stackless(uint32_t color, uint32_t row_start, uint32_t row_count);
-\thk_draw_band_stackless(0x00FF8C00, 216, 4); /* Dark Orange: sleh_invalid_stack entered (216..219) */
-
 \tthread_t thread = current_thread();
 \tif (thread == NULL) {
-\t\t/* Early boot invalid stack with TPIDR_EL1 == 0: DO NOT DEREFERENCE thread! */
-\t\textern void hk_render_screen_asm(const char *str, uint32_t len, const unsigned char *font);
-\t\textern const unsigned char iso_font[];
-\t\tstatic char emsg[384];
-\t\tint pos = 0;
-\t\tconst char *hdr = "=== HAKIOS EARLY INVALID STACK ===\\n";
-\t\twhile (*hdr) emsg[pos++] = *hdr++;
+\t\textern void hk_con_puts(const char *s);
+\t\textern void hk_con_log(const char *s);
+\t\textern void hk_con_hex(uint64_t val);
+\t\textern void hk_con_putc(char c);
+
 \t\tuint64_t pc = (context != NULL) ? (uint64_t)get_saved_state_pc(&context->ss) : 0ULL;
 \t\tuint64_t sp_val = (context != NULL) ? (uint64_t)get_saved_state_sp(&context->ss) : 0ULL;
 \t\tuint64_t lr_val = (context != NULL) ? (uint64_t)get_saved_state_reg(&context->ss, 30) : 0ULL;
-\t\tuint64_t x0_val = (context != NULL) ? (uint64_t)get_saved_state_reg(&context->ss, 0) : 0ULL;
-\t\tuint64_t vals[6] = { pc, lr_val, sp_val, (uint64_t)esr, (uint64_t)far, x0_val };
-\t\tconst char *names[6] = { "pc : 0x", "lr : 0x", "sp : 0x", "esr: 0x", "far: 0x", "x0 : 0x" };
-\t\tfor (int k = 0; k < 6; k++) {
-\t\t\tconst char *nm = names[k];
-\t\t\twhile (*nm) emsg[pos++] = *nm++;
-\t\t\tuint64_t v = vals[k];
-\t\t\tfor (int sh = 60; sh >= 0; sh -= 4) {
-\t\t\t\tuint32_t d = (uint32_t)((v >> sh) & 0xf);
-\t\t\t\temsg[pos++] = (char)(d < 10 ? ('0' + d) : ('a' + d - 10));
-\t\t\t}
-\t\t\temsg[pos++] = '\\n';
-\t\t}
-\t\temsg[pos] = '\\0';
-\t\tfor (uintptr_t p = (uintptr_t)emsg; p < (uintptr_t)emsg + pos + 64; p += 64) {
-\t\t\t__asm__ volatile ("dc civac, %0" : : "r" (p));
-\t\t}
-\t\t__asm__ volatile ("dsb sy");
-\t\t{ extern void hk_con_puts(const char *); hk_con_puts(emsg); }
-		hk_render_screen_asm(emsg, pos, iso_font);
-\t\thk_draw_band_stackless(0x00FF00FF, 220, 4); /* Magenta: early panic rendered (220..223) */
+
+\t\thk_con_log("=== EARLY INVALID STACK ===");
+\t\thk_con_puts("PC   : "); hk_con_hex(pc); hk_con_putc(10);
+\t\thk_con_puts("LR   : "); hk_con_hex(lr_val); hk_con_putc(10);
+\t\thk_con_puts("SP   : "); hk_con_hex(sp_val); hk_con_putc(10);
+\t\thk_con_puts("ESR  : "); hk_con_hex((uint64_t)esr); hk_con_putc(10);
+\t\thk_con_puts("FAR  : "); hk_con_hex((uint64_t)far); hk_con_putc(10);
+
 \t\tfor (;;) {
 \t\t\t__asm__ volatile ("wfe");
 \t\t}
@@ -590,9 +469,10 @@ sleh_invalid_stack(arm_context_t *context, uint64_t esr __unused, vm_offset_t fa
 \tsp = get_saved_state_sp(&context->ss);
 \tvm_offset_t kstackptr = (vm_offset_t)thread->machine.kstackptr;
 \tkernel_stack_bottom = round_page(kstackptr) - KERNEL_STACK_SIZE;"""
+
         if sleh_inv_old in c_norm:
             c_norm = c_norm.replace(sleh_inv_old, sleh_inv_new, 1)
-            print("  [OK] osfmk/arm64/sleh.c: sleh_invalid_stack NULL-guard and diagnostic bands installed")
+            print("  [OK] osfmk/arm64/sleh.c: sleh_invalid_stack NULL-guard and console dump installed")
         else:
             print("  [WARN] sleh_inv_old not found in sleh.c")
 
@@ -1685,45 +1565,105 @@ loader_return(void)
         else:
             print("  [WARN] loader_return target not found in loader_return.c")
 
-    # 10. osfmk/kern/startup.c (trace startup entries with visual markers)
+    # 10. osfmk/kern/startup.c (trace startup entries with console logs)
     p10 = os.path.join(src, "osfmk", "kern", "startup.c")
     if os.path.isfile(p10):
         with open(p10, "r", encoding="utf-8", errors="replace") as f:
             c10 = f.read().replace("\r\n", "\n")
+
+        # 10.1 Instrument kernel_startup_bootstrap entry and qsort
+        t_ksb = """__startup_func
+void
+kernel_startup_bootstrap(void)
+{
+\t/*
+\t * Sort the various STARTUP() entries by subsystem/rank.
+\t */
+\tsize_t n = startup_entries_end - startup_entries;"""
+
+        r_ksb = """__startup_func
+void
+kernel_startup_bootstrap(void)
+{
+\textern void hk_con_log(const char *s);
+\textern void hk_con_puts(const char *s);
+\textern void hk_con_hex(uint64_t val);
+\textern void hk_con_putc(char c);
+
+\thk_con_log("[*] enter kernel_startup_bootstrap");
+
+\t/*
+\t * Sort the various STARTUP() entries by subsystem/rank.
+\t */
+\tsize_t n = startup_entries_end - startup_entries;
+\thk_con_puts("[*] startup entries n=");
+\thk_con_hex((uint64_t)n);
+\thk_con_putc(10);"""
+
+        if t_ksb in c10:
+            c10 = c10.replace(t_ksb, r_ksb, 1)
+            print("  [OK] osfmk/kern/startup.c: kernel_startup_bootstrap entry instrumented")
+        else:
+            print("  [WARN] t_ksb not found in startup.c")
+
+        t_qsort = """\tqsort(startup_entries, n, sizeof(struct startup_entry), startup_entry_cmp);"""
+        r_qsort = """\thk_con_log("[*] sorting startup entries...");
+\tqsort(startup_entries, n, sizeof(struct startup_entry), startup_entry_cmp);
+\thk_con_log("[*] startup entries sorted OK");"""
+
+        if t_qsort in c10:
+            c10 = c10.replace(t_qsort, r_qsort, 1)
+            print("  [OK] osfmk/kern/startup.c: qsort trace instrumented")
+        else:
+            print("  [WARN] t_qsort not found in startup.c")
+
+        t_ksb_end = """\tkernel_startup_initialize_upto(STARTUP_SUB_LOCKS);
+}"""
+        r_ksb_end = """\thk_con_log("[*] init upto LOCKS...");
+\tkernel_startup_initialize_upto(STARTUP_SUB_LOCKS);
+\thk_con_log("[*] startup upto LOCKS completed!");
+}"""
+
+        if t_ksb_end in c10:
+            c10 = c10.replace(t_ksb_end, r_ksb_end, 1)
+            print("  [OK] osfmk/kern/startup.c: kernel_startup_bootstrap completion trace instrumented")
+        else:
+            print("  [WARN] t_ksb_end not found in startup.c")
+
+        # 10.2 Instrument startup loop in kernel_startup_initialize_upto
         t_startup = """\t\tstartup_phase = cur->subsystem - 1;
 \t\tkernel_startup_log(cur->subsystem);
 \t\tcur->func(cur->arg);"""
+
         r_startup = """\t\tstartup_phase = cur->subsystem - 1;
 \t\tkernel_startup_log(cur->subsystem);
-\t\t/* hakios: visual progress ladder for startup subsystem */
 \t\t{
-\t\t\textern void hk_draw_band_direct(uint32_t color, uint32_t row_start, uint32_t row_count);
-\t\t\t/* Draw 3-pixel band in Lime Green (0x0000FF00) when subsystem starts */
-\t\t\thk_draw_band_direct(0x0000FF00, 188 + ((cur->subsystem & 0x3f) * 4), 3);
-\t\t}
-\t\t/* hakios: strip PAC tag / discriminators from function pointer for ARMv8.0 Cortex-A73 */
-\t\t{
+\t\t\textern void hk_con_log(const char *s);
+\t\t\textern void hk_con_puts(const char *s);
+\t\t\textern void hk_con_hex(uint64_t val);
+\t\t\textern void hk_con_putc(char c);
+
 \t\t\tuintptr_t hk_fp = (uintptr_t)cur->func;
-\t\t\tuint16_t hk_top = (uint16_t)(hk_fp >> 48);
-\t\t\tif (hk_top != 0x0000 && hk_top != 0xFFFF) {
-\t\t\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
-\t\t\t\thk_draw_band_direct(0x00FF0000, 186, 2); /* Red: PAC tag stripped */
-\t\t\t}
 \t\t\tif (hk_fp & (1ULL << 47)) {
 \t\t\t\thk_fp |= 0xFFFF000000000000ULL;
 \t\t\t} else {
 \t\t\t\thk_fp &= 0x0000FFFFFFFFFFFFULL;
 \t\t\t}
+
+\t\t\thk_con_puts("  sub=");
+\t\t\thk_con_hex((uint64_t)cur->subsystem);
+\t\t\thk_con_puts(" r=");
+\t\t\thk_con_hex((uint64_t)cur->rank);
+\t\t\thk_con_puts(" fn=");
+\t\t\thk_con_hex((uint64_t)hk_fp);
+\t\t\thk_con_putc(10);
+
 \t\t\t((void (*)(const void *))hk_fp)(cur->arg);
-\t\t}
-\t\t{
-\t\t\textern void hk_draw_band_direct(uint32_t color, uint32_t row_start, uint32_t row_count);
-\t\t\t/* Turn Cyan (0x0000FFFF) when subsystem completes successfully */
-\t\t\thk_draw_band_direct(0x0000FFFF, 188 + ((cur->subsystem & 0x3f) * 4), 3);
 \t\t}"""
+
         if t_startup in c10:
             c10 = c10.replace(t_startup, r_startup, 1)
-            print("  [OK] osfmk/kern/startup.c: startup subsystem visual trace installed")
+            print("  [OK] osfmk/kern/startup.c: startup loop trace and PAC stripping instrumented")
         else:
             print("  [WARN] t_startup not found in startup.c")
 
@@ -1732,121 +1672,27 @@ loader_return(void)
         if m_kb:
             c10 = c10.replace(m_kb.group(0), m_kb.group(0) + """
 \t{
-\t\textern void hk_draw_band_direct(uint32_t color, uint32_t row_start, uint32_t row_count);
-\t\thk_draw_band_direct(0x0000FFFF, 496, 8); /* Cyan: entered kernel_bootstrap */
+\t\textern void hk_con_log(const char *s);
+\t\thk_con_log("[*] entered kernel_bootstrap");
 \t}""", 1)
-            print("  [OK] osfmk/kern/startup.c: kernel_bootstrap visual marker installed")
+            print("  [OK] osfmk/kern/startup.c: kernel_bootstrap console log installed")
         else:
             print("  [WARN] kernel_bootstrap not found in startup.c")
-
-        # Instrument load_context entry and context switch
-        lc_target = "static void __attribute__((noreturn))\nload_context(\n\tthread_t                thread)\n{"
-        if lc_target in c10:
-            c10 = c10.replace(lc_target, lc_target + """
-\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0048D1CC, 543, 2); } /* MediumTurquoise: load_context entry */""", 1)
-            print("  [OK] osfmk/kern/startup.c: load_context entry instrumented")
-
-        msc_target = "machine_set_current_thread(thread);"
-        if msc_target in c10:
-            c10 = c10.replace(msc_target, msc_target + """
-\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0020B2AA, 544, 2); } /* LightSeaGreen: machine_set_current_thread done */""", 1)
-            print("  [OK] osfmk/kern/startup.c: machine_set_current_thread instrumented")
-
-        mlc_target = "machine_load_context(thread);"
-        if mlc_target in c10:
-            c10 = c10.replace(mlc_target, """{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF7F50, 545, 2); } /* Coral: about to machine_load_context */
-\t""" + mlc_target, 1)
-            print("  [OK] osfmk/kern/startup.c: machine_load_context instrumented")
 
         # Instrument kernel_bootstrap_thread(void) entry
         kbt_target = "static void\nkernel_bootstrap_thread(void)\n{"
         if kbt_target in c10:
             c10 = c10.replace(kbt_target, kbt_target + """
 \t{
-\t\textern void hk_draw_band_direct(uint32_t color, uint32_t row_start, uint32_t row_count);
-\t\thk_draw_band_direct(0x00FFFFFF, 546, 8); /* White: ENTERED kernel_bootstrap_thread! */
+\t\textern void hk_con_log(const char *s);
+\t\thk_con_log("[*] entered kernel_bootstrap_thread!");
 \t}""", 1)
-            print("  [OK] osfmk/kern/startup.c: kernel_bootstrap_thread visual marker installed")
+            print("  [OK] osfmk/kern/startup.c: kernel_bootstrap_thread console log installed")
         else:
             print("  [WARN] kernel_bootstrap_thread not found in startup.c")
 
-        # Instrument kernel_bootstrap_log
-        m_log = re.search(r'(kernel_bootstrap_log\s*\(\s*const\s+char\s*\*\s*\w+\s*\)\s*\{)', c10)
-        if m_log:
-            c10 = c10.replace(m_log.group(0), m_log.group(0) + """
-\t{
-\t\textern void hk_draw_band_direct(uint32_t color, uint32_t row_start, uint32_t row_count);
-\t\tstatic uint32_t hk_bstep = 0;
-\t\thk_draw_band_direct(0x00FF8C00, 240 + ((hk_bstep++ & 0x1f) * 2), 2); /* Dark Orange line for each milestone */
-\t}""", 1)
-            print("  [OK] osfmk/kern/startup.c: kernel_bootstrap_log visual milestone ladder installed")
-        else:
-            print("  [WARN] kernel_bootstrap_log not found in startup.c")
-
-        # Step-by-step milestones in kernel_bootstrap
-        kb_steps = [
-            ("\tconsole_init();", "\tconsole_init();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000FFFF, 500, 4); } /* Cyan: console_init */"),
-            ("\tsched_init();", "\tsched_init();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000FF00, 506, 4); } /* Lime: sched_init */"),
-            ("\tmapping_free_prime();", "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FFD700, 508, 4); } /* Gold: mapping_free_prime entering */\n\tmapping_free_prime();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FFFF00, 512, 4); } /* Yellow: mapping_free_prime done */"),
-            ("\tmachine_init();", "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x007FFF00, 514, 4); } /* Chartreuse: machine_init entering */\n\tmachine_init();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000BFFF, 518, 4); } /* DeepSkyBlue: machine_init done */"),
-            ("\tclock_init();", "\tclock_init();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00BA55D3, 524, 4); } /* MediumOrchid: clock_init */"),
-            ("\ttask_init();", "\ttask_init();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x001E90FF, 530, 4); } /* DodgerBlue: task_init */"),
-            ("\tthread_init();", "\tthread_init();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF1493, 536, 4); } /* DeepPink: thread_init */"),
-            ("\tresult = kernel_thread_create((thread_continue_t)kernel_bootstrap_thread, NULL, MAXPRI_KERNEL, &thread);",
-             "\tresult = kernel_thread_create((thread_continue_t)kernel_bootstrap_thread, NULL, MAXPRI_KERNEL, &thread);\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000FF7F, 542, 4); } /* SpringGreen: kernel_thread_create */"),
-        ]
-        for t_step, r_step in kb_steps:
-            if t_step in c10:
-                c10 = c10.replace(t_step, r_step, 1)
-                print(f"  [OK] osfmk/kern/startup.c: {t_step.strip()[:30]} instrumented")
-
-        # Step milestones in kernel_bootstrap_thread
-        kbt_steps = [
-            ("\tidle_thread_create(processor, idle_thread);",
-             "\tidle_thread_create(processor, idle_thread);\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FFD700, 548, 4); } /* Gold: idle_thread_create done */"),
-            ("\tsched_startup();",
-             "\tsched_startup();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000FF00, 550, 4); } /* Lime: sched_startup done */"),
-            ("\tthread_daemon_init();",
-             "\tthread_daemon_init();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000FFFF, 552, 4); } /* Cyan: thread_daemon_init done */"),
-            ("\tmapping_adjust();",
-             "\tmapping_adjust();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF00FF, 554, 4); } /* Magenta: mapping_adjust done */"),
-            ("\tclock_service_create();",
-             "\tclock_service_create();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF8C00, 556, 4); } /* DarkOrange: clock_service_create done */"),
-            ("\tdevice_service_create();",
-             "\tdevice_service_create();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF1493, 558, 4); } /* DeepPink: device_service_create done */"),
-            ("\tPE_init_iokit();",
-             "\tPE_init_iokit();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FFFF00, 560, 4); } /* Yellow: PE_init_iokit done */"),
-            ("\t(void) spllo();",
-             "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x007FFF00, 562, 4); } /* Chartreuse: about to spllo */\n\t(void) spllo();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000BFFF, 564, 4); } /* DeepSkyBlue: spllo returned */"),
-            ("\tinitialize_screen(NULL, kPEAcquireScreen);",
-             "\tinitialize_screen(NULL, kPEAcquireScreen);\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00BA55D3, 566, 2); } /* MediumOrchid: initialize_screen done */"),
-            ("\tvm_commpage_text_init();",
-             "\tvm_commpage_text_init();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000FFFF, 568, 2); } /* Cyan: vm_commpage done */"),
-            ("\tload_static_trust_cache();",
-             "\tload_static_trust_cache();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF7F50, 570, 2); } /* Coral: trust_cache done */"),
-            ("\tkernel_startup_initialize_upto(STARTUP_SUB_LOCKDOWN);",
-             "\tkernel_startup_initialize_upto(STARTUP_SUB_LOCKDOWN);\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FFD700, 572, 2); } /* Gold: STARTUP_SUB_LOCKDOWN done */"),
-            ("\tOSKextRemoveKextBootstrap();",
-             "\tOSKextRemoveKextBootstrap();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000FF00, 574, 2); } /* Lime: OSKextRemoveKextBootstrap done */"),
-            ("\tmachine_lockdown();",
-             "\tmachine_lockdown();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x007FFF00, 576, 2); } /* Chartreuse: machine_lockdown done */"),
-            ("\tPE_lockdown_iokit();",
-             "\tPE_lockdown_iokit();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000BFFF, 578, 2); } /* DeepSkyBlue: PE_lockdown_iokit done */"),
-            ("\tvm_set_restrictions(machine_info.max_cpus);",
-             "\tvm_set_restrictions(machine_info.max_cpus);\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF8C00, 580, 2); } /* DarkOrange: vm_set_restrictions done */"),
-            ("\tkperf_init_early();",
-             "\tkperf_init_early();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF1493, 582, 2); } /* DeepPink: kperf_init_early done */"),
-            ("\tbsd_init();",
-             "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FFFFFF, 585, 10); } /* Thick White: ENTERING bsd_init! */\n\tbsd_init();"),
-        ]
-        for t_step, r_step in kbt_steps:
-            if t_step in c10:
-                c10 = c10.replace(t_step, r_step, 1)
-                print(f"  [OK] osfmk/kern/startup.c: {t_step.strip()[:30]} instrumented")
-
         with open(p10, "w", encoding="utf-8", newline="\n") as f:
             f.write(c10)
-
 
     # 11. osfmk/ipc/ipc_policy.c (bypass validation panic on generic ARM bring-up)
     p11 = os.path.join(src, "osfmk", "ipc", "ipc_policy.c")
