@@ -74,34 +74,30 @@ def main():
 \tcpu_data_init(&BootCpuData);
 \tloader_checkpoint(5);   /* past cpu_data_init */"""
 
-        replacement_cpu = """\thk_draw_band(0x0000FFFF, 90, 10);   /* hakios visual marker: Cyan at rows 90-99 (before cpu_data_init) */
-\tloader_checkpoint(4);   /* before cpu_data_init */
+        replacement_cpu = """\tloader_checkpoint(4);   /* before cpu_data_init */
 \tcpu_data_init(&BootCpuData);
 \tloader_checkpoint(5);   /* past cpu_data_init */
-\thk_draw_band(0x00A52A2A, 100, 10);  /* hakios visual marker: Brown at rows 100-109 (past cpu_data_init) */"""
+\t{ extern void hk_con_log(const char *s); hk_con_log("[*] cpu_data_init OK"); }"""
 
         target_pe = """\tPE_init_platform(FALSE, args); /* Get platform expert set up */
 \tloader_checkpoint(6);   /* past PE_init_platform */"""
 
         replacement_pe = """\tPE_init_platform(FALSE, args); /* Get platform expert set up */
 \tloader_checkpoint(6);   /* past PE_init_platform */
-\thk_draw_band(0x0032CD32, 110, 5);  /* hakios visual marker: Lime at rows 110-114 (past PE_init_platform) */"""
+\t{ extern void hk_con_log(const char *s); hk_con_log("[*] PE_init_platform OK"); }"""
 
         target_topo = """\tml_parse_cpu_topology();
 
 \tmaster_cpu = ml_get_boot_cpu_number();
 \tassert(master_cpu >= 0 && master_cpu <= ml_get_max_cpu_number());"""
 
-        replacement_topo = """\thk_draw_band(0x00FF7F50, 115, 5);  /* hakios visual marker: Coral at rows 115-119 (before ml_parse_cpu_topology) */
-\tml_parse_cpu_topology();
-\thk_draw_band(0x00008080, 120, 5);  /* hakios visual marker: Teal at rows 120-124 (past ml_parse_cpu_topology) */
-
+        replacement_topo = """\tml_parse_cpu_topology();
 \tmaster_cpu = ml_get_boot_cpu_number();
 \tif (master_cpu < 0 || master_cpu > ml_get_max_cpu_number()) {
 \t\tmaster_cpu = 0;
 \t}
-\thk_draw_band(0x00FF1493, 125, 5);  /* hakios visual marker: Hot Pink at rows 125-129 (master_cpu valid) */
-\tassert(master_cpu >= 0 && master_cpu <= ml_get_max_cpu_number());"""
+\tassert(master_cpu >= 0 && master_cpu <= ml_get_max_cpu_number());
+\t{ extern void hk_con_log(const char *s); hk_con_log("[*] cpu_topology OK"); }"""
 
         target_boot = """\tthread->machine.preemption_count = 0;
 \tloader_checkpoint(44);
@@ -110,24 +106,23 @@ def main():
 
         replacement_boot = """\tthread->machine.preemption_count = 0;
 \tloader_checkpoint(44);
-\thk_draw_band(0x00FF69B4, 130, 5);  /* hakios visual marker: Pink at rows 130-134 (preemption count 0) */
 \tcpu_bootstrap();
 \tloader_checkpoint(13);
-\thk_draw_band(0x00FFD700, 135, 5);  /* hakios visual marker: Gold at rows 135-139 (past cpu_bootstrap) */"""
+\t{ extern void hk_con_log(const char *s); hk_con_log("[*] cpu_bootstrap OK"); }"""
 
         target_rt = """\trtclock_early_init();
 \tloader_checkpoint(14);"""
 
         replacement_rt = """\trtclock_early_init();
 \tloader_checkpoint(14);
-\thk_draw_band(0x0087CEEB, 140, 5);  /* hakios visual marker: Sky Blue at rows 140-144 (past rtclock_early_init) */"""
+\t{ extern void hk_con_log(const char *s); hk_con_log("[*] rtclock_early_init OK"); }"""
 
         target_ksb = """\tkernel_startup_bootstrap();
 \tloader_checkpoint(15);"""
 
         replacement_ksb = """\tkernel_startup_bootstrap();
 \tloader_checkpoint(15);
-\thk_draw_band(0x00FFFFFF, 145, 5);  /* hakios visual marker: White at rows 145-149 (past kernel_startup_bootstrap) */"""
+\t{ extern void hk_con_log(const char *s); hk_con_log("[*] kernel_startup_bootstrap OK"); }"""
 
         target_cpu_init = """\tcpu_init();
 \tloader_checkpoint(16);
@@ -136,18 +131,15 @@ def main():
 
         replacement_cpu_init = """\tcpu_init();
 \tloader_checkpoint(16);
-\thk_draw_band(0x00E6E6FA, 150, 5);  /* hakios visual marker: Lavender at rows 150-154 (past cpu_init) */
-
+\t{ extern void hk_con_log(const char *s); hk_con_log("[*] cpu_init OK"); }
 \tprocessor_bootstrap();
-\thk_draw_band(0x00FF4500, 155, 5);  /* hakios visual marker: Orange-Red at rows 155-159 (past processor_bootstrap) */"""
+\t{ extern void hk_con_log(const char *s); hk_con_log("[*] processor_bootstrap OK"); }"""
 
         target_vm = """\tarm_vm_init(xmaxmem, args);"""
 
-        replacement_vm = """\textern void hk_draw_band_direct(uint32_t color, uint32_t row_start, uint32_t row_count);
-\thk_draw_band_direct(0x0000FA9A, 158, 2);  /* hakios visual marker: Medium Spring Green at rows 158-159 (before arm_vm_init) */
+        replacement_vm = """\t{ extern void hk_con_log(const char *s); hk_con_log("[*] entering arm_vm_init..."); }
 \tarm_vm_init(xmaxmem, args);
-\t{ extern void hk_con_log(const char *s); hk_con_log("[*] arm_vm_init OK"); }
-\thk_draw_band_direct(0x00FF007F, 160, 3);  /* hakios visual marker: Rose at rows 160-162 (past arm_vm_init) */"""
+\t{ extern void hk_con_log(const char *s); hk_con_log("[*] arm_vm_init OK"); }"""
 
         target_serial = """\tconst unsigned int serial_exists = serial_init();
 \tloader_checkpoint(18);
@@ -156,28 +148,28 @@ def main():
 
         replacement_serial = """\tconst unsigned int serial_exists = serial_init();
 \tloader_checkpoint(18);
-\thk_draw_band(0x00DC143C, 163, 3);  /* hakios visual marker: Crimson at rows 163-165 (past serial_init) */
+\t{ extern void hk_con_log(const char *s); hk_con_log("[*] serial_init OK"); }
 \tkernel_startup_initialize_upto(STARTUP_SUB_KPRINTF);
 \tloader_checkpoint(19);
-\thk_draw_band(0x007FFF00, 166, 4);  /* hakios visual marker: Chartreuse at rows 166-169 (past STARTUP_SUB_KPRINTF) */"""
+\t{ extern void hk_con_log(const char *s); hk_con_log("[*] STARTUP_SUB_KPRINTF OK"); }"""
 
         target_console = """\tPE_create_console();
 \tloader_checkpoint(20);"""
 
         replacement_console = """\tPE_create_console();
 \tloader_checkpoint(20);
-\thk_draw_band(0x0000BFFF, 170, 5);  /* hakios visual marker: Deep Sky Blue at rows 170-174 (past PE_create_console) */"""
+\t{ extern void hk_con_log(const char *s); hk_con_log("[*] PE_create_console OK"); }"""
 
         target_pe_true = """\tPE_init_platform(TRUE, &BootCpuData);"""
 
         replacement_pe_true = """\tPE_init_platform(TRUE, &BootCpuData);
-\thk_draw_band(0x0000FF7F, 175, 5);  /* hakios visual marker: Spring Green at rows 175-179 (past PE_init_platform TRUE) */"""
+\t{ extern void hk_con_log(const char *s); hk_con_log("[*] PE_init_platform(TRUE) OK"); }"""
 
         target_mstart = """\tloader_checkpoint(21);
 \tmachine_startup(args);"""
 
         replacement_mstart = """\tloader_checkpoint(21);
-\thk_draw_band(0x00FFFF00, 180, 5);  /* hakios visual marker: Yellow at rows 180-184 (entering machine_startup) */
+\t{ extern void hk_con_log(const char *s); hk_con_log("[*] entering machine_startup..."); }
 \tmachine_startup(args);"""
 
         if target_init in c_norm:
@@ -1272,6 +1264,7 @@ LEXT(hk_render_screen_asm)
 \t.align 2
 \t.globl EXT(hk_draw_band_direct)
 LEXT(hk_draw_band_direct)
+\tret
 \t/* 1. Sanitize arguments (32-bit unsigned) */
 \tand\tx1, x1, #0xffffffff
 \tand\tx2, x2, #0xffffffff
