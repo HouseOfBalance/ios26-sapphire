@@ -1689,15 +1689,29 @@ loader_return(void)
 \t\tkernel_startup_log(cur->subsystem);
 \t\t/* hakios: visual progress ladder for startup subsystem */
 \t\t{
-\t\t\textern void hk_draw_band(uint32_t color, uint32_t row_start, uint32_t row_count);
-\t\t\t/* Draw 2-pixel band in Lime Green (0x0000FF00) when subsystem starts */
-\t\t\thk_draw_band(0x0000FF00, 188 + ((cur->subsystem & 0x3f) * 2), 2);
+\t\t\textern void hk_draw_band_direct(uint32_t color, uint32_t row_start, uint32_t row_count);
+\t\t\t/* Draw 3-pixel band in Lime Green (0x0000FF00) when subsystem starts */
+\t\t\thk_draw_band_direct(0x0000FF00, 188 + ((cur->subsystem & 0x3f) * 4), 3);
 \t\t}
-\t\tcur->func(cur->arg);
+\t\t/* hakios: strip PAC tag / discriminators from function pointer for ARMv8.0 Cortex-A73 */
 \t\t{
-\t\t\textern void hk_draw_band(uint32_t color, uint32_t row_start, uint32_t row_count);
+\t\t\tuintptr_t hk_fp = (uintptr_t)cur->func;
+\t\t\tuint16_t hk_top = (uint16_t)(hk_fp >> 48);
+\t\t\tif (hk_top != 0x0000 && hk_top != 0xFFFF) {
+\t\t\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
+\t\t\t\thk_draw_band_direct(0x00FF0000, 186, 2); /* Red: PAC tag stripped */
+\t\t\t}
+\t\t\tif (hk_fp & (1ULL << 47)) {
+\t\t\t\thk_fp |= 0xFFFF000000000000ULL;
+\t\t\t} else {
+\t\t\t\thk_fp &= 0x0000FFFFFFFFFFFFULL;
+\t\t\t}
+\t\t\t((void (*)(const void *))hk_fp)(cur->arg);
+\t\t}
+\t\t{
+\t\t\textern void hk_draw_band_direct(uint32_t color, uint32_t row_start, uint32_t row_count);
 \t\t\t/* Turn Cyan (0x0000FFFF) when subsystem completes successfully */
-\t\t\thk_draw_band(0x0000FFFF, 188 + ((cur->subsystem & 0x3f) * 2), 2);
+\t\t\thk_draw_band_direct(0x0000FFFF, 188 + ((cur->subsystem & 0x3f) * 4), 3);
 \t\t}"""
         if t_startup in c10:
             c10 = c10.replace(t_startup, r_startup, 1)
@@ -1711,7 +1725,7 @@ loader_return(void)
             c10 = c10.replace(m_kb.group(0), m_kb.group(0) + """
 \t{
 \t\textern void hk_draw_band_direct(uint32_t color, uint32_t row_start, uint32_t row_count);
-\t\thk_draw_band_direct(0x0000FFFF, 496, 4); /* Cyan: entered kernel_bootstrap */
+\t\thk_draw_band_direct(0x0000FFFF, 496, 8); /* Cyan: entered kernel_bootstrap */
 \t}""", 1)
             print("  [OK] osfmk/kern/startup.c: kernel_bootstrap visual marker installed")
         else:
@@ -1742,7 +1756,7 @@ loader_return(void)
             c10 = c10.replace(kbt_target, kbt_target + """
 \t{
 \t\textern void hk_draw_band_direct(uint32_t color, uint32_t row_start, uint32_t row_count);
-\t\thk_draw_band_direct(0x00FFFFFF, 546, 4); /* White: ENTERED kernel_bootstrap_thread! */
+\t\thk_draw_band_direct(0x00FFFFFF, 546, 8); /* White: ENTERED kernel_bootstrap_thread! */
 \t}""", 1)
             print("  [OK] osfmk/kern/startup.c: kernel_bootstrap_thread visual marker installed")
         else:
@@ -2296,19 +2310,19 @@ kernel_debug_string_early(const char *message)
         r17 = """\tvm_mem_bootstrap_log("vm_page_bootstrap");
 \tvm_page_bootstrap(&start, &end);
 \t{
-\t\textern void hk_draw_band(uint32_t, uint32_t, uint32_t);
-\t\thk_draw_band(0x0000FF00, 360, 2); /* Lime Green: vm_page_bootstrap returned */
+\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
+\t\thk_draw_band_direct(0x0000FF00, 360, 6); /* Lime Green: vm_page_bootstrap returned */
 \t}"""
         if t17 in c17:
             c17 = c17.replace(t17, r17, 1)
-            c17 = c17.replace('zone_bootstrap();', 'zone_bootstrap();\n\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x0000FFFF, 364, 2); }', 1)
-            c17 = c17.replace('vm_object_bootstrap();', 'vm_object_bootstrap();\n\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FF1493, 368, 2); }', 1)
-            c17 = c17.replace('vm_retire_boot_pages();', 'vm_retire_boot_pages();\n\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FFFF00, 372, 2); }', 1)
-            c17 = c17.replace('vm_map_init();', 'vm_map_init();\n\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x009400D3, 376, 2); }', 1)
-            c17 = c17.replace('kmem_init(start, end);', 'kmem_init(start, end);\n\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x0000BFFF, 380, 2); }', 1)
-            c17 = c17.replace('kernel_startup_initialize_upto(STARTUP_SUB_KMEM);', 'kernel_startup_initialize_upto(STARTUP_SUB_KMEM);\n\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FFFFFF, 384, 2); }', 1)
-            c17 = c17.replace('vm_fault_init();', 'vm_fault_init();\n\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x00FFA500, 388, 2); }', 1)
-            c17 = c17.replace('kernel_startup_initialize_upto(STARTUP_SUB_ZALLOC);', 'kernel_startup_initialize_upto(STARTUP_SUB_ZALLOC);\n\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); hk_draw_band(0x007FFF00, 392, 2); }', 1)
+            c17 = c17.replace('zone_bootstrap();', 'zone_bootstrap();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000FFFF, 368, 6); }', 1)
+            c17 = c17.replace('vm_object_bootstrap();', 'vm_object_bootstrap();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF1493, 376, 6); }', 1)
+            c17 = c17.replace('vm_retire_boot_pages();', 'vm_retire_boot_pages();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FFFF00, 384, 6); }', 1)
+            c17 = c17.replace('vm_map_init();', 'vm_map_init();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x009400D3, 392, 6); }', 1)
+            c17 = c17.replace('kmem_init(start, end);', 'kmem_init(start, end);\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000BFFF, 400, 6); }', 1)
+            c17 = c17.replace('kernel_startup_initialize_upto(STARTUP_SUB_KMEM);', '{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF8C00, 408, 6); } /* Dark Orange: entering STARTUP_SUB_KMEM */\n\tkernel_startup_initialize_upto(STARTUP_SUB_KMEM);\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FFFFFF, 416, 6); } /* White: STARTUP_SUB_KMEM done */', 1)
+            c17 = c17.replace('vm_fault_init();', 'vm_fault_init();\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FFA500, 424, 6); }', 1)
+            c17 = c17.replace('kernel_startup_initialize_upto(STARTUP_SUB_ZALLOC);', '{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x007FFF00, 432, 6); } /* Chartreuse: entering STARTUP_SUB_ZALLOC */\n\tkernel_startup_initialize_upto(STARTUP_SUB_ZALLOC);\n\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000FF7F, 440, 6); } /* Spring Green: STARTUP_SUB_ZALLOC done */', 1)
             with open(p17, "w", encoding="utf-8", newline="\n") as f:
                 f.write(c17)
             print("  [OK] osfmk/vm/vm_init.c: vm_mem_bootstrap milestone bands installed")
