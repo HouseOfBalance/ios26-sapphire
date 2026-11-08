@@ -64,7 +64,7 @@ index a18749e..d222a22 100644
  static void
  write_pte_fast(pt_entry_t *ptep, pt_entry_t pte)
  {
-@@ -699,15 +733,14 @@ write_pte_fast(pt_entry_t *ptep, pt_entry_t pte)
+@@ -699,15 +733,13 @@ write_pte_fast(pt_entry_t *ptep, pt_entry_t pte)
  			 * If we're writing an empty/compressed PTE value, then don't
  			 * auto-increment the address for each PTE write.
  			 */
