@@ -2064,13 +2064,37 @@ kernel_debug_string_early(const char *message)
             print("  [WARN] t16_pms_call not found in vm_resident.c")
 
         # Bypass early printf in vm_page_bootstrap before kmem/console init and draw milestone
-        p_printf = re.compile(r'printf\("vm_page_bootstrap:.*?vm_page_wire_count\);', re.DOTALL)
-        r16_printf = """/* hakios: bypass premature printf before kmem/console and draw milestone */\n\t{\n\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);\n\t\thk_draw_band_direct(0x00FFFFFF, 356, 4); /* White: vm_page_bootstrap about to return */\n\t}"""
-        if p_printf.search(c16):
-            c16 = p_printf.sub(r16_printf, c16, count=1)
+        t16_early_printf = """\tbooter_size = ml_get_booter_memory_size();
+
+\tprintf("vm_page_bootstrap: %d free pages, %d wired pages"
+#if XNU_VM_HAS_DELAYED_PAGES
+\t    ", (up to %d of which are delayed free)"
+#endif /* XNU_VM_HAS_DELAYED_PAGES */
+\t    "%c",
+\t    vm_page_free_count,
+\t    vm_page_wire_count,
+#if XNU_VM_HAS_DELAYED_PAGES
+\t    vm_delayed_count,
+#endif /* XNU_VM_HAS_DELAYED_PAGES */
+\t    '\\n');
+
+\tkernel_debug_string_early("vm_page_bootstrap complete");"""
+
+        r16_early_printf = """\tbooter_size = ml_get_booter_memory_size();
+
+\t/* hakios: bypass premature printf before kmem/console init and draw milestone */
+\t{
+\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
+\t\thk_draw_band_direct(0x00FFFFFF, 356, 4); /* White: vm_page_bootstrap about to complete */
+\t}
+
+\tkernel_debug_string_early("vm_page_bootstrap complete");"""
+
+        if t16_early_printf in c16:
+            c16 = c16.replace(t16_early_printf, r16_early_printf, 1)
             print("  [OK] osfmk/vm/vm_resident.c: bypassed early vm_page_bootstrap printf and added row 356")
         else:
-            print("  [WARN] vm_page_bootstrap printf not found in vm_resident.c")
+            print("  [WARN] t16_early_printf not found in vm_resident.c")
 
         # Entry of pmap_startup
         t16_pms_def = "pmap_startup(\n\tvm_offset_t     *startp,\n\tvm_offset_t     *endp)\n{"
