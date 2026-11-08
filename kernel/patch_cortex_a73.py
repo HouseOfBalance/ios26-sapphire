@@ -1162,8 +1162,8 @@ LEXT(hk_render_screen_asm)
 \tmrs\tx3, par_el1
 \ttbnz\tx3, #0, 7f
 
-\tmov\t\tx25, #20
-\tmov\t\tx26, #480
+\tmov\t\tx25, #1040
+\tmov\t\tx26, #360
 
 \tmovz\tw14, #0xffff
 \tmovk\tw14, #0x00ff, lsl #16\t/* Yellow (0x00FFFF00) */
@@ -1181,7 +1181,7 @@ LEXT(hk_render_screen_asm)
 
 \tcmp\t\tw0, #10
 \tb.ne\t3f
-\tmov\t\tx25, #20
+\tmov\t\tx25, #1040
 \tadd\t\tx26, x26, #36
 \tcmp\t\tx26, #2360
 \tb.ge\t7f
@@ -1209,15 +1209,15 @@ LEXT(hk_render_screen_asm)
 \tadd\t\tx8, x2, x15
 
 61:\ttbz\t\tw5, #7, 62f
-\tstr\t\tw14, [x7], #4
-\tstr\t\tw14, [x7], #4
-\tstr\t\tw14, [x8], #4
-\tstr\t\tw14, [x8], #4
+\tstr\t\tw14, [x7], #-4
+\tstr\t\tw14, [x7], #-4
+\tstr\t\tw14, [x8], #-4
+\tstr\t\tw14, [x8], #-4
 \tb\t\t63f
-62:\tstr\t\tw13, [x7], #4
-\tstr\t\tw13, [x7], #4
-\tstr\t\tw13, [x8], #4
-\tstr\t\tw13, [x8], #4
+62:\tstr\t\tw13, [x7], #-4
+\tstr\t\tw13, [x7], #-4
+\tstr\t\tw13, [x8], #-4
+\tstr\t\tw13, [x8], #-4
 63:\tlsl\t\tw5, w5, #1
 \tadd\t\tw6, w6, #1
 \tcmp\t\tw6, #8
@@ -1229,10 +1229,10 @@ LEXT(hk_render_screen_asm)
 \tcmp\t\tw4, #16
 \tb.lt\t6b
 
-\tadd\t\tx25, x25, #18
-\tcmp\t\tx25, #1040
-\tb.lt\t2b
-\tmov\t\tx25, #20
+\tsub\t\tx25, x25, #18
+\tcmp\t\tx25, #40
+\tb.ge\t2b
+\tmov\t\tx25, #1040
 \tadd\t\tx26, x26, #36
 \tcmp\t\tx26, #2360
 \tb.lt\t2b
@@ -1596,55 +1596,7 @@ LEXT(hk_draw_band_stackless)
                     changed_asm = True
                     print(f"  [OK] osfmk/arm64/{asm_name}: spill_failed Row 210 Vivid Red marker installed in all vectors (SP0 and SP1)")
 
-                # 7. Instrument return-to-userland path in locore.s (Rows 668 Gold & 670 DarkOrange)
-                t_eret_auth = """\tldr\t\tw9, [sp, SS64_CPSR]
-\ttbnz\tw9, PSR64_MODE_EL_SHIFT, 9f
-\tmrs\t\tx9, TPIDR_EL1\t\t\t\t\t\t// the process whose keys these are
-\tadrp\tx10, EXT(pac_std_keys)@page
-\tadd\t\tx10, x10, EXT(pac_std_keys)@pageoff
-\tPAC_STD_LOAD_USER_KEYS x10, x9, x11, x12, x13, x14, x15, x2, x3
-9:
-#endif /* HAS_STD_PAC */
-\tmov \tx0, sp\t\t\t\t\t\t\t\t// x0 = &pcb
-\t// Loads authed $x0->ss_64.pc into x1 and $x0->ss_64.cpsr into w2
-\tAUTH_THREAD_STATE_IN_X0\tx20, x21, x22, x23, x24, x25, el0_state_allowed=1"""
-                r_eret_auth = """\tldr\t\tw9, [sp, SS64_CPSR]
-\ttbnz\tw9, PSR64_MODE_EL_SHIFT, 9f
-\t/* hakios/build108: Row 668 Gold: locore.s returning to EL0 */
-\tmov\t\tx15, lr
-\tmovz\tw0, #0xd700
-\tmovk\tw0, #0x00ff, lsl #16
-\tmov\t\tw1, #668
-\tmov\t\tw2, #4
-\tbl\t\tEXT(hk_draw_band_direct)
-\tmov\t\tlr, x15
-\tmrs\t\tx9, TPIDR_EL1\t\t\t\t\t\t// the process whose keys these are
-\tadrp\tx10, EXT(pac_std_keys)@page
-\tadd\t\tx10, x10, EXT(pac_std_keys)@pageoff
-\tPAC_STD_LOAD_USER_KEYS x10, x9, x11, x12, x13, x14, x15, x2, x3
-9:
-#endif /* HAS_STD_PAC */
-\tmov \tx0, sp\t\t\t\t\t\t\t\t// x0 = &pcb
-\t// Loads authed $x0->ss_64.pc into x1 and $x0->ss_64.cpsr into w2
-\tAUTH_THREAD_STATE_IN_X0\tx20, x21, x22, x23, x24, x25, el0_state_allowed=1
-\t/* hakios/build108: Row 670 DarkOrange: AUTH_THREAD_STATE_IN_X0 finished */
-\tmov\t\tx14, x1
-\tmov\t\tw13, w2
-\tmov\t\tx15, lr
-\tmovz\tw0, #0x8c00
-\tmovk\tw0, #0x00ff, lsl #16
-\tmov\t\tw1, #670
-\tmov\t\tw2, #4
-\tbl\t\tEXT(hk_draw_band_direct)
-\tmov\t\tx1, x14
-\tmov\t\tw2, w13
-\tmov\t\tlr, x15"""
-                if t_eret_auth in c8:
-                    c8 = c8.replace(t_eret_auth, r_eret_auth, 1)
-                    changed_asm = True
-                    print(f"  [OK] osfmk/arm64/{asm_name}: Rows 668 (Gold) and 670 (DarkOrange) installed in exception_return")
-                else:
-                    print(f"  [WARN] osfmk/arm64/{asm_name}: t_eret_auth pattern not found")
+
 
             if changed_asm:
                 with open(p8, "w", encoding="utf-8", newline="\n") as f:
