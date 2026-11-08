@@ -118,10 +118,18 @@ All rows are strictly $\ge 2$ rows thick and non-overlapping:
 | `670..673`| 4      | Dark Orange | `0x00FF8C00` | `AUTH_THREAD_STATE_IN_X0` finished, preparing `eret` |
 | `672..675`| 4      | Lime       | `0x0000FF00` | Userland `svc #0x80` (`ESR_EC_SVC_64`) arrived in `sleh.c` |
 | `676..679`| 4      | Deep Pink  | `0x00FF1493` | Userland exception (not SVC) in `sleh.c` |
-| `680..683`| 4      | Yellow     | `0x00FFFF00` | `handle_svc` entered in `sleh.c` |
-| `684..687`| 4      | Cyan       | `0x0000FFFF` | `unix_syscall` entered in `systemcalls.c` |
-| `688..691`| 4      | Bright White | `0x00FFFFFF` | PID 1 recognized in `unix_syscall` |
-| `692..695`| 4      | Gold       | `0x00FFD700` | `SYS_open` handled |
-| `696..699`| 4      | Spring Green | `0x0000FF7F` | `SYS_write` handled |
-| `700..703`| 4      | Orange     | `0x00FFA500` | `SYS_getpid` handled |
-| `704..707`| 4      | Mint       | `0x0098FF98` | `SYS_select` heartbeat handled |
+| `684..687`| 4      | Variable   | Cyan/Red/Yellow/White | EL0 Exception Class (Cyan=IABORT 0x20, Red=DABORT 0x24, Yellow=UNDEF 0x00, White=SP_ALIGN 0x26) |
+| `690..693`| 4      | Variable   | Gold/Pink/Green | Fault Status Code (Gold=Translation Fault 4..7, Pink=Permission Fault 12..15) |
+| `698..701`| 4      | Hot Pink   | `0x00FF69B4` | Guide Header for FAR |
+| `704..735`| 32     | Palette    | Variable   | 8 nibbles of `FAR` (Fault Address Register, MSB = 704, LSB = 735) |
+| `738..741`| 4      | Cyan       | `0x0000FFFF` | Guide Header for PC |
+| `744..775`| 32     | Palette    | Variable   | 8 nibbles of `PC` (Faulting Program Counter, MSB = 744, LSB = 775) |
+| `778..781`| 4      | Lime       | `0x0000FF00` | Guide Header for ESR |
+| `784..815`| 32     | Palette    | Variable   | 8 nibbles of `ESR` (Syndrome Register, MSB = 784, LSB = 815) |
+| `680..683`| 4      | Yellow     | `0x00FFFF00` | (SVC path) `handle_svc` entered in `sleh.c` |
+| `684..687`| 4      | Cyan       | `0x0000FFFF` | (SVC path) `unix_syscall` entered in `systemcalls.c` |
+| `688..691`| 4      | Bright White | `0x00FFFFFF` | (SVC path) PID 1 recognized in `unix_syscall` |
+| `692..695`| 4      | Gold       | `0x00FFD700` | (SVC path) `SYS_open` handled |
+| `696..699`| 4      | Spring Green | `0x0000FF7F` | (SVC path) `SYS_write` handled |
+| `700..703`| 4      | Orange     | `0x00FFA500` | (SVC path) `SYS_getpid` handled |
+| `704..707`| 4      | Mint       | `0x0098FF98` | (SVC path) `SYS_select` heartbeat handled |

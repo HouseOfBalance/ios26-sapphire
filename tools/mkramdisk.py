@@ -768,9 +768,9 @@ def run_tests():
     code, start = assemble_dummy_init()
     assert len(code) > 0, "Assembler produced empty output"
     assert start == 0, f"Unexpected entry point offset {start}"
-    # Verify SP alignment opcode: add x9, sp, #0 -> 0x910003e9
+    # Verify entry instruction: SYS_getpid (movz x16, #20 -> 0xd2800290)
     first_inst, = struct.unpack_from('<I', code, 0)
-    assert first_inst == 0x910003E9, f"First opcode 0x{first_inst:08x} != add x9, sp, #0"
+    assert first_inst == 0xD2800290, f"First opcode 0x{first_inst:08x} != movz x16, #20"
     print(f"      Passed ({len(code)} bytes assembled)")
     passed += 1
 
