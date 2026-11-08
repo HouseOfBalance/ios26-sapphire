@@ -86,8 +86,7 @@ index a18749e..d222a22 100644
 +			arm64_quad_pte_write(ptep, pte0, pte1, pte2, pte3);
  		}
  	} else {
--		*ptep = pte;
-+		*ptep = (pte & ARM_PTE_TYPE_VALID) ? (pte | (1ULL << 10)) : pte;
+ 		*ptep = pte;
 @@ -5943,6 +5975,9 @@ pmap_enter_pte(pmap_t pmap, pt_entry_t *pte_p, pt_entry_t *old_pte, pt_entry_t n
  				need_strong_sync = true;
  			}
