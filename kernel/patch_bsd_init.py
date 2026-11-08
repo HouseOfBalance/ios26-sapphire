@@ -440,7 +440,29 @@ hk_run_pid1_diagnostics(void)
         print("  [WARN] osfmk/console/video_console.c not found")
 
 
-    # 11c. Instrument osfmk/arm64/sleh.c for userland exception & SVC monitoring (Rows 672, 676, 680)
+    # 11b. Bypass code signing page validation in bsd/kern/ubc_subr.c (cs_validate_page)
+    target_ubc = os.path.join(src_dir, "bsd", "kern", "ubc_subr.c")
+    if os.path.isfile(target_ubc):
+        with open(target_ubc, "r", encoding="utf-8", errors="replace") as f:
+            cubc = f.read().replace("\r\n", "\n")
+        if "/* hakios: unconditionally succeed page validation */" not in cubc:
+            pos = cubc.find("cs_validate_page(")
+            if pos != -1:
+                brace = cubc.find("{", pos)
+                if brace != -1:
+                    injection = "\n\t/* hakios: unconditionally succeed page validation during bringup */\n\tif (tainted) *tainted = 0;\n\treturn 0;\n"
+                    cubc = cubc[:brace+1] + injection + cubc[brace+1:]
+                    with open(target_ubc, "w", encoding="utf-8", newline="\n") as f:
+                        f.write(cubc)
+                    print("  [OK] bsd/kern/ubc_subr.c: cs_validate_page bypass installed")
+            else:
+                print("  [WARN] bsd/kern/ubc_subr.c: cs_validate_page not found")
+        else:
+            print("  [ALREADY PATCHED] bsd/kern/ubc_subr.c: cs_validate_page bypass already installed")
+    else:
+        print("  [WARN] bsd/kern/ubc_subr.c not found")
+
+    # 11c. Instrument osfmk/arm64/sleh.c for userland exception & SVC monitoring (Rows 750..1050, 20 rows thick)
     target_sleh = os.path.join(src_dir, "osfmk", "arm64", "sleh.c")
     if os.path.isfile(target_sleh):
         with open(target_sleh, "r", encoding="utf-8", errors="replace") as f:
@@ -453,33 +475,41 @@ hk_run_pid1_diagnostics(void)
                 "\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);\n"
                 "\tif (is_user) {\n"
                 "\t\tif (class == ESR_EC_SVC_64) {\n"
-                "\t\t\thk_draw_band_direct(0x0000FF00, 672, 8); /* Lime: user SVC_64 arrived */\n"
+                "\t\t\thk_draw_band_direct(0x00FFFF00, 1050, 20); /* Yellow: user SVC_64 arrived (row 1050) */\n"
                 "\t\t} else {\n"
                 "\t\t\tstatic int hk_user_fault_count = 0;\n"
                 "\t\t\tif (hk_user_fault_count++ < 8) {\n"
-                "\t\t\t\thk_draw_band_direct(0x00FF1493, 676, 8); /* DeepPink: user exception (not SVC) */\n"
-                "\t\t\t\t/* 1. Exception Class Diagnostic Band (Row 686, 8 rows thick) */\n"
+                "\t\t\t\thk_draw_band_direct(0x00FF1493, 750, 20); /* DeepPink: user exception (not SVC, row 750) */\n"
+                "\t\t\t\t/* 1. Exception Class Diagnostic Band (Row 800, 20 rows thick) */\n"
                 "\t\t\t\tif (class == 0x20 || class == 0x21) {\n"
-                "\t\t\t\t\thk_draw_band_direct(0x0000FFFF, 686, 8); /* Cyan: IABORT (Demand page fault / Prefetch) */\n"
+                "\t\t\t\t\thk_draw_band_direct(0x0000FFFF, 800, 20); /* Cyan: IABORT (Demand page fault / Prefetch) */\n"
                 "\t\t\t\t} else if (class == 0x24 || class == 0x25) {\n"
-                "\t\t\t\t\thk_draw_band_direct(0x00FF0000, 686, 8); /* Vivid Red: DABORT (Data Abort) */\n"
+                "\t\t\t\t\thk_draw_band_direct(0x00FF0000, 800, 20); /* Vivid Red: DABORT (Data Abort) */\n"
                 "\t\t\t\t} else if (class == 0x00) {\n"
-                "\t\t\t\t\thk_draw_band_direct(0x00FFFF00, 686, 8); /* Yellow: UNDEF instruction / PAC trap */\n"
+                "\t\t\t\t\thk_draw_band_direct(0x00FFFF00, 800, 20); /* Yellow: UNDEF instruction / PAC trap */\n"
                 "\t\t\t\t} else if (class == 0x26) {\n"
-                "\t\t\t\t\thk_draw_band_direct(0x00FFFFFF, 686, 8); /* White: SP alignment fault */\n"
+                "\t\t\t\t\thk_draw_band_direct(0x00FFFFFF, 800, 20); /* White: SP alignment fault */\n"
                 "\t\t\t\t} else {\n"
-                "\t\t\t\t\thk_draw_band_direct(0x00FFA500, 686, 8); /* Orange: other exception class */\n"
+                "\t\t\t\t\thk_draw_band_direct(0x00FFA500, 800, 20); /* Orange: other exception class */\n"
                 "\t\t\t\t}\n"
-                "\t\t\t\t/* 2. Fault Status Code (FSC = esr & 0x3F) at Row 696, 8 rows thick */\n"
+                "\t\t\t\t/* 2. Fault Status Code (FSC = esr & 0x3F) at Row 850, 20 rows thick */\n"
                 "\t\t\t\tuint32_t fsc = (uint32_t)(esr & 0x3F);\n"
                 "\t\t\t\tif (fsc >= 4 && fsc <= 7) {\n"
-                "\t\t\t\t\thk_draw_band_direct(0x00FFD700, 696, 8); /* Gold: Translation Fault (Demand Paging) */\n"
+                "\t\t\t\t\thk_draw_band_direct(0x00FFD700, 850, 20); /* Gold: Translation Fault (Demand Paging) */\n"
                 "\t\t\t\t} else if (fsc >= 8 && fsc <= 11) {\n"
-                "\t\t\t\t\thk_draw_band_direct(0x0000FF7F, 696, 8); /* SpringGreen: Access Flag Fault */\n"
+                "\t\t\t\t\thk_draw_band_direct(0x0000FF7F, 850, 20); /* SpringGreen: Access Flag Fault */\n"
                 "\t\t\t\t} else if (fsc >= 12 && fsc <= 15) {\n"
-                "\t\t\t\t\thk_draw_band_direct(0x00FF00FF, 696, 8); /* Magenta: Permission Fault (UXN/AP) */\n"
+                "\t\t\t\t\thk_draw_band_direct(0x00FF00FF, 850, 20); /* Magenta: Permission Fault (UXN/AP) */\n"
                 "\t\t\t\t} else {\n"
-                "\t\t\t\t\thk_draw_band_direct(0x008A2BE2, 696, 8); /* BlueViolet: other FSC */\n"
+                "\t\t\t\t\thk_draw_band_direct(0x008A2BE2, 850, 20); /* BlueViolet: other FSC */\n"
+                "\t\t\t\t}\n"
+                "\t\t\t\t/* 3. FAR Range at Row 900, 20 rows thick */\n"
+                "\t\t\t\tif ((uint64_t)far >= 0x100000000ULL) {\n"
+                "\t\t\t\t\thk_draw_band_direct(0x0000FF00, 900, 20); /* Lime: far >= 0x100000000 */\n"
+                "\t\t\t\t} else if ((uint64_t)far == 0) {\n"
+                "\t\t\t\t\thk_draw_band_direct(0x00FF0000, 900, 20); /* Red: far == 0 */\n"
+                "\t\t\t\t} else {\n"
+                "\t\t\t\t\thk_draw_band_direct(0x00FFFF00, 900, 20); /* Yellow: other far */\n"
                 "\t\t\t\t}\n"
                 "\t\t\t}\n"
                 "\t\t}\n"
@@ -487,9 +517,21 @@ hk_run_pid1_diagnostics(void)
             )
             if t_sleh in csleh:
                 csleh = csleh.replace(t_sleh, r_sleh, 1)
-                print("  [OK] osfmk/arm64/sleh.c: userland exception/SVC monitor installed (rows 672, 676)")
+                print("  [OK] osfmk/arm64/sleh.c: userland exception/SVC monitor installed (rows 750..900)")
             else:
                 print("  [WARN] osfmk/arm64/sleh.c: t_sleh anchor not found")
+
+            t_huab = "static void\nhandle_user_abort("
+            pos_huab = csleh.find(t_huab)
+            if pos_huab == -1:
+                t_huab = "static void handle_user_abort("
+                pos_huab = csleh.find(t_huab)
+            if pos_huab != -1:
+                brace_huab = csleh.find("{", pos_huab)
+                if brace_huab != -1:
+                    inj_huab = "\n\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);\n\thk_draw_band_direct(0x0000FFFF, 950, 20); /* Cyan: handle_user_abort entered (row 950) */\n"
+                    csleh = csleh[:brace_huab+1] + inj_huab + csleh[brace_huab+1:]
+                    print("  [OK] osfmk/arm64/sleh.c: handle_user_abort entry band installed (row 950)")
 
             t_hsvc = "static void\nhandle_svc(arm_saved_state_t *state)\n{"
             if t_hsvc not in csleh:
@@ -497,11 +539,11 @@ hk_run_pid1_diagnostics(void)
             r_hsvc = (
                 t_hsvc + "\n"
                 "\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);\n"
-                "\thk_draw_band_direct(0x00FFFF00, 706, 8); /* Yellow: handle_svc entered (row 706) */\n"
+                "\thk_draw_band_direct(0x00FFFF00, 1050, 20); /* Yellow: handle_svc entered (row 1050) */\n"
             )
             if t_hsvc in csleh:
                 csleh = csleh.replace(t_hsvc, r_hsvc, 1)
-                print("  [OK] osfmk/arm64/sleh.c: handle_svc entry band installed (row 706)")
+                print("  [OK] osfmk/arm64/sleh.c: handle_svc entry band installed (row 1050)")
             else:
                 print("  [WARN] osfmk/arm64/sleh.c: handle_svc pattern not found")
 
@@ -520,26 +562,33 @@ hk_run_pid1_diagnostics(void)
             r_syscall = (
                 "\t/* hakios: userland PID 1 diagnostic suite: calibration, bit-gauge & KVA render */\n"
                 "\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);\n"
-                "\thk_draw_band_direct(0x0000FFFF, 716, 8); /* Cyan: unix_syscall entered (row 716) */\n"
+                "\thk_draw_band_direct(0x0000FFFF, 1150, 20); /* Cyan: unix_syscall entered (row 1150) */\n"
                 "\tint hk_pid = proc_getpid(proc);\n"
                 "\tif (hk_pid == 1) {\n"
                 "\t\tstatic int pid1_boot_banner_drawn = 0;\n"
                 "\t\tif (!pid1_boot_banner_drawn) {\n"
                 "\t\t\tpid1_boot_banner_drawn = 1;\n"
-                "\t\t\thk_draw_band_direct(0x00FFFFFF, 726, 12); /* Bright White: PID 1 in unix_syscall (row 726) */\n"
+                "\t\t\thk_draw_band_direct(0x00FFFFFF, 1200, 20); /* Bright White: PID 1 in unix_syscall (row 1200) */\n"
                 "\t\t\thk_draw_band_direct(0x00FFFF00, 1720, 24); /* Yellow: PID 1 first syscall arrived! */\n"
                 "\t\t\textern void hk_run_pid1_diagnostics(void);\n"
                 "\t\t\thk_run_pid1_diagnostics();\n"
                 "\t\t}\n\n"
-                "\t\tif (code == 5 || (code & 0x00FFFFFF) == 5 /* SYS_open */) {\n"
-                "\t\t\thk_draw_band_direct(0x00FFD700, 740, 8); /* Gold: SYS_open handled! (row 740) */\n"
+                "\t\tif (code == 20 || (code & 0x00FFFFFF) == 20 /* SYS_getpid */) {\n"
+                "\t\t\thk_draw_band_direct(0x00FFA500, 1250, 20); /* Orange: SYS_getpid handled! (row 1250) */\n"
                 "\t\t\tuthread->uu_rval[0] = 1;\n"
                 "\t\t\tuthread->uu_rval[1] = 0;\n"
-                "\t\t\terror = 0;\n"
+                "\t\terror = 0;\n"
+                "\t\t\tgoto hakios_pid1_handled;\n"
+                "\t\t}\n\n"
+                "\t\tif (code == 5 || (code & 0x00FFFFFF) == 5 /* SYS_open */) {\n"
+                "\t\t\thk_draw_band_direct(0x00FFD700, 1300, 20); /* Gold: SYS_open handled! (row 1300) */\n"
+                "\t\t\tuthread->uu_rval[0] = 1;\n"
+                "\t\t\tuthread->uu_rval[1] = 0;\n"
+                "\t\terror = 0;\n"
                 "\t\t\tgoto hakios_pid1_handled;\n"
                 "\t\t}\n\n"
                 "\t\tif (code == 4 || (code & 0x00FFFFFF) == 4 /* SYS_write */) {\n"
-                "\t\t\thk_draw_band_direct(0x0000FF7F, 750, 8); /* SpringGreen: SYS_write handled! (row 750) */\n"
+                "\t\t\thk_draw_band_direct(0x0000FF7F, 1350, 20); /* SpringGreen: SYS_write handled! (row 1350) */\n"
                 "\t\t\tstatic char hk_user_write_buf[256];\n"
                 "\t\t\tstatic uint32_t hk_text_row = 1750;\n"
                 "\t\t\tuser_addr_t ubuf = (user_addr_t)uthread->uu_arg[1];\n"
@@ -549,26 +598,19 @@ hk_run_pid1_diagnostics(void)
                 "\t\t\t\thk_user_write_buf[to_copy] = '\\0';\n"
                 "\t\t\t\textern void hk_kva_fill(uint32_t, uint32_t, uint32_t);\n"
                 "\t\t\t\textern void hk_kva_text(const char *, uint32_t, uint32_t);\n"
-                "\t\t\t\thk_draw_band_direct(0x00FFFFFF, 1730, 8);\n"
-                "\t\t\t\thk_kva_fill(0xFF000000, hk_text_row, 32);\n"
-                "\t\t\t\thk_kva_text(hk_user_write_buf, to_copy, hk_text_row);\n"
-                "\t\t\t\thk_text_row += 32;\n"
-                "\t\t\t\tif (hk_text_row > 2200) hk_text_row = 1750;\n"
+                "\t\t\thk_draw_band_direct(0x00FFFFFF, 1730, 8);\n"
+                "\t\t\thk_kva_fill(0xFF000000, hk_text_row, 32);\n"
+                "\t\t\thk_kva_text(hk_user_write_buf, to_copy, hk_text_row);\n"
+                "\t\t\thk_text_row += 32;\n"
+                "\t\t\tif (hk_text_row > 2200) hk_text_row = 1750;\n"
                 "\t\t\t}\n"
                 "\t\t\tuthread->uu_rval[0] = (int)ulen;\n"
                 "\t\t\tuthread->uu_rval[1] = 0;\n"
-                "\t\t\terror = 0;\n"
-                "\t\t\tgoto hakios_pid1_handled;\n"
-                "\t\t}\n\n"
-                "\t\tif (code == 20 || (code & 0x00FFFFFF) == 20 /* SYS_getpid */) {\n"
-                "\t\t\thk_draw_band_direct(0x00FFA500, 760, 8); /* Orange: SYS_getpid handled! (row 760) */\n"
-                "\t\t\tuthread->uu_rval[0] = 1;\n"
-                "\t\t\tuthread->uu_rval[1] = 0;\n"
-                "\t\t\terror = 0;\n"
+                "\t\terror = 0;\n"
                 "\t\t\tgoto hakios_pid1_handled;\n"
                 "\t\t}\n\n"
                 "\t\tif (code == 93 || (code & 0x00FFFFFF) == 93 /* SYS_select */) {\n"
-                "\t\t\thk_draw_band_direct(0x0098FF98, 770, 8); /* Mint: SYS_select heartbeat handled! (row 770) */\n"
+                "\t\t\thk_draw_band_direct(0x0098FF98, 1400, 20); /* Mint: SYS_select heartbeat handled! (row 1400) */\n"
                 "\t\t\tstatic uint32_t hb_color = 0x0000FF00;\n"
                 "\t\t\thk_draw_band_direct(hb_color, 1740, 8);\n"
                 "\t\t\thb_color = (hb_color == 0x0000FF00) ? 0x0000FFFF : 0x0000FF00;\n"
