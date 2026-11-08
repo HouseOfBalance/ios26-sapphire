@@ -358,8 +358,6 @@ def main():
 \t\t}
 \t}"""
         sleh_hook_new = """\textern void hk_draw_band(uint32_t color, uint32_t row_start, uint32_t row_count);
-\textern void set_saved_state_reg(arm_saved_state_t *state, unsigned int reg, uint64_t val);
-\textern void set_saved_state_pc(arm_saved_state_t *state, uint64_t pc);
 \tif (class == 0) {
 \t\tif (pac_patch_handle_trap(state, is_user)) {
 \t\t\treturn;
