@@ -440,29 +440,7 @@ hk_run_pid1_diagnostics(void)
         print("  [WARN] osfmk/console/video_console.c not found")
 
 
-    # 11b. Bypass code signing page validation in bsd/kern/ubc_subr.c (cs_validate_page)
-    target_ubc = os.path.join(src_dir, "bsd", "kern", "ubc_subr.c")
-    if os.path.isfile(target_ubc):
-        with open(target_ubc, "r", encoding="utf-8", errors="replace") as f:
-            cubc = f.read().replace("\r\n", "\n")
-        if "/* hakios: unconditionally succeed page validation */" not in cubc:
-            pos = cubc.find("cs_validate_page(")
-            if pos != -1:
-                brace = cubc.find("{", pos)
-                if brace != -1:
-                    injection = "\n\t/* hakios: unconditionally succeed page validation during bringup */\n\tif (tainted) *tainted = 0;\n\treturn 0;\n"
-                    cubc = cubc[:brace+1] + injection + cubc[brace+1:]
-                    with open(target_ubc, "w", encoding="utf-8", newline="\n") as f:
-                        f.write(cubc)
-                    print("  [OK] bsd/kern/ubc_subr.c: cs_validate_page bypass installed")
-            else:
-                print("  [WARN] bsd/kern/ubc_subr.c: cs_validate_page not found")
-        else:
-            print("  [ALREADY PATCHED] bsd/kern/ubc_subr.c: cs_validate_page bypass already installed")
-    else:
-        print("  [WARN] bsd/kern/ubc_subr.c not found")
-
-    # 11c. Instrument osfmk/arm64/sleh.c for userland exception & SVC monitoring (Rows 750..1050, 20 rows thick)
+    # 11c. Instrument osfmk/arm64/sleh.c for userland exception & SVC monitoring (Rows 750..900, 20 rows thick)
     target_sleh = os.path.join(src_dir, "osfmk", "arm64", "sleh.c")
     if os.path.isfile(target_sleh):
         with open(target_sleh, "r", encoding="utf-8", errors="replace") as f:
@@ -517,38 +495,11 @@ hk_run_pid1_diagnostics(void)
             )
             if t_sleh in csleh:
                 csleh = csleh.replace(t_sleh, r_sleh, 1)
+                with open(target_sleh, "w", encoding="utf-8", newline="\n") as f:
+                    f.write(csleh)
                 print("  [OK] osfmk/arm64/sleh.c: userland exception/SVC monitor installed (rows 750..900)")
             else:
                 print("  [WARN] osfmk/arm64/sleh.c: t_sleh anchor not found")
-
-            t_huab = "static void\nhandle_user_abort("
-            pos_huab = csleh.find(t_huab)
-            if pos_huab == -1:
-                t_huab = "static void handle_user_abort("
-                pos_huab = csleh.find(t_huab)
-            if pos_huab != -1:
-                brace_huab = csleh.find("{", pos_huab)
-                if brace_huab != -1:
-                    inj_huab = "\n\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);\n\thk_draw_band_direct(0x0000FFFF, 950, 20); /* Cyan: handle_user_abort entered (row 950) */\n"
-                    csleh = csleh[:brace_huab+1] + inj_huab + csleh[brace_huab+1:]
-                    print("  [OK] osfmk/arm64/sleh.c: handle_user_abort entry band installed (row 950)")
-
-            t_hsvc = "static void\nhandle_svc(arm_saved_state_t *state)\n{"
-            if t_hsvc not in csleh:
-                t_hsvc = "static void handle_svc(arm_saved_state_t *state)\n{"
-            r_hsvc = (
-                t_hsvc + "\n"
-                "\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);\n"
-                "\thk_draw_band_direct(0x00FFFF00, 1050, 20); /* Yellow: handle_svc entered (row 1050) */\n"
-            )
-            if t_hsvc in csleh:
-                csleh = csleh.replace(t_hsvc, r_hsvc, 1)
-                print("  [OK] osfmk/arm64/sleh.c: handle_svc entry band installed (row 1050)")
-            else:
-                print("  [WARN] osfmk/arm64/sleh.c: handle_svc pattern not found")
-
-            with open(target_sleh, "w", encoding="utf-8", newline="\n") as f:
-                f.write(csleh)
 
     # 12. Instrument bsd/dev/arm/systemcalls.c for PID 1 userland syscall interception, banner display & heartbeat
     target_sys = os.path.join(src_dir, "bsd", "dev", "arm", "systemcalls.c")
