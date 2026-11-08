@@ -133,3 +133,14 @@ All rows are strictly $\ge 2$ rows thick and non-overlapping:
 | `696..699`| 4      | Spring Green | `0x0000FF7F` | (SVC path) `SYS_write` handled |
 | `700..703`| 4      | Orange     | `0x00FFA500` | (SVC path) `SYS_getpid` handled |
 | `704..707`| 4      | Mint       | `0x0098FF98` | (SVC path) `SYS_select` heartbeat handled |
+| `820..827`| 8      | White      | `0x00FFFFFF` | Kernel Fault Gauge Header |
+| `830..845`| 16     | Palette    | Variable   | 2 nibbles of `class` (Exception Class) |
+| `848..851`| 4      | Cyan       | `0x0000FFFF` | Separator (PC follows) |
+| `854..917`| 64     | Palette    | Variable   | 16 nibbles of `pc` (Kernel Faulting PC) |
+| `920..923`| 4      | Yellow     | `0x00FFFF00` | Separator (ESR follows) |
+| `926..989`| 64     | Palette    | Variable   | 16 nibbles of `esr` (Kernel Syndrome ESR) |
+| `992..995`| 4      | Hot Pink   | `0x00FF69B4` | Separator (FAR follows) |
+| `998..1061`| 64    | Palette    | Variable   | 16 nibbles of `far` (Kernel Fault Address FAR) |
+| `1064..1067`| 4    | Lime       | `0x0000FF00` | Separator (LR follows) |
+| `1070..1133`| 64    | Palette    | Variable   | 16 nibbles of `lr` (Kernel Link Register LR) |
+| `1136..1143`| 8    | White      | `0x00FFFFFF` | Kernel Fault Gauge Footer |

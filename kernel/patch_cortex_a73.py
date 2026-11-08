@@ -358,8 +358,6 @@ def main():
 \t\t}
 \t}"""
         sleh_hook_new = """\textern void hk_draw_band(uint32_t color, uint32_t row_start, uint32_t row_count);
-\textern void hk_render_screen_asm(const char *str, uint32_t len, const unsigned char *font);
-\textern const unsigned char iso_font[];
 \tif (class == 0) {
 \t\tif (pac_patch_handle_trap(state, is_user)) {
 \t\t\treturn;
@@ -368,78 +366,91 @@ def main():
 \t\t\treturn;
 \t\t}
 \t\tif (!is_user) {
-\t\t\thk_draw_band(0x00FF0000, 680, 14); /* Thick Red band at Row 680: unhandled kernel UNDEF */
-\t\t\tstatic char umsg[384];
-\t\t\tint pos = 0;
-\t\t\tconst char *hdr = "=== HAKIOS KERNEL UNDEF ===\\n";
-\t\t\twhile (*hdr) umsg[pos++] = *hdr++;
-\t\t\tuint64_t pc = (uint64_t)get_saved_state_pc(state);
-\t\t\tuint64_t vals[7] = {
-\t\t\t\tpc,
-\t\t\t\t(pc >= 0xffff000000000000ULL) ? (uint64_t)*(volatile uint32_t *)pc : 0ULL,
-\t\t\t\t(uint64_t)get_saved_state_reg(state, 30),
-\t\t\t\t(uint64_t)get_saved_state_sp(state),
-\t\t\t\t(uint64_t)esr,
-\t\t\t\t(uint64_t)far,
-\t\t\t\t(uint64_t)get_saved_state_reg(state, 0)
+\t\t\tstatic const uint32_t hk_npal[16] = {
+\t\t\t\t0x00000000, 0x000000FF, 0x0000FF00, 0x0000FFFF,
+\t\t\t\t0x00FF0000, 0x00FF00FF, 0x00FFFF00, 0x00FFFFFF,
+\t\t\t\t0x00808080, 0x00000080, 0x00008000, 0x00008080,
+\t\t\t\t0x00800000, 0x00800080, 0x00808000, 0x00FFA500
 \t\t\t};
-\t\t\tconst char *names[7] = { "pc  : 0x", "insn: 0x", "lr  : 0x", "sp  : 0x", "esr : 0x", "far : 0x", "x0  : 0x" };
-\t\t\tfor (int k = 0; k < 7; k++) {
-\t\t\t\tconst char *nm = names[k];
-\t\t\t\twhile (*nm) umsg[pos++] = *nm++;
-\t\t\t\tuint64_t v = vals[k];
-\t\t\t\tfor (int sh = 60; sh >= 0; sh -= 4) {
-\t\t\t\t\tuint32_t d = (uint32_t)((v >> sh) & 0xf);
-\t\t\t\t\tumsg[pos++] = (char)(d < 10 ? ('0' + d) : ('a' + d - 10));
-\t\t\t\t}
-\t\t\t\tumsg[pos++] = '\\n';
+\t\t\thk_draw_band(0x00FF0000, 680, 14); /* Thick Red band at Row 680: unhandled kernel UNDEF */
+\t\t\tuint64_t hk_upc = (uint64_t)get_saved_state_pc(state);
+\t\t\tuint64_t hk_uesr = (uint64_t)esr;
+\t\t\tuint64_t hk_ufar = (uint64_t)far;
+\t\t\tuint64_t hk_ulr = (uint64_t)get_saved_state_reg(state, 30);
+\t\t\thk_draw_band(0x00FFFFFF, 820, 8);
+\t\t\thk_draw_band(hk_npal[0], 830, 8);
+\t\t\thk_draw_band(hk_npal[0], 838, 8);
+\t\t\thk_draw_band(0x0000FFFF, 848, 4);
+\t\t\tfor (int ni = 15; ni >= 0; ni--) {
+\t\t\t\thk_draw_band(hk_npal[(hk_upc >> (ni * 4)) & 0xF], 854 + (15 - ni) * 4, 4);
 \t\t\t}
-\t\t\tumsg[pos] = '\\0';
-\t\t\tfor (uintptr_t p = (uintptr_t)umsg; p < (uintptr_t)umsg + pos + 64; p += 64) {
-\t\t\t\t__asm__ volatile ("dc civac, %0" : : "r" (p));
+\t\t\thk_draw_band(0x00FFFF00, 920, 4);
+\t\t\tfor (int ni = 15; ni >= 0; ni--) {
+\t\t\t\thk_draw_band(hk_npal[(hk_uesr >> (ni * 4)) & 0xF], 926 + (15 - ni) * 4, 4);
 \t\t\t}
-\t\t\t__asm__ volatile ("dsb sy");
-\t\t\thk_render_screen_asm(umsg, pos, iso_font);
-\t\t\thk_draw_band(0x0000FF00, 700, 10);
+\t\t\thk_draw_band(0x00FF69B4, 992, 4);
+\t\t\tfor (int ni = 15; ni >= 0; ni--) {
+\t\t\t\thk_draw_band(hk_npal[(hk_ufar >> (ni * 4)) & 0xF], 998 + (15 - ni) * 4, 4);
+\t\t\t}
+\t\t\thk_draw_band(0x0000FF00, 1064, 4);
+\t\t\tfor (int ni = 15; ni >= 0; ni--) {
+\t\t\t\thk_draw_band(hk_npal[(hk_ulr >> (ni * 4)) & 0xF], 1070 + (15 - ni) * 4, 4);
+\t\t\t}
+\t\t\thk_draw_band(0x00FFFFFF, 1136, 8);
 \t\t\tfor (;;) {
 \t\t\t\t__asm__ volatile ("wfe");
 \t\t\t}
 \t\t}
 \t} else if (!is_user) {
-\t\thk_draw_band(0x00FF00FF, 680, 14); /* Thick Magenta band at Row 680: kernel fault/abort */
-\t\tstatic char fmsg[384];
-\t\tint pos = 0;
-\t\tconst char *hdr = "=== HAKIOS KERNEL FAULT ===\\n";
-\t\twhile (*hdr) fmsg[pos++] = *hdr++;
-\t\tuint64_t vals[7] = {
-\t\t\t(uint64_t)class,
-\t\t\t(uint64_t)get_saved_state_pc(state),
-\t\t\t(uint64_t)get_saved_state_reg(state, 30),
-\t\t\t(uint64_t)get_saved_state_sp(state),
-\t\t\t(uint64_t)esr,
-\t\t\t(uint64_t)far,
-\t\t\t(uint64_t)get_saved_state_reg(state, 0)
+\t\tstatic const uint32_t hk_npal[16] = {
+\t\t\t0x00000000, 0x000000FF, 0x0000FF00, 0x0000FFFF,
+\t\t\t0x00FF0000, 0x00FF00FF, 0x00FFFF00, 0x00FFFFFF,
+\t\t\t0x00808080, 0x00000080, 0x00008000, 0x00008080,
+\t\t\t0x00800000, 0x00800080, 0x00808000, 0x00FFA500
 \t\t};
-\t\tconst char *names[7] = { "cls : 0x", "pc  : 0x", "lr  : 0x", "sp  : 0x", "esr : 0x", "far : 0x", "x0  : 0x" };
-\t\tfor (int k = 0; k < 7; k++) {
-\t\t\tconst char *nm = names[k];
-\t\t\twhile (*nm) fmsg[pos++] = *nm++;
-\t\t\tuint64_t v = vals[k];
-\t\t\tfor (int sh = 60; sh >= 0; sh -= 4) {
-\t\t\t\tuint32_t d = (uint32_t)((v >> sh) & 0xf);
-\t\t\t\tfmsg[pos++] = (char)(d < 10 ? ('0' + d) : ('a' + d - 10));
+\t\tuint64_t hk_kpc = (uint64_t)get_saved_state_pc(state);
+\t\tuint64_t hk_kesr = (uint64_t)esr;
+\t\tuint64_t hk_kfar = (uint64_t)far;
+\t\tuint64_t hk_klr = (uint64_t)get_saved_state_reg(state, 30);
+\t\t/* Paint Kernel Fault Diagnostic Gauge in rows 820..1143 */
+\t\thk_draw_band(0x00FFFFFF, 820, 8); /* White header */
+\t\t/* 2 nibbles of class (rows 830..845) */
+\t\thk_draw_band(hk_npal[((uint32_t)class >> 4) & 0xF], 830, 8);
+\t\thk_draw_band(hk_npal[(uint32_t)class & 0xF], 838, 8);
+\t\thk_draw_band(0x0000FFFF, 848, 4); /* Cyan separator */
+\t\t/* 16 nibbles of pc (rows 854..917) */
+\t\tfor (int ni = 15; ni >= 0; ni--) {
+\t\t\thk_draw_band(hk_npal[(hk_kpc >> (ni * 4)) & 0xF], 854 + (15 - ni) * 4, 4);
+\t\t}
+\t\thk_draw_band(0x00FFFF00, 920, 4); /* Yellow separator */
+\t\t/* 16 nibbles of esr (rows 926..989) */
+\t\tfor (int ni = 15; ni >= 0; ni--) {
+\t\t\thk_draw_band(hk_npal[(hk_kesr >> (ni * 4)) & 0xF], 926 + (15 - ni) * 4, 4);
+\t\t}
+\t\thk_draw_band(0x00FF69B4, 992, 4); /* Hot Pink separator */
+\t\t/* 16 nibbles of far (rows 998..1061) */
+\t\tfor (int ni = 15; ni >= 0; ni--) {
+\t\t\thk_draw_band(hk_npal[(hk_kfar >> (ni * 4)) & 0xF], 998 + (15 - ni) * 4, 4);
+\t\t}
+\t\thk_draw_band(0x0000FF00, 1064, 4); /* Lime separator */
+\t\t/* 16 nibbles of lr (rows 1070..1133) */
+\t\tfor (int ni = 15; ni >= 0; ni--) {
+\t\t\thk_draw_band(hk_npal[(hk_klr >> (ni * 4)) & 0xF], 1070 + (15 - ni) * 4, 4);
+\t\t}
+\t\thk_draw_band(0x00FFFFFF, 1136, 8); /* White footer */
+\t\t/* Check repetitive abort loop on identical PC */
+\t\tstatic uint64_t hk_prev_pc = 0;
+\t\tstatic int hk_pc_repeat = 0;
+\t\tif (hk_kpc == hk_prev_pc) {
+\t\t\tif (++hk_pc_repeat >= 3) {
+\t\t\t\thk_draw_band(0x00FF00FF, 680, 14); /* Thick Magenta band: loop halt */
+\t\t\t\tfor (;;) {
+\t\t\t\t\t__asm__ volatile ("wfe");
+\t\t\t\t}
 \t\t\t}
-\t\t\tfmsg[pos++] = '\\n';
-\t\t}
-\t\tfmsg[pos] = '\\0';
-\t\tfor (uintptr_t p = (uintptr_t)fmsg; p < (uintptr_t)fmsg + pos + 64; p += 64) {
-\t\t\t__asm__ volatile ("dc civac, %0" : : "r" (p));
-\t\t}
-\t\t__asm__ volatile ("dsb sy");
-\t\thk_render_screen_asm(fmsg, pos, iso_font);
-\t\thk_draw_band(0x0000FF00, 700, 10);
-\t\tfor (;;) {
-\t\t\t__asm__ volatile ("wfe");
+\t\t} else {
+\t\t\thk_prev_pc = hk_kpc;
+\t\t\thk_pc_repeat = 1;
 \t\t}
 \t}"""
         if sleh_hook_old in c_norm:
