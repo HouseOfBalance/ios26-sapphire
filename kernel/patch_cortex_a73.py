@@ -402,30 +402,51 @@ def main():
 \t\t\t}
 \t\t}
 \t} else if (!is_user) {
-\t\t/* hakios: intercept and gracefully recover EL1 kernel NULL pointer dereferences */
-\t\tstatic int hk_null_rec_count = 0;
-\t\tif (class == 0x25 && far < 0x4000) {
-\t\t\tif (hk_null_rec_count++ < 64) {
-\t\t\t\tuint64_t hk_rpc = (uint64_t)get_saved_state_pc(state);
-\t\t\t\tif (hk_rpc >= 0xffff000000000000ULL) {
-\t\t\t\t\tuint32_t hk_insn = *(volatile uint32_t *)hk_rpc;
-\t\t\t\t\tuint32_t hk_rt = hk_insn & 0x1F;
-\t\t\t\t\tif (hk_rt < 31) {
-\t\t\t\t\t\tset_saved_state_reg(state, hk_rt, 0);
-\t\t\t\t\t}
-\t\t\t\t\tif ((hk_insn & 0x3E000000) == 0x28000000) {
-\t\t\t\t\t\tuint32_t hk_rt2 = (hk_insn >> 10) & 0x1F;
-\t\t\t\t\t\tif (hk_rt2 < 31) {
-\t\t\t\t\t\t\tset_saved_state_reg(state, hk_rt2, 0);
-\t\t\t\t\t\t}
-\t\t\t\t\t}
-\t\t\t\t\tset_saved_state_pc(state, hk_rpc + 4);
-\t\t\t\t\thk_draw_band(0x0000FFFF, 812, 4); /* Cyan: recovered EL1 NULL abort (row 812) */
-\t\t\t\t\treturn;
-\t\t\t\t}
-\t\t\t}
-\t\t}
-\t\tstatic const uint32_t hk_npal[16] = {
+			/* hakios: intercept and gracefully recover EL1 kernel Data & Instruction Aborts */
+			static int hk_el1_rec_count = 0;
+			static uint64_t hk_last_fault_pc = 0;
+			static int hk_same_pc_count = 0;
+			if (class == 0x25) {
+				uint64_t hk_rpc = (uint64_t)get_saved_state_pc(state);
+				if (hk_rpc >= 0xffff000000000000ULL) {
+					if (hk_rpc == hk_last_fault_pc) {
+						hk_same_pc_count++;
+					} else {
+						hk_last_fault_pc = hk_rpc;
+						hk_same_pc_count = 0;
+					}
+					if (hk_same_pc_count < 4 && hk_el1_rec_count++ < 256) {
+						uint32_t hk_insn = *(volatile uint32_t *)hk_rpc;
+						/* Check WnR: ESR bit 6 (0 = Read/Load, 1 = Write/Store) */
+						if (!(esr & (1ULL << 6))) {
+							uint32_t hk_rt = hk_insn & 0x1F;
+							if (hk_rt < 31) {
+								set_saved_state_reg(state, hk_rt, 0);
+							}
+							if ((hk_insn & 0x3E000000) == 0x28000000) {
+								uint32_t hk_rt2 = (hk_insn >> 10) & 0x1F;
+								if (hk_rt2 < 31) {
+									set_saved_state_reg(state, hk_rt2, 0);
+								}
+							}
+						}
+						set_saved_state_pc(state, hk_rpc + 4);
+						hk_draw_band(0x0000FFFF, 812, 4); /* Cyan: recovered EL1 abort (row 812) */
+						hk_draw_band(0x0000FF00, 816, 2); /* Lime: EL1 recovery engine active (row 816) */
+						return;
+					}
+				}
+			}
+			if (class == 0x21) {
+				uint64_t hk_rlr = (uint64_t)get_saved_state_reg(state, 30);
+				if (hk_rlr >= 0xffff000000000000ULL && hk_el1_rec_count++ < 64) {
+					set_saved_state_pc(state, hk_rlr);
+					set_saved_state_reg(state, 0, 0); /* Return KERN_FAILURE / 0 in x0 */
+					hk_draw_band(0x00FFA500, 814, 2); /* Orange: recovered EL1 inst abort */
+					return;
+				}
+			}
+		static const uint32_t hk_npal[16] = {
 \t\t\t0x00000000, 0x000000FF, 0x0000FF00, 0x0000FFFF,
 \t\t\t0x00FF0000, 0x00FF00FF, 0x00FFFF00, 0x00FFFFFF,
 \t\t\t0x00808080, 0x00000080, 0x00008000, 0x00008080,
