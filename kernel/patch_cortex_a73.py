@@ -51,6 +51,7 @@ def main():
         replacement_init = """\textern void hk_draw_band(uint32_t color, uint32_t row_start, uint32_t row_count);
 	extern void hk_draw_band_direct(uint32_t color, uint32_t row_start, uint32_t row_count);
 	hk_draw_band(0x00FFA500, 50, 4);   /* hakios visual marker: Orange at rows 50-53 (legacy drawer) */
+	__asm__ volatile ("msr cpacr_el1, %0; isb" : : "r" (3ULL << 20) : "memory");
 	hk_draw_band_direct(0x00FFFF00, 55, 4); /* hakios visual marker: Yellow at rows 55-58 (Phase 1 direct VA drawer) */
 \tloader_checkpoint(30);   /* hakios: reached arm_init (C) at all (ret from start.s worked) */
 \thk_draw_band(0x0000FF00, 60, 10);   /* hakios visual marker: Green at rows 60-69 (past CP30, about to slide/rebase) */
@@ -610,6 +611,10 @@ sleh_invalid_stack(arm_context_t *context, uint64_t esr __unused, vm_offset_t fa
 
         start_new = """\tmov\t\tx20, x0
 \tmov\t\tx21, #0
+\t// hakios: enable FP/SIMD access for EL0 and EL1 (CPACR_EL1.FPEN = 0b11)
+\tmovz\tx9, #0x0030, lsl #16
+\tmsr\tcpacr_el1, x9
+\tisb
 \t// hakios visual marker CP1: Yellow band at rows 0-9 (0x5c000000)
 \tmovz\tx9, #0x5c00, lsl #16
 \tmovz\tx10, #0xff00
@@ -2050,13 +2055,22 @@ kernel_debug_string_early(const char *message)
 	pmap_startup(&virtual_space_start, &virtual_space_end);
 	{
 		extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
-		hk_draw_band_direct(0x0032CD32, 292, 2); /* Lime: pmap_startup returned to vm_page_bootstrap */
+		hk_draw_band_direct(0x0032CD32, 292, 4); /* Lime: pmap_startup returned to vm_page_bootstrap */
 	}"""
         if t16_pms_call in c16:
             c16 = c16.replace(t16_pms_call, r16_pms_call, 1)
             print("  [OK] osfmk/vm/vm_resident.c: pmap_startup call return marker installed")
         else:
             print("  [WARN] t16_pms_call not found in vm_resident.c")
+
+        # Bypass early printf in vm_page_bootstrap before kmem/console init and draw milestone
+        p_printf = re.compile(r'printf\("vm_page_bootstrap:.*?vm_page_wire_count\);', re.DOTALL)
+        r16_printf = """/* hakios: bypass premature printf before kmem/console and draw milestone */\n\t{\n\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);\n\t\thk_draw_band_direct(0x00FFFFFF, 356, 4); /* White: vm_page_bootstrap about to return */\n\t}"""
+        if p_printf.search(c16):
+            c16 = p_printf.sub(r16_printf, c16, count=1)
+            print("  [OK] osfmk/vm/vm_resident.c: bypassed early vm_page_bootstrap printf and added row 356")
+        else:
+            print("  [WARN] vm_page_bootstrap printf not found in vm_resident.c")
 
         # Entry of pmap_startup
         t16_pms_def = "pmap_startup(\n\tvm_offset_t     *startp,\n\tvm_offset_t     *endp)\n{"
@@ -2631,6 +2645,23 @@ lck_mtx_assert(lck_mtx_t *lock, unsigned int type)
                         f.write(c_mr)
                     print(f"  [OK] {os.path.join(*mr_rel)}: ml_wait_max_cpus safeguard installed")
 
+    # 26. osfmk/kern/zalloc.c (clamp PAGE_SHIFT_CONST and instrument zone_bootstrap)
+    p26 = os.path.join(src, "osfmk", "kern", "zalloc.c")
+    if os.path.isfile(p26):
+        with open(p26, "r", encoding="utf-8", errors="replace") as f:
+            c26 = f.read().replace("\r\n", "\n")
+        z_pat = re.compile(r'void\s+zone_bootstrap\(void\)\s*\{')
+        rz_entry = """void\nzone_bootstrap(void)\n{\n\textern int PAGE_SHIFT_CONST;\n\tif (PAGE_SHIFT_CONST <= 5) {\n\t\tPAGE_SHIFT_CONST = 14;\n\t}\n\t{\n\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);\n\t\thk_draw_band_direct(0x0032CD32, 362, 4); /* Lime: zone_bootstrap entered */\n\t}"""
+        if "/* Lime: zone_bootstrap entered */" in c26:
+            print("  [ALREADY PATCHED] osfmk/kern/zalloc.c: zone_bootstrap markers already present")
+        elif z_pat.search(c26):
+            c26 = z_pat.sub(rz_entry, c26, count=1)
+            with open(p26, "w", encoding="utf-8", newline="\n") as f:
+                f.write(c26)
+            print("  [OK] osfmk/kern/zalloc.c: zone_bootstrap entry marker & PAGE_SHIFT_CONST clamp installed")
+        else:
+            print("  [WARN] zone_bootstrap not found in zalloc.c")
+
     # Post-patch verification assertions: verify files on disk actually contain the patches!
     print("=== Post-patch Verification on Disk ===")
     p_locore = os.path.join(src, "osfmk", "arm64", "locore.s")
@@ -2649,6 +2680,7 @@ lck_mtx_assert(lck_mtx_t *lock, unsigned int type)
         assert "304" in vmres_content, "ASSERTION FAILED: vm_resident.c missing Row 304 marker on disk!"
         assert "302" in vmres_content, "ASSERTION FAILED: vm_resident.c missing Row 302 marker on disk!"
         assert "305" in vmres_content, "ASSERTION FAILED: vm_resident.c missing Row 305 marker on disk!"
+        assert "356" in vmres_content, "ASSERTION FAILED: vm_resident.c missing Row 356 marker on disk!"
         print("  [OK] vm_resident.c verified: progress markers present on disk")
 
     print("Cortex-A73 patches successfully applied!")
