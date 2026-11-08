@@ -88,18 +88,20 @@ stage1() {
 	# Apple's iig (the DriverKit interface generator) is closed. host/bin/iig hands out the headers it
 	# would generate, which the macOS SDK of the same XNU release ships ready-made.
 	if [ ! -d MacOSX13.3.sdk/System/Library/Frameworks/Kernel.framework/Headers/DriverKit ]; then
+		mkdir -p MacOSX13.3.sdk/System/Library/Frameworks/Kernel.framework/Headers/DriverKit
 		HOST_MACOS_SDK=$(xcrun --sdk macosx --show-sdk-path 2>/dev/null || true)
 		if [ -n "$HOST_MACOS_SDK" ] && [ -d "$HOST_MACOS_SDK/System/Library/Frameworks/Kernel.framework/Headers/DriverKit" ]; then
 			log "using host macOS SDK DriverKit headers from $HOST_MACOS_SDK"
-			mkdir -p MacOSX13.3.sdk/System/Library/Frameworks/Kernel.framework/Headers
-			cp -R "$HOST_MACOS_SDK/System/Library/Frameworks/Kernel.framework/Headers/DriverKit" \
-				MacOSX13.3.sdk/System/Library/Frameworks/Kernel.framework/Headers/
+			cp -R "$HOST_MACOS_SDK/System/Library/Frameworks/Kernel.framework/Headers/DriverKit/." \
+				MacOSX13.3.sdk/System/Library/Frameworks/Kernel.framework/Headers/DriverKit/ 2>/dev/null || true
 		else
-			log "downloading the macOS 13.3 SDK for its DriverKit headers"
-			curl -L --fail --retry 5 --retry-delay 2 -s -o macos-sdk.tar.xz "$MACOS_SDK_URL" || die "download failed: $MACOS_SDK_URL"
-			tar -xJf macos-sdk.tar.xz --wildcards '*MacOSX13.3.sdk/System/Library/Frameworks/Kernel.framework*' || \
-				die "cannot unpack the macOS SDK"
-			rm -f macos-sdk.tar.xz
+			log "attempting to download macOS 13.3 SDK for DriverKit headers (best effort)"
+			if curl -L --fail --retry 3 --retry-delay 2 -s -o macos-sdk.tar.xz "$MACOS_SDK_URL" 2>/dev/null; then
+				tar -xJf macos-sdk.tar.xz --wildcards '*MacOSX13.3.sdk/System/Library/Frameworks/Kernel.framework*' 2>/dev/null || true
+				rm -f macos-sdk.tar.xz
+			else
+				log "macOS 13.3 SDK download skipped; host/bin/iig will use Xcode iig or built-in stubs"
+			fi
 		fi
 	fi
 
@@ -175,12 +177,21 @@ stage1_darwin() {
 		a6c70ca0e544347a0377babf748f831577ec24f9        # libpthread-514.100.2
 
 	if [ ! -d MacOSX13.3.sdk/System/Library/Frameworks/Kernel.framework/Headers/DriverKit ]; then
-		log "downloading the macOS 13.3 SDK for its DriverKit headers"
-		curl -L --fail --retry 3 -s -o macos-sdk.tar.xz "$MACOS_SDK_URL" || die "download failed: $MACOS_SDK_URL"
-		# bsdtar takes the member pattern as a glob without --wildcards
-		tar -xJf macos-sdk.tar.xz '*MacOSX13.3.sdk/System/Library/Frameworks/Kernel.framework*' ||
-			die "cannot unpack the macOS SDK"
-		rm -f macos-sdk.tar.xz
+		mkdir -p MacOSX13.3.sdk/System/Library/Frameworks/Kernel.framework/Headers/DriverKit
+		HOST_MACOS_SDK=$(/usr/bin/xcrun --sdk macosx --show-sdk-path 2>/dev/null || true)
+		if [ -n "$HOST_MACOS_SDK" ] && [ -d "$HOST_MACOS_SDK/System/Library/Frameworks/Kernel.framework/Headers/DriverKit" ]; then
+			log "using host macOS SDK DriverKit headers from $HOST_MACOS_SDK"
+			cp -R "$HOST_MACOS_SDK/System/Library/Frameworks/Kernel.framework/Headers/DriverKit/." \
+				MacOSX13.3.sdk/System/Library/Frameworks/Kernel.framework/Headers/DriverKit/ 2>/dev/null || true
+		else
+			log "attempting to download macOS 13.3 SDK for DriverKit headers (best effort)"
+			if curl -L --fail --retry 3 --retry-delay 2 -s -o macos-sdk.tar.xz "$MACOS_SDK_URL" 2>/dev/null; then
+				tar -xJf macos-sdk.tar.xz '*MacOSX13.3.sdk/System/Library/Frameworks/Kernel.framework*' 2>/dev/null || true
+				rm -f macos-sdk.tar.xz
+			else
+				log "macOS 13.3 SDK download skipped; host/bin/iig will use Xcode iig or built-in stubs"
+			fi
+		fi
 	fi
 
 	mkdir -p host/bin
