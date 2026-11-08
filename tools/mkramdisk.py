@@ -114,6 +114,11 @@ def assemble_dummy_init():
     """
     instructions = [
         ('LABEL', '_start'),
+        # Step 0: Immediate pure register verification (triggers userland svc #0x80 within 3 CPU cycles)
+        ('INST', 0xD2800290),          # movz x16, #20 (SYS_getpid)
+        ('INST', 0xF2A04010),          # movk x16, #0x200, lsl #16 (SYSCALL_CLASS_UNIX = 0x2000014)
+        ('INST', 0xD4001001),          # svc #0x80
+
         # Align SP to 16 bytes
         ('INST', 0x910003E9),          # add x9, sp, #0 (mov x9, sp)
         ('INST', 0xD344FC29),          # lsr x9, x9, #4

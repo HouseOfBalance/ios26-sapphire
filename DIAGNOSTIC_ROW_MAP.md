@@ -102,9 +102,26 @@ All rows are strictly $\ge 2$ rows thick and non-overlapping:
 | `426..433`| 8      | Palette    | Variable   | 8 nibbles of `avail_end` (MSB = 426, LSB = 433) |
 | `436..437`| 2      | Lime / Red | `0x0000FF00`/`0x00FF0000` | `need_ram_ranges_init` flag (Lime = 1, Red = 0) |
 | `440..441`| 2      | Lime / Red | `0x0000FF00`/`0x00FF0000` | `VBAR_EL1` alignment (Lime = VA, Red = PA) |
-| `500..503`| 4      | Goldenrod  | `0x00DAA520` | `bsd_init` entered |
-| `615..618`| 4      | Spring Green | `0x0000FF7F` | `vfs_mountroot` succeeded (Mockfs RAMDisk mounted) |
-| `620..623`| 4      | Deep Sky Blue | `0x0000BFFF` | `bsd_utaskbootstrap` created PID 1 task |
-| `630..633`| 4      | Dark Orange | `0x00FF8C00` | `bsdinit_task` thread running (clears TPIDR_EL0 bit 63) |
-| `640..643`| 4      | Magenta    | `0x00FF00FF` | `/sbin/launchd` loaded, handoff to EL0 |
-| `650..653`| 4      | Vivid Yellow | `0x00FFFF00` | PID 1 first syscall (`svc #0x80`) captured in kernel |
+| `600..603`| 4      | Goldenrod  | `0x00DAA520` | `bsd_init` entered |
+| `606..609`| 4      | Orange     | `0x00FFA500` | `bsd_bufferinit` completed |
+| `612..615`| 4      | Yellow Green | `0x009ACD32` | `vfsinit` completed |
+| `618..621`| 4      | Dodger Blue | `0x001E90FF` | `devfs_kernel_mount` completed |
+| `624..627`| 4      | Medium Orchid | `0x00BA55D3` | `mbinit` completed |
+| `630..633`| 4      | Hot Pink   | `0x00FF69B4` | `net_init_run` completed |
+| `636..639`| 4      | Cyan       | `0x0000FFFF` | `bsd_init` completed (autoconf -> launchd) |
+| `642..645`| 4      | Spring Green | `0x0000FF7F` | `vfs_mountroot` succeeded (Mockfs RAMDisk mounted) |
+| `648..651`| 4      | Deep Sky Blue | `0x0000BFFF` | `bsd_utaskbootstrap` created PID 1 task |
+| `654..657`| 4      | Dark Orange | `0x00FF8C00` | `bsdinit_task` thread entered |
+| `660..663`| 4      | Magenta    | `0x00FF00FF` | `load_init_program` returned (`/sbin/launchd` loaded) |
+| `666..669`| 4      | Dodger Blue | `0x001E90FF` | `bsdinit_task` returning to user AST |
+| `668..671`| 4      | Gold       | `0x00FFD700` | `locore.s` entering EL0 return path (`w9 == EL0`) |
+| `670..673`| 4      | Dark Orange | `0x00FF8C00` | `AUTH_THREAD_STATE_IN_X0` finished, preparing `eret` |
+| `672..675`| 4      | Lime       | `0x0000FF00` | Userland `svc #0x80` (`ESR_EC_SVC_64`) arrived in `sleh.c` |
+| `676..679`| 4      | Deep Pink  | `0x00FF1493` | Userland exception (not SVC) in `sleh.c` |
+| `680..683`| 4      | Yellow     | `0x00FFFF00` | `handle_svc` entered in `sleh.c` |
+| `684..687`| 4      | Cyan       | `0x0000FFFF` | `unix_syscall` entered in `systemcalls.c` |
+| `688..691`| 4      | Bright White | `0x00FFFFFF` | PID 1 recognized in `unix_syscall` |
+| `692..695`| 4      | Gold       | `0x00FFD700` | `SYS_open` handled |
+| `696..699`| 4      | Spring Green | `0x0000FF7F` | `SYS_write` handled |
+| `700..703`| 4      | Orange     | `0x00FFA500` | `SYS_getpid` handled |
+| `704..707`| 4      | Mint       | `0x0098FF98` | `SYS_select` heartbeat handled |

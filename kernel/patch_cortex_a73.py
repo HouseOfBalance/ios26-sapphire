@@ -305,14 +305,27 @@ def main():
 \t// hakios: Bengal Cortex-A73 lacks hardware PAC sysregs; stub out
 .endm"""
 
+        load_user_old = """.macro PAC_STD_LOAD_USER_KEYS base, thread, id, lo, hi, t1, t2, t3, t4
+\tldr\t\\id, [\\thread, TH_JOP_PID]
+\tPAC_STD_LOAD_A_KEYS \\base, \\id, \\lo, \\hi, \\t1, \\t2, \\t3, \\t4
+\tldr\t\\id, [\\thread, TH_ROP_PID]
+\tPAC_STD_LOAD_B_KEYS \\base, \\id, \\lo, \\hi, \\t1, \\t2, \\t3, \\t4
+.endm"""
+
+        load_user_new = """.macro PAC_STD_LOAD_USER_KEYS base, thread, id, lo, hi, t1, t2, t3, t4
+\t// hakios: Bengal Cortex-A73 lacks hardware PAC sysregs; stub out to prevent NULL deref of TPIDR_EL1
+.endm"""
+
         c_norm = c.replace("\r\n", "\n")
         assert load_keys_old in c_norm, "PAC_STD_LOAD_KEYS not found in pac_std_asm.h"
         assert load_a_old in c_norm, "PAC_STD_LOAD_A_KEYS not found in pac_std_asm.h"
         assert load_b_old in c_norm, "PAC_STD_LOAD_B_KEYS not found in pac_std_asm.h"
+        assert load_user_old in c_norm, "PAC_STD_LOAD_USER_KEYS not found in pac_std_asm.h"
 
         c_norm = c_norm.replace(load_keys_old, load_keys_new)
         c_norm = c_norm.replace(load_a_old, load_a_new)
         c_norm = c_norm.replace(load_b_old, load_b_new)
+        c_norm = c_norm.replace(load_user_old, load_user_new)
 
         with open(p2, "w", encoding="utf-8", newline="\n") as f:
             f.write(c_norm)
@@ -1566,6 +1579,56 @@ LEXT(hk_draw_band_stackless)
                     c8 = c8.replace(t_spin_entry, r_spin_entry)
                     changed_asm = True
                     print(f"  [OK] osfmk/arm64/{asm_name}: spill_failed Row 210 Vivid Red marker installed in all vectors (SP0 and SP1)")
+
+                # 7. Instrument return-to-userland path in locore.s (Rows 668 Gold & 670 DarkOrange)
+                t_eret_auth = """\tldr\t\tw9, [sp, SS64_CPSR]
+\ttbnz\tw9, PSR64_MODE_EL_SHIFT, 9f
+\tmrs\t\tx9, TPIDR_EL1\t\t\t\t\t\t// the process whose keys these are
+\tadrp\tx10, EXT(pac_std_keys)@page
+\tadd\t\tx10, x10, EXT(pac_std_keys)@pageoff
+\tPAC_STD_LOAD_USER_KEYS x10, x9, x11, x12, x13, x14, x15, x2, x3
+9:
+#endif /* HAS_STD_PAC */
+\tmov \tx0, sp\t\t\t\t\t\t\t\t// x0 = &pcb
+\t// Loads authed $x0->ss_64.pc into x1 and $x0->ss_64.cpsr into w2
+\tAUTH_THREAD_STATE_IN_X0\tx20, x21, x22, x23, x24, x25, el0_state_allowed=1"""
+                r_eret_auth = """\tldr\t\tw9, [sp, SS64_CPSR]
+\ttbnz\tw9, PSR64_MODE_EL_SHIFT, 9f
+\t/* hakios/build108: Row 668 Gold: locore.s returning to EL0 */
+\tmov\t\tx15, lr
+\tmovz\tw0, #0xd700
+\tmovk\tw0, #0x00ff, lsl #16
+\tmov\t\tw1, #668
+\tmov\t\tw2, #4
+\tbl\t\tEXT(hk_draw_band_direct)
+\tmov\t\tlr, x15
+\tmrs\t\tx9, TPIDR_EL1\t\t\t\t\t\t// the process whose keys these are
+\tadrp\tx10, EXT(pac_std_keys)@page
+\tadd\t\tx10, x10, EXT(pac_std_keys)@pageoff
+\tPAC_STD_LOAD_USER_KEYS x10, x9, x11, x12, x13, x14, x15, x2, x3
+9:
+#endif /* HAS_STD_PAC */
+\tmov \tx0, sp\t\t\t\t\t\t\t\t// x0 = &pcb
+\t// Loads authed $x0->ss_64.pc into x1 and $x0->ss_64.cpsr into w2
+\tAUTH_THREAD_STATE_IN_X0\tx20, x21, x22, x23, x24, x25, el0_state_allowed=1
+\t/* hakios/build108: Row 670 DarkOrange: AUTH_THREAD_STATE_IN_X0 finished */
+\tmov\t\tx14, x1
+\tmov\t\tw13, w2
+\tmov\t\tx15, lr
+\tmovz\tw0, #0x8c00
+\tmovk\tw0, #0x00ff, lsl #16
+\tmov\t\tw1, #670
+\tmov\t\tw2, #4
+\tbl\t\tEXT(hk_draw_band_direct)
+\tmov\t\tx1, x14
+\tmov\t\tw2, w13
+\tmov\t\tlr, x15"""
+                if t_eret_auth in c8:
+                    c8 = c8.replace(t_eret_auth, r_eret_auth, 1)
+                    changed_asm = True
+                    print(f"  [OK] osfmk/arm64/{asm_name}: Rows 668 (Gold) and 670 (DarkOrange) installed in exception_return")
+                else:
+                    print(f"  [WARN] osfmk/arm64/{asm_name}: t_eret_auth pattern not found")
 
             if changed_asm:
                 with open(p8, "w", encoding="utf-8", newline="\n") as f:

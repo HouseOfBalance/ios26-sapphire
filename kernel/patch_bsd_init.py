@@ -446,9 +446,10 @@ hk_run_pid1_diagnostics(void)
         with open(target_sleh, "r", encoding="utf-8", errors="replace") as f:
             csleh = f.read().replace("\r\n", "\n")
         if "/* hakios: userland sleh exception monitor */" not in csleh:
-            t_sleh = "if (is_user && class != ESR_EC_SVC_64) {"
+            t_sleh = "bool is_user = PSR64_IS_USER(get_saved_state_cpsr(state));"
             r_sleh = (
-                "/* hakios: userland sleh exception monitor */\n"
+                "bool is_user = PSR64_IS_USER(get_saved_state_cpsr(state));\n"
+                "\t/* hakios: userland sleh exception monitor (runs BEFORE any early trap dispatch) */\n"
                 "\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);\n"
                 "\tif (is_user) {\n"
                 "\t\tif (class == ESR_EC_SVC_64) {\n"
@@ -456,8 +457,7 @@ hk_run_pid1_diagnostics(void)
                 "\t\t} else {\n"
                 "\t\t\thk_draw_band_direct(0x00FF1493, 676, 4); /* DeepPink: user exception (not SVC) */\n"
                 "\t\t}\n"
-                "\t}\n\n"
-                "\tif (is_user && class != ESR_EC_SVC_64) {"
+                "\t}"
             )
             if t_sleh in csleh:
                 csleh = csleh.replace(t_sleh, r_sleh, 1)
