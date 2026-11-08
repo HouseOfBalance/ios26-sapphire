@@ -402,51 +402,10 @@ def main():
 \t\t\t}
 \t\t}
 \t} else if (!is_user) {
-			/* hakios: intercept and gracefully recover EL1 kernel Data & Instruction Aborts */
-			static int hk_el1_rec_count = 0;
-			static uint64_t hk_last_fault_pc = 0;
-			static int hk_same_pc_count = 0;
-			if (class == 0x25) {
-				uint64_t hk_rpc = (uint64_t)get_saved_state_pc(state);
-				if (hk_rpc >= 0xffff000000000000ULL) {
-					if (hk_rpc == hk_last_fault_pc) {
-						hk_same_pc_count++;
-					} else {
-						hk_last_fault_pc = hk_rpc;
-						hk_same_pc_count = 0;
-					}
-					if (hk_same_pc_count < 4 && hk_el1_rec_count++ < 256) {
-						uint32_t hk_insn = *(volatile uint32_t *)hk_rpc;
-						/* Check WnR: ESR bit 6 (0 = Read/Load, 1 = Write/Store) */
-						if (!(esr & (1ULL << 6))) {
-							uint32_t hk_rt = hk_insn & 0x1F;
-							if (hk_rt < 31) {
-								set_saved_state_reg(state, hk_rt, 0);
-							}
-							if ((hk_insn & 0x3E000000) == 0x28000000) {
-								uint32_t hk_rt2 = (hk_insn >> 10) & 0x1F;
-								if (hk_rt2 < 31) {
-									set_saved_state_reg(state, hk_rt2, 0);
-								}
-							}
-						}
-						set_saved_state_pc(state, hk_rpc + 4);
-						hk_draw_band(0x0000FFFF, 812, 4); /* Cyan: recovered EL1 abort (row 812) */
-						hk_draw_band(0x0000FF00, 816, 2); /* Lime: EL1 recovery engine active (row 816) */
-						return;
-					}
-				}
-			}
-			if (class == 0x21) {
-				uint64_t hk_rlr = (uint64_t)get_saved_state_reg(state, 30);
-				if (hk_rlr >= 0xffff000000000000ULL && hk_el1_rec_count++ < 64) {
-					set_saved_state_pc(state, hk_rlr);
-					set_saved_state_reg(state, 0, 0); /* Return KERN_FAILURE / 0 in x0 */
-					hk_draw_band(0x00FFA500, 814, 2); /* Orange: recovered EL1 inst abort */
-					return;
-				}
-			}
-		static const uint32_t hk_npal[16] = {
+\t\tstatic int hk_gauge_drawn = 0;
+\t\tif (!hk_gauge_drawn) {
+\t\t\thk_gauge_drawn = 1;
+\t\tstatic const uint32_t hk_npal[16] = {
 \t\t\t0x00000000, 0x000000FF, 0x0000FF00, 0x0000FFFF,
 \t\t\t0x00FF0000, 0x00FF00FF, 0x00FFFF00, 0x00FFFFFF,
 \t\t\t0x00808080, 0x00000080, 0x00008000, 0x00008080,
@@ -482,6 +441,7 @@ def main():
 \t\t\thk_draw_band(hk_npal[(hk_klr >> (ni * 4)) & 0xF], 1070 + (15 - ni) * 4, 4);
 \t\t}
 \t\thk_draw_band(0x00FFFFFF, 1136, 8); /* White footer */
+\t\t}
 \t\t/* Check repetitive abort loop on identical PC */
 \t\tstatic uint64_t hk_prev_pc = 0;
 \t\tstatic int hk_pc_repeat = 0;
@@ -2195,7 +2155,7 @@ kernel_debug_string_early(const char *message)
 \t\t__asm__ volatile ("msr daifset, #0xf; isb");
 \t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
 \t\thk_draw_band_direct(0x00FF00FF, 302, 2); /* Vivid Magenta: PRE-LOCK (rows 302..303) */
-\t\tvm_free_page_lock();
+\t\t/* hakios: skip vm_free_page_lock() before STARTUP_SUB_LOCKS (single-core bootstrap, lck_mtx_tsid==0) */
 \t\t__asm__ volatile ("msr daifset, #0xf; isb");
 \t\thk_draw_band_direct(0x00FF00FF, 304, 2); /* Vivid Magenta: POST-LOCK (rows 304..305) */
 
@@ -2360,7 +2320,7 @@ kernel_debug_string_early(const char *message)
             c16 = c16.replace(t16_bwd, r16_bwd, 1)
             print("  [OK] osfmk/vm/vm_resident.c: backward loop bounded to vm_pages_count")
 
-        r16_unlock = """\tvm_free_page_unlock();
+        r16_unlock = """\t/* hakios: skip vm_free_page_unlock() matching skipped lock in pmap_startup */
 \t{
 \t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
 \t\thk_draw_band_direct(0x0000FF7F, 358, 4); /* Spring Green: page loop & unlock complete */
@@ -2624,9 +2584,32 @@ lck_mtx_assert(lck_mtx_t *lock, unsigned int type)
 \t}"""
         if t22 in c22:
             c22 = c22.replace(t22, r22, 1)
+            for fn_sig in [
+                "void\nlck_mtx_lock(lck_mtx_t *lock)\n{",
+                "void\nlck_mtx_lock_spin(lck_mtx_t *lock)\n{",
+                "void\nlck_mtx_lock_spin_always(lck_mtx_t *lock)\n{",
+                "void\nlck_mtx_unlock(lck_mtx_t *lock)\n{",
+            ]:
+                if fn_sig in c22:
+                    c22 = c22.replace(
+                        fn_sig,
+                        fn_sig + "\n\tif (startup_phase < STARTUP_SUB_LOCKS || lock->lck_mtx_tsid == 0) {\n\t\treturn;\n\t}",
+                        1,
+                    )
+            for try_sig in [
+                "boolean_t\nlck_mtx_try_lock(lck_mtx_t *lock)\n{",
+                "boolean_t\nlck_mtx_try_lock_spin(lck_mtx_t *lock)\n{",
+                "boolean_t\nlck_mtx_try_lock_spin_always(lck_mtx_t *lock)\n{",
+            ]:
+                if try_sig in c22:
+                    c22 = c22.replace(
+                        try_sig,
+                        try_sig + "\n\tif (startup_phase < STARTUP_SUB_LOCKS || lock->lck_mtx_tsid == 0) {\n\t\treturn TRUE;\n\t}",
+                        1,
+                    )
             with open(p22, "w", encoding="utf-8", newline="\n") as f:
                 f.write(c22)
-            print("  [OK] osfmk/kern/lock_mtx.c: early boot mutex assert bypass installed")
+            print("  [OK] osfmk/kern/lock_mtx.c: early boot mutex assert & uninitialized lock bypass installed")
         else:
             print("  [WARN] t22 not found in lock_mtx.c")
 
