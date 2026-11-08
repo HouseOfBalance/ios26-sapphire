@@ -441,6 +441,54 @@ def main():
 \t\t\thk_draw_band(hk_npal[(hk_klr >> (ni * 4)) & 0xF], 1070 + (15 - ni) * 4, 4);
 \t\t}
 \t\thk_draw_band(0x00FFFFFF, 1136, 8); /* White footer */
+
+\t\t/* hakios: Direct on-screen text diagnostic dump */
+\t\t{
+\t\t\textern void hk_render_screen_asm(const char *str, uint32_t len, const unsigned char *font);
+\t\t\textern const unsigned char iso_font[];
+\t\t\tstatic char hk_fmsg[384];
+\t\t\tint n = 0;
+\t\t\tconst char *hdr = "=== HAKIOS EXCEPTION ===\\n";
+\t\t\twhile (*hdr) hk_fmsg[n++] = *hdr++;
+
+\t\t\tconst char *cl_pfx = "CLASS: 0x";
+\t\t\twhile (*cl_pfx) hk_fmsg[n++] = *cl_pfx++;
+\t\t\tstatic const char hk_hex[] = "0123456789ABCDEF";
+\t\t\thk_fmsg[n++] = hk_hex[((uint32_t)class >> 4) & 0xF];
+\t\t\thk_fmsg[n++] = hk_hex[(uint32_t)class & 0xF];
+\t\t\tif (class == 0x25) {
+\t\t\t\tconst char *d = " (Data Abort EL1)\\n";
+\t\t\t\twhile (*d) hk_fmsg[n++] = *d++;
+\t\t\t} else if (class == 0x21) {
+\t\t\t\tconst char *d = " (Inst Abort EL1)\\n";
+\t\t\t\twhile (*d) hk_fmsg[n++] = *d++;
+\t\t\t} else {
+\t\t\t\thk_fmsg[n++] = '\\n';
+\t\t\t}
+
+\t\t\tconst char *pc_pfx = "PC   : 0x";
+\t\t\twhile (*pc_pfx) hk_fmsg[n++] = *pc_pfx++;
+\t\t\tfor (int ni = 15; ni >= 0; ni--) hk_fmsg[n++] = hk_hex[(hk_kpc >> (ni * 4)) & 0xF];
+\t\t\thk_fmsg[n++] = '\\n';
+
+\t\t\tconst char *lr_pfx = "LR   : 0x";
+\t\t\twhile (*lr_pfx) hk_fmsg[n++] = *lr_pfx++;
+\t\t\tfor (int ni = 15; ni >= 0; ni--) hk_fmsg[n++] = hk_hex[(hk_klr >> (ni * 4)) & 0xF];
+\t\t\thk_fmsg[n++] = '\\n';
+
+\t\t\tconst char *esr_pfx = "ESR  : 0x";
+\t\t\twhile (*esr_pfx) hk_fmsg[n++] = *esr_pfx++;
+\t\t\tfor (int ni = 15; ni >= 0; ni--) hk_fmsg[n++] = hk_hex[(hk_kesr >> (ni * 4)) & 0xF];
+\t\t\thk_fmsg[n++] = '\\n';
+
+\t\t\tconst char *far_pfx = "FAR  : 0x";
+\t\t\twhile (*far_pfx) hk_fmsg[n++] = *far_pfx++;
+\t\t\tfor (int ni = 15; ni >= 0; ni--) hk_fmsg[n++] = hk_hex[(hk_kfar >> (ni * 4)) & 0xF];
+\t\t\thk_fmsg[n++] = '\\n';
+
+\t\t\thk_fmsg[n] = '\\0';
+\t\t\thk_render_screen_asm(hk_fmsg, n, iso_font);
+\t\t}
 \t\t}
 \t\t/* Check repetitive abort loop on identical PC */
 \t\tstatic uint64_t hk_prev_pc = 0;
@@ -1084,9 +1132,10 @@ LEXT(hk_draw_band)
 """
         hk_render_screen_asm_code = """
 /*
- * hakios: on-screen panic text renderer
+ * hakios: direct virtual address on-screen text renderer
  * void hk_render_screen_asm(const char *str, uint32_t len, const unsigned char *font);
- * Renders 2x scaled ASCII text directly to physical framebuffer at 0x5c000000.
+ * Renders 2x scaled ASCII text directly to virtual framebuffer at 0xfffffff004000000.
+ * 100% direct VA drawer. Zero MMU toggles, zero TTBR0 switches, zero cache hazards.
  */
 \t.text
 \t.align 2
@@ -1102,52 +1151,24 @@ LEXT(hk_render_screen_asm)
 \tmov\t\tw20, w1
 \tmov\t\tx21, x2
 
-\tmrs\t\tx23, DAIF
-\tmsr\t\tDAIFSet, #0xf
+\t/* Framebuffer VA base: 0xfffffff004000000 */
+\tmovz\tx11, #0x0400, lsl #16
+\tmovk\tx11, #0xfff0, lsl #32
+\tmovk\tx11, #0xffff, lsl #48
 
-\tadrp\tx11, EXT(loader_stub_slot)@page
-\tadd\t\tx11, x11, EXT(loader_stub_slot)@pageoff
-\tldr\t\tx11, [x11, #24]
-
-\tsub\t\tx19, x19, x11
-\tsub\t\tx21, x21, x11
-
-\tmrs\t\tx22, SCTLR_EL1
-\ttbz\t\tx22, #0, 1f
-
-\tmrs\t\tx24, TTBR0_EL1
-\tadrp\tx12, EXT(bootstrap_pagetables)@page
-\tadd\t\tx12, x12, EXT(bootstrap_pagetables)@pageoff
-\tsub\t\tx12, x12, x11
-\tmsr\t\tTTBR0_EL1, x12
+\t/* Check if FB VA is mapped & writable via AT */
+\tat\ts1e1w, x11
 \tisb
-\ttlbi\tvmalle1
-\tdsb\t\tsy
-\tisb
-
-\tadr\t\tx13, 8f
-\tadr\t\tx10, 1f
-\tsub\t\tx10, x10, x11
-\tbr\t\tx10
-
-1:
-\tmrs\t\tx9, SCTLR_EL1
-\tbic\t\tx10, x9, #1
-\tmsr\t\tSCTLR_EL1, x10
-\tisb
+\tmrs\tx3, par_el1
+\ttbnz\tx3, #0, 7f
 
 \tmov\t\tx25, #20
-\tand\t\tx26, x3, #0xffffffff
-\tcmp\t\tx26, #720
-\tcsel\tx26, x26, xzr, hs
-\tcbnz\tx26, 21f
-\tmov\t\tx26, #720
-21:
+\tmov\t\tx26, #480
 
 \tmovz\tw14, #0xffff
-\tmovk\tw14, #0xffff, lsl #16
+\tmovk\tw14, #0x00ff, lsl #16\t/* Yellow (0x00FFFF00) */
 \tmovz\tw13, #0x0000
-\tmovk\tw13, #0xff00, lsl #16
+\tmovk\tw13, #0x0000, lsl #16\t/* Black (0x00000000) */
 \tmov\t\tx15, #4320
 
 2:\tcbz\t\tw20, 7f
@@ -1161,7 +1182,7 @@ LEXT(hk_render_screen_asm)
 \tcmp\t\tw0, #10
 \tb.ne\t3f
 \tmov\t\tx25, #20
-\tadd\t\tx26, x26, #32
+\tadd\t\tx26, x26, #36
 \tcmp\t\tx26, #2360
 \tb.ge\t7f
 \tb\t\t2b
@@ -1177,8 +1198,7 @@ LEXT(hk_render_screen_asm)
 \tadd\t\tx1, x21, x1
 
 \tmul\t\tx2, x26, x15
-\tmovz\tx3, #0x5c00, lsl #16
-\tadd\t\tx2, x2, x3
+\tadd\t\tx2, x2, x11
 \tadd\t\tx2, x2, x25, lsl #2
 
 \tmov\t\tw4, #0
@@ -1209,34 +1229,15 @@ LEXT(hk_render_screen_asm)
 \tcmp\t\tw4, #16
 \tb.lt\t6b
 
-\tadd\t\tx25, x25, #16
-\tcmp\t\tx25, #1060
+\tadd\t\tx25, x25, #18
+\tcmp\t\tx25, #1040
 \tb.lt\t2b
 \tmov\t\tx25, #20
-\tadd\t\tx26, x26, #32
+\tadd\t\tx26, x26, #36
 \tcmp\t\tx26, #2360
 \tb.lt\t2b
 
 7:\tdsb\t\tsy
-
-\tmsr\t\tSCTLR_EL1, x9
-\tisb
-
-\ttbz\t\tx22, #0, 9f
-\tbr\t\tx13
-
-8:\tmsr\t\tTTBR0_EL1, x24
-\tisb
-\ttlbi\tvmalle1
-\tdsb\t\tsy
-\tisb
-
-9:\tmrs\t\tx10, TPIDR_EL1
-\tcbnz\tx10, 91f
-\tmsr\t\tDAIFSet, #0xf
-\tb\t\t92f
-91:\tmsr\t\tDAIF, x23
-92:
 \tldp\t\tx25, x26, [sp, #64]
 \tldp\t\tx23, x24, [sp, #48]
 \tldp\t\tx21, x22, [sp, #32]
