@@ -402,9 +402,6 @@ def main():
 \t\t\t}
 \t\t}
 \t} else if (!is_user) {
-\t\tstatic int hk_gauge_drawn = 0;
-\t\tif (!hk_gauge_drawn) {
-\t\t\thk_gauge_drawn = 1;
 \t\tstatic const uint32_t hk_npal[16] = {
 \t\t\t0x00000000, 0x000000FF, 0x0000FF00, 0x0000FFFF,
 \t\t\t0x00FF0000, 0x00FF00FF, 0x00FFFF00, 0x00FFFFFF,
@@ -415,6 +412,9 @@ def main():
 \t\tuint64_t hk_kesr = (uint64_t)esr;
 \t\tuint64_t hk_kfar = (uint64_t)far;
 \t\tuint64_t hk_klr = (uint64_t)get_saved_state_reg(state, 30);
+\t\tstatic int hk_gauge_drawn = 0;
+\t\tif (!hk_gauge_drawn) {
+\t\t\thk_gauge_drawn = 1;
 \t\t/* Paint Kernel Fault Diagnostic Gauge in rows 820..1143 */
 \t\thk_draw_band(0x00FFFFFF, 820, 8); /* White header */
 \t\t/* 2 nibbles of class (rows 830..845) */
