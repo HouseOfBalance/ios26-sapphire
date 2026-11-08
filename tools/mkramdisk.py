@@ -150,19 +150,12 @@ def assemble_dummy_init():
         ('INST', 0xCB010042),          # sub x2, x2, x1 (len)
         ('BL', 'write_console'),
 
-        # getpid
+        # getpid (pure register verification, no stack writes)
         ('INST', 0xD2800290),          # movz x16, #20 (SYS_getpid)
         ('INST', 0xF2A04010),          # movk x16, #0x200, lsl #16 (SYSCALL_CLASS_UNIX = 0x2000014)
         ('INST', 0xD4001001),          # svc #0x80
-        ('INST', 0x1100C000),          # add w0, w0, #'0' (PID digit)
-        ('INST', 0xD10043FF),          # sub sp, sp, #16
-        ('INST', 0x390003E0),          # strb w0, [sp]
-        ('INST', 0x910003E1),          # add x1, sp, #0 (mov x1, sp)
-        ('INST', 0xD2800022),          # movz x2, #1 (len=1)
-        ('BL', 'write_console'),
-        ('INST', 0x910043FF),          # add sp, sp, #16
 
-        # write banner tail
+        # write banner tail (PID 1 running message)
         ('ADR', 1, 'hello_tail'),
         ('ADR', 2, 'alive'),
         ('INST', 0xCB010042),          # sub x2, x2, x1 (len)
@@ -204,10 +197,12 @@ def assemble_dummy_init():
         ('DATA', struct.pack('<QQ', 5, 0)),
         ('LABEL', 'path_console'),
         ('DATA', b'/dev/console\0'),
+        ('ALIGN', 4),
         ('LABEL', 'hello'),
-        ('DATA', b'\n*** HakiOS userspace: init running as PID '),
+        ('DATA', b'\n*** HakiOS userspace: init running as PID 1 ***\n\0'),
+        ('ALIGN', 4),
         ('LABEL', 'hello_tail'),
-        ('DATA', b' ***\n'),
+        ('DATA', b'[HakiOS PID 1 Online]\n\0'),
         ('LABEL', 'alive'),
         ('DATA', b'HakiOS init: still alive\n'),
         ('LABEL', 'alive_end'),

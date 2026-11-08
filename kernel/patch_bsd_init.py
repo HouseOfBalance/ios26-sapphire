@@ -208,11 +208,12 @@ def patch_bsd_init(src_dir):
     else:
         print("  [WARN] bsd/kern/bsd_init.c: bsdinit_task entry pattern not found")
 
-    # 11. load_init_program return band (Row 660: Magenta)
+    # 11. load_init_program return band (Row 660: Magenta, Row 666: DodgerBlue)
     t_loadinit = "load_init_program(p);\n"
     r_loadinit = (
         "load_init_program(p);\n"
-        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF00FF, 660, 4); } /* Magenta: load_init_program handoff to EL0 */\n"
+        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF00FF, 660, 4); } /* Magenta: load_init_program returned */\n"
+        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x001E90FF, 666, 4); } /* DodgerBlue: bsdinit_task returning to user AST */\n"
     )
     if t_loadinit in c:
         c = c.replace(t_loadinit, r_loadinit, 1)
@@ -438,6 +439,49 @@ hk_run_pid1_diagnostics(void)
     else:
         print("  [WARN] osfmk/console/video_console.c not found")
 
+
+    # 11c. Instrument osfmk/arm64/sleh.c for userland exception & SVC monitoring (Rows 672, 676, 680)
+    target_sleh = os.path.join(src_dir, "osfmk", "arm64", "sleh.c")
+    if os.path.isfile(target_sleh):
+        with open(target_sleh, "r", encoding="utf-8", errors="replace") as f:
+            csleh = f.read().replace("\r\n", "\n")
+        if "/* hakios: userland sleh exception monitor */" not in csleh:
+            t_sleh = "if (is_user && class != ESR_EC_SVC_64) {"
+            r_sleh = (
+                "/* hakios: userland sleh exception monitor */\n"
+                "\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);\n"
+                "\tif (is_user) {\n"
+                "\t\tif (class == ESR_EC_SVC_64) {\n"
+                "\t\t\thk_draw_band_direct(0x0000FF00, 672, 4); /* Lime: user SVC_64 arrived */\n"
+                "\t\t} else {\n"
+                "\t\t\thk_draw_band_direct(0x00FF1493, 676, 4); /* DeepPink: user exception (not SVC) */\n"
+                "\t\t}\n"
+                "\t}\n\n"
+                "\tif (is_user && class != ESR_EC_SVC_64) {"
+            )
+            if t_sleh in csleh:
+                csleh = csleh.replace(t_sleh, r_sleh, 1)
+                print("  [OK] osfmk/arm64/sleh.c: userland exception/SVC monitor installed (rows 672, 676)")
+            else:
+                print("  [WARN] osfmk/arm64/sleh.c: t_sleh anchor not found")
+
+            t_hsvc = "static void\nhandle_svc(arm_saved_state_t *state)\n{"
+            if t_hsvc not in csleh:
+                t_hsvc = "static void handle_svc(arm_saved_state_t *state)\n{"
+            r_hsvc = (
+                t_hsvc + "\n"
+                "\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);\n"
+                "\thk_draw_band_direct(0x00FFFF00, 680, 4); /* Yellow: handle_svc entered */\n"
+            )
+            if t_hsvc in csleh:
+                csleh = csleh.replace(t_hsvc, r_hsvc, 1)
+                print("  [OK] osfmk/arm64/sleh.c: handle_svc entry band installed (row 680)")
+            else:
+                print("  [WARN] osfmk/arm64/sleh.c: handle_svc pattern not found")
+
+            with open(target_sleh, "w", encoding="utf-8", newline="\n") as f:
+                f.write(csleh)
+
     # 12. Instrument bsd/dev/arm/systemcalls.c for PID 1 userland syscall interception, banner display & heartbeat
     target_sys = os.path.join(src_dir, "bsd", "dev", "arm", "systemcalls.c")
     if os.path.isfile(target_sys):
@@ -449,23 +493,27 @@ hk_run_pid1_diagnostics(void)
             t_syscall = "\terror = (*(callp->sy_call))(proc, &uthread->uu_arg[0], &(uthread->uu_rval[0]));"
             r_syscall = (
                 "\t/* hakios: userland PID 1 diagnostic suite: calibration, bit-gauge & KVA render */\n"
+                "\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);\n"
+                "\thk_draw_band_direct(0x0000FFFF, 684, 4); /* Cyan: unix_syscall entered */\n"
                 "\tint hk_pid = proc_getpid(proc);\n"
                 "\tif (hk_pid == 1) {\n"
                 "\t\tstatic int pid1_boot_banner_drawn = 0;\n"
                 "\t\tif (!pid1_boot_banner_drawn) {\n"
                 "\t\t\tpid1_boot_banner_drawn = 1;\n"
-                "\t\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);\n"
+                "\t\t\thk_draw_band_direct(0x00FFFFFF, 688, 4); /* Bright White: PID 1 in unix_syscall */\n"
                 "\t\t\thk_draw_band_direct(0x00FFFF00, 1720, 8); /* Yellow: PID 1 first syscall arrived! */\n"
                 "\t\t\textern void hk_run_pid1_diagnostics(void);\n"
                 "\t\t\thk_run_pid1_diagnostics();\n"
                 "\t\t}\n\n"
                 "\t\tif (code == 5 || (code & 0x00FFFFFF) == 5 /* SYS_open */) {\n"
+                "\t\t\thk_draw_band_direct(0x00FFD700, 692, 4); /* Gold: SYS_open handled! */\n"
                 "\t\t\tuthread->uu_rval[0] = 1;\n"
                 "\t\t\tuthread->uu_rval[1] = 0;\n"
                 "\t\t\terror = 0;\n"
                 "\t\t\tgoto hakios_pid1_handled;\n"
                 "\t\t}\n\n"
                 "\t\tif (code == 4 || (code & 0x00FFFFFF) == 4 /* SYS_write */) {\n"
+                "\t\t\thk_draw_band_direct(0x0000FF7F, 696, 4); /* SpringGreen: SYS_write handled! */\n"
                 "\t\t\tstatic char hk_user_write_buf[256];\n"
                 "\t\t\tstatic uint32_t hk_text_row = 1750;\n"
                 "\t\t\tuser_addr_t ubuf = (user_addr_t)uthread->uu_arg[1];\n"
@@ -473,7 +521,6 @@ hk_run_pid1_diagnostics(void)
                 "\t\t\tuint32_t to_copy = (ulen < sizeof(hk_user_write_buf) - 1) ? (uint32_t)ulen : (sizeof(hk_user_write_buf) - 1);\n"
                 "\t\t\tif (to_copy > 0 && copyin(ubuf, hk_user_write_buf, to_copy) == 0) {\n"
                 "\t\t\t\thk_user_write_buf[to_copy] = '\\0';\n"
-                "\t\t\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);\n"
                 "\t\t\t\textern void hk_kva_fill(uint32_t, uint32_t, uint32_t);\n"
                 "\t\t\t\textern void hk_kva_text(const char *, uint32_t, uint32_t);\n"
                 "\t\t\t\thk_draw_band_direct(0x00FFFFFF, 1730, 8);\n"
@@ -488,13 +535,14 @@ hk_run_pid1_diagnostics(void)
                 "\t\t\tgoto hakios_pid1_handled;\n"
                 "\t\t}\n\n"
                 "\t\tif (code == 20 || (code & 0x00FFFFFF) == 20 /* SYS_getpid */) {\n"
+                "\t\t\thk_draw_band_direct(0x00FFA500, 700, 4); /* Orange: SYS_getpid handled! */\n"
                 "\t\t\tuthread->uu_rval[0] = 1;\n"
                 "\t\t\tuthread->uu_rval[1] = 0;\n"
                 "\t\t\terror = 0;\n"
                 "\t\t\tgoto hakios_pid1_handled;\n"
                 "\t\t}\n\n"
                 "\t\tif (code == 93 || (code & 0x00FFFFFF) == 93 /* SYS_select */) {\n"
-                "\t\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);\n"
+                "\t\t\thk_draw_band_direct(0x0098FF98, 704, 4); /* Mint: SYS_select heartbeat handled! */\n"
                 "\t\t\tstatic uint32_t hb_color = 0x0000FF00;\n"
                 "\t\t\thk_draw_band_direct(hb_color, 1740, 4);\n"
                 "\t\t\thb_color = (hb_color == 0x0000FF00) ? 0x0000FFFF : 0x0000FF00;\n"
