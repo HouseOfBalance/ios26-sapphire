@@ -78,11 +78,10 @@ index a18749e..d222a22 100644
 -			*(ptep + 1) = pte | 0x1000;
 -			*(ptep + 2) = pte | 0x2000;
 -			*(ptep + 3) = pte | 0x3000;
-+			pt_entry_t pte_af = pte | (1ULL << 10);
-+			pt_entry_t pte0 = pte_af;
-+			pt_entry_t pte1 = (pte_af & ~ARM_PTE_PAGE_MASK) | ((pte_af & ARM_PTE_PAGE_MASK) + 0x1000ULL);
-+			pt_entry_t pte2 = (pte_af & ~ARM_PTE_PAGE_MASK) | ((pte_af & ARM_PTE_PAGE_MASK) + 0x2000ULL);
-+			pt_entry_t pte3 = (pte_af & ~ARM_PTE_PAGE_MASK) | ((pte_af & ARM_PTE_PAGE_MASK) + 0x3000ULL);
++			pt_entry_t pte0 = pte;
++			pt_entry_t pte1 = (pte & ~ARM_PTE_PAGE_MASK) | ((pte & ARM_PTE_PAGE_MASK) + 0x1000ULL);
++			pt_entry_t pte2 = (pte & ~ARM_PTE_PAGE_MASK) | ((pte & ARM_PTE_PAGE_MASK) + 0x2000ULL);
++			pt_entry_t pte3 = (pte & ~ARM_PTE_PAGE_MASK) | ((pte & ARM_PTE_PAGE_MASK) + 0x3000ULL);
 +			arm64_quad_pte_write(ptep, pte0, pte1, pte2, pte3);
  		}
  	} else {
