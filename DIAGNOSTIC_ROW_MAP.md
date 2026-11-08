@@ -133,6 +133,7 @@ All rows are strictly $\ge 2$ rows thick and non-overlapping:
 | `696..699`| 4      | Spring Green | `0x0000FF7F` | (SVC path) `SYS_write` handled |
 | `700..703`| 4      | Orange     | `0x00FFA500` | (SVC path) `SYS_getpid` handled |
 | `704..707`| 4      | Mint       | `0x0098FF98` | (SVC path) `SYS_select` heartbeat handled |
+| `812..815`| 4      | Cyan       | `0x0000FFFF` | Recovered EL1 NULL Data Abort |
 | `820..827`| 8      | White      | `0x00FFFFFF` | Kernel Fault Gauge Header |
 | `830..845`| 16     | Palette    | Variable   | 2 nibbles of `class` (Exception Class) |
 | `848..851`| 4      | Cyan       | `0x0000FFFF` | Separator (PC follows) |
