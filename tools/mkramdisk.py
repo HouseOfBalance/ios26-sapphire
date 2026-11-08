@@ -125,6 +125,7 @@ def assemble_dummy_init():
         ('INST', 0xD2800041),          # movz x1, #2 (O_RDWR)
         ('INST', 0xD2800002),          # movz x2, #0
         ('INST', 0xD28000B0),          # movz x16, #5 (SYS_open)
+        ('INST', 0xF2A04010),          # movk x16, #0x200, lsl #16 (SYSCALL_CLASS_UNIX = 0x2000005)
         ('INST', 0xD4001001),          # svc #0x80
         ('B_CC', 'open_ok'),           # b.cc open_ok (if carry clear, success!)
 
@@ -133,6 +134,7 @@ def assemble_dummy_init():
         ('INST', 0xD2800021),          # movz x1, #1 (O_WRONLY)
         ('INST', 0xD2800002),          # movz x2, #0
         ('INST', 0xD28000B0),          # movz x16, #5 (SYS_open)
+        ('INST', 0xF2A04010),          # movk x16, #0x200, lsl #16 (SYSCALL_CLASS_UNIX = 0x2000005)
         ('INST', 0xD4001001),          # svc #0x80
         ('B_CC', 'open_ok'),           # b.cc open_ok
 
@@ -150,6 +152,7 @@ def assemble_dummy_init():
 
         # getpid
         ('INST', 0xD2800290),          # movz x16, #20 (SYS_getpid)
+        ('INST', 0xF2A04010),          # movk x16, #0x200, lsl #16 (SYSCALL_CLASS_UNIX = 0x2000014)
         ('INST', 0xD4001001),          # svc #0x80
         ('INST', 0x1100C000),          # add w0, w0, #'0' (PID digit)
         ('INST', 0xD10043FF),          # sub sp, sp, #16
@@ -174,6 +177,7 @@ def assemble_dummy_init():
         ('INST', 0xD2800003),          # movz x3, #0
         ('ADR', 4, 'five_sec'),
         ('INST', 0xD2800BA0),          # movz x16, #93 (SYS_select)
+        ('INST', 0xF2A04010),          # movk x16, #0x200, lsl #16 (SYSCALL_CLASS_UNIX = 0x200005D)
         ('INST', 0xD4001001),          # svc #0x80
 
         # write alive msg
@@ -187,6 +191,7 @@ def assemble_dummy_init():
         ('LABEL', 'write_console'),
         ('INST', 0xAA1303E0),          # orr x0, xzr, x19 (mov x0, x19)
         ('INST', 0xD2800090),          # movz x16, #4 (SYS_write)
+        ('INST', 0xF2A04010),          # movk x16, #0x200, lsl #16 (SYSCALL_CLASS_UNIX = 0x2000004)
         ('INST', 0xD4001001),          # svc #0x80
         ('INST', 0xD65F03C0),          # ret
 

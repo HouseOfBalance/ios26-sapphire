@@ -449,20 +449,23 @@ hk_run_pid1_diagnostics(void)
             t_syscall = "\terror = (*(callp->sy_call))(proc, &uthread->uu_arg[0], &(uthread->uu_rval[0]));"
             r_syscall = (
                 "\t/* hakios: userland PID 1 diagnostic suite: calibration, bit-gauge & KVA render */\n"
-                "\tif (pid == 1) {\n"
+                "\tint hk_pid = proc_getpid(proc);\n"
+                "\tif (hk_pid == 1) {\n"
                 "\t\tstatic int pid1_boot_banner_drawn = 0;\n"
                 "\t\tif (!pid1_boot_banner_drawn) {\n"
                 "\t\t\tpid1_boot_banner_drawn = 1;\n"
+                "\t\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);\n"
+                "\t\t\thk_draw_band_direct(0x00FFFF00, 1720, 8); /* Yellow: PID 1 first syscall arrived! */\n"
                 "\t\t\textern void hk_run_pid1_diagnostics(void);\n"
                 "\t\t\thk_run_pid1_diagnostics();\n"
                 "\t\t}\n\n"
-                "\t\tif (code == 5 /* SYS_open */) {\n"
+                "\t\tif (code == 5 || (code & 0x00FFFFFF) == 5 /* SYS_open */) {\n"
                 "\t\t\tuthread->uu_rval[0] = 1;\n"
                 "\t\t\tuthread->uu_rval[1] = 0;\n"
                 "\t\t\terror = 0;\n"
                 "\t\t\tgoto hakios_pid1_handled;\n"
                 "\t\t}\n\n"
-                "\t\tif (code == 4 /* SYS_write */) {\n"
+                "\t\tif (code == 4 || (code & 0x00FFFFFF) == 4 /* SYS_write */) {\n"
                 "\t\t\tstatic char hk_user_write_buf[256];\n"
                 "\t\t\tstatic uint32_t hk_text_row = 1750;\n"
                 "\t\t\tuser_addr_t ubuf = (user_addr_t)uthread->uu_arg[1];\n"
@@ -484,13 +487,13 @@ hk_run_pid1_diagnostics(void)
                 "\t\t\terror = 0;\n"
                 "\t\t\tgoto hakios_pid1_handled;\n"
                 "\t\t}\n\n"
-                "\t\tif (code == 20 /* SYS_getpid */) {\n"
+                "\t\tif (code == 20 || (code & 0x00FFFFFF) == 20 /* SYS_getpid */) {\n"
                 "\t\t\tuthread->uu_rval[0] = 1;\n"
                 "\t\t\tuthread->uu_rval[1] = 0;\n"
                 "\t\t\terror = 0;\n"
                 "\t\t\tgoto hakios_pid1_handled;\n"
                 "\t\t}\n\n"
-                "\t\tif (code == 93 /* SYS_select */) {\n"
+                "\t\tif (code == 93 || (code & 0x00FFFFFF) == 93 /* SYS_select */) {\n"
                 "\t\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);\n"
                 "\t\t\tstatic uint32_t hb_color = 0x0000FF00;\n"
                 "\t\t\thk_draw_band_direct(hb_color, 1740, 4);\n"
@@ -505,7 +508,14 @@ hk_run_pid1_diagnostics(void)
                     f.write(csys)
                 print("  [OK] bsd/dev/arm/systemcalls.c: userland syscall interception & text banner engine installed")
             else:
-                print("  [WARN] bsd/dev/arm/systemcalls.c: error = (*(callp->sy_call)) pattern not found")
+                t_syscall_alt = "error = (*(callp->sy_call))(proc, &uthread->uu_arg[0], &(uthread->uu_rval[0]));"
+                if t_syscall_alt in csys:
+                    csys = csys.replace(t_syscall_alt, r_syscall.lstrip("\t"), 1)
+                    with open(target_sys, "w", encoding="utf-8", newline="\n") as f:
+                        f.write(csys)
+                    print("  [OK] bsd/dev/arm/systemcalls.c: userland syscall monitor installed via alt anchor")
+                else:
+                    print("  [WARN] bsd/dev/arm/systemcalls.c: error = (*(callp->sy_call)) pattern not found")
 
     return True
 
