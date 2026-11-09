@@ -34,6 +34,7 @@ def patch_iokit_root(src_dir):
     # 0. Add file-scope extern "C" declarations at top of C++ file
     top_decl = (
         '/* hakios: C linkage declarations for early framebuffer and console */\n'
+        '#include <stdint.h>\n'
         'extern "C" {\n'
         '    void hk_draw_band_direct(uint32_t color, uint32_t row_start, uint32_t row_count);\n'
         '    void hk_con_log(const char *s);\n'
