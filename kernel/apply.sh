@@ -56,11 +56,6 @@ if [ -f "$K/patch_vm7_hang.py" ]; then
 	HK_NO_TLBI=1 python3 "$K/patch_vm7_hang.py" "$D"
 fi
 
-# Apply Part 5a-ter: VM10 Bisect & Extended Exception Register Dump (Claude Code)
-if [ -f "$K/patch_vm10_bisect.py" ]; then
-	python3 "$K/patch_vm10_bisect.py" "$D"
-fi
-
 # Apply Part 5b: 16KB RAM Alignment & Range Fix
 if [ -f "$K/patch_ram_alignment.py" ]; then
 	python3 "$K/patch_ram_alignment.py" "$D"
@@ -89,6 +84,11 @@ fi
 # Apply Part 5g: IOKit Root Device Resolver
 if [ -f "$K/patch_iokit_root.py" ]; then
 	python3 "$K/patch_iokit_root.py" "$D"
+fi
+
+# Apply Part 5h: VM10 Bisect & Extended Exception Register Dump
+if [ -f "$K/patch_vm10_bisect.py" ]; then
+	python3 "$K/patch_vm10_bisect.py" "$D"
 fi
 
 # Fix kasan-denylist regex for older/host Clang parser

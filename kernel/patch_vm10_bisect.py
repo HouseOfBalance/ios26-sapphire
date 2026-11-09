@@ -109,14 +109,17 @@ def patch_sleh(src):
     c = rd(p)
     if "hk-dumpregs" in c:
         print("  [OK] sleh.c: dump regs already present"); return
-    m = re.search(r'hk_con_red_ptr\("SP\* : ", \(uint64_t\)get_saved_state_sp\(([^)]+)\)\);\n', c)
-    if not m:
+    pattern = re.compile(r'hk_con_red_ptr\("SP\* : ", \(uint64_t\)get_saved_state_sp\(([^)]+)\)\);\n')
+    matches = list(pattern.finditer(c))
+    if not matches:
         print("  [WARN] anchor 'SP* :' not found in sleh.c"); return
-    st_var = m.group(1).strip()
-    dump = DUMP.replace("HK_STATE", st_var)
-    c = c[:m.end()] + dump + c[m.end():]
+    for m in reversed(matches):
+        st_var = m.group(1).strip()
+        dump = DUMP.replace("HK_STATE", st_var)
+        pos = m.end()
+        c = c[:pos] + dump + c[pos:]
+        print("  [OK] sleh.c: x0..x30 / I@PC / BT added to EL1 dump (state: %s)" % st_var)
     wr(p, c)
-    print("  [OK] sleh.c: x0..x30 / I@PC / BT added to EL1 dump (state: %s)" % st_var)
 
 # ---------------------------------------------------------------- 3
 def patch_arm_init(src):
