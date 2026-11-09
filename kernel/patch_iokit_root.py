@@ -10,7 +10,7 @@ and ensure immediate detection of memory disk root (rd=md0):
   - Row 638: IOFindBSDRoot entered (Dark Cyan)
   - Row 640: Memory disk root (rd=md0) boot argument parsed (Lime)
   - Row 641: RAMDisk registered via mdevadd as md0 (Deep Pink)
-Uses 100% direct VA drawer (hk_draw_band_direct) with zero MMU toggles.
+Uses 100% direct VA drawer (hk_draw_band_direct) and hk_con_log for console output.
 """
 
 import os
@@ -31,6 +31,16 @@ def patch_iokit_root(src_dir):
         print("  [OK] iokit/bsddev/IOKitBSDInit.cpp: root bands already installed")
         return True
 
+    # 0. Add file-scope extern "C" declarations at top of C++ file
+    top_decl = (
+        '/* hakios: C linkage declarations for early framebuffer and console */\n'
+        'extern "C" {\n'
+        '    void hk_draw_band_direct(uint32_t color, uint32_t row_start, uint32_t row_count);\n'
+        '    void hk_con_log(const char *s);\n'
+        '}\n\n'
+    )
+    c = top_decl + c
+
     # 1. IOFindBSDRoot entry band (Row 638: Dark Cyan)
     idx = c.find("IOFindBSDRoot(")
     if idx != -1:
@@ -39,7 +49,7 @@ def patch_iokit_root(src_dir):
             insert_pos = brace_idx + 2
             entry_band = (
                 "\t/* hakios: iokit root resolution visual ladder bands */\n"
-                "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); extern \"C\" void hk_con_log(const char *); hk_draw_band_direct(0x00008B8B, 638, 4); hk_con_log(\"[*] iokit: IOFindBSDRoot searching for root device...\"); } /* Dark Cyan: IOFindBSDRoot entered (row 638) */\n"
+                "\t{ hk_draw_band_direct(0x00008B8B, 638, 4); hk_con_log(\"[*] iokit: IOFindBSDRoot searching for root device...\"); } /* Dark Cyan: IOFindBSDRoot entered (row 638) */\n"
             )
             c = c[:insert_pos] + entry_band + c[insert_pos:]
             print("  [OK] iokit/bsddev/IOKitBSDInit.cpp: IOFindBSDRoot entry band installed (row 638)")
@@ -52,7 +62,7 @@ def patch_iokit_root(src_dir):
     t_md0 = "bsdWait = kSecondScale / 10;"
     r_md0 = (
         "bsdWait = kSecondScale / 10;\n"
-        "\t\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); extern \"C\" void hk_con_log(const char *); hk_draw_band_direct(0x0000FF00, 640, 4); hk_con_log(\"[+] iokit: root device rd=md0 detected\"); } /* Lime: rd=md root detected (row 640) */"
+        "\t\t{ hk_draw_band_direct(0x0000FF00, 640, 4); hk_con_log(\"[+] iokit: root device rd=md0 detected\"); } /* Lime: rd=md root detected (row 640) */"
     )
     if t_md0 in c:
         c = c.replace(t_md0, r_md0, 1)
@@ -64,7 +74,7 @@ def patch_iokit_root(src_dir):
     t_mdev = "(void)mdevadd(-1, ml_static_ptovirt(ramdParms[0]) >> 12, (unsigned int) (ramdParms[1] >> 12), 0);"
     r_mdev = (
         "(void)mdevadd(-1, ml_static_ptovirt(ramdParms[0]) >> 12, (unsigned int) (ramdParms[1] >> 12), 0);\n"
-        "\t\t\t\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); extern \"C\" void hk_con_log(const char *); hk_draw_band_direct(0x00FF1493, 641, 4); hk_con_log(\"[+] iokit: RAMDisk registered via mdevadd as md0\"); } /* Deep Pink: RAMDisk registered as md0 (row 641) */"
+        "\t\t\t\t{ hk_draw_band_direct(0x00FF1493, 641, 4); hk_con_log(\"[+] iokit: RAMDisk registered via mdevadd as md0\"); } /* Deep Pink: RAMDisk registered as md0 (row 641) */"
     )
     if t_mdev in c:
         c = c.replace(t_mdev, r_mdev, 1)
