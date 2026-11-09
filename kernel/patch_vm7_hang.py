@@ -53,7 +53,7 @@ static inline __attribute__((always_inline)) void hk_led_nb(unsigned n, uint32_t
 """
 
 FLUSH_NEW = r"""/* hakios: thay flush_mmu_tlb() bang chuoi ARMv8.0 local; LED 5..9 (cyan) tung buoc.
-	 * -DHK_SKIP_TLBI de bo han lenh tlbi (kiem tra xem tlbi co phai thu pham). */
+	 * MAC DINH BO tlbi (treo cung tren SM6225). -DHK_DO_TLBI de bat lai khi thu nghiem. */
 	{
 		uint64_t hk_tcr;
 		__asm__ volatile ("mrs %0, TCR_EL1" : "=r" (hk_tcr));
@@ -62,7 +62,7 @@ FLUSH_NEW = r"""/* hakios: thay flush_mmu_tlb() bang chuoi ARMv8.0 local; LED 5.
 		hk_led_nb(5, 0x0000FFFF);                       /* 2a: sau msr TCR_EL1 */
 		__asm__ volatile ("isb sy" ::: "memory");
 		hk_led_nb(6, 0x0000FFFF);                       /* 2b: sau isb */
-#ifndef HK_SKIP_TLBI
+#ifdef HK_DO_TLBI
 		__asm__ volatile ("tlbi vmalle1" ::: "memory");
 #endif
 		hk_led_nb(7, 0x0000FFFF);                       /* 2c: sau tlbi vmalle1 (chua cho hoan tat) */
@@ -137,6 +137,21 @@ def patch_arm_vm_init(src):
             print("  [OK] arm_vm_init.c: [vm] 8 L2 telemetry")
         else:
             print("  [WARN] L2 alloc statement not found after [vm] 8")
+    # nang cap cay da patch ban truoc: doi #ifndef HK_SKIP_TLBI -> #ifdef HK_DO_TLBI
+    if "#ifndef HK_SKIP_TLBI" in c:
+        c = c.replace("#ifndef HK_SKIP_TLBI", "#ifdef HK_DO_TLBI")
+        c = c.replace("-DHK_SKIP_TLBI de bo han lenh tlbi (kiem tra xem tlbi co phai thu pham).",
+                      "MAC DINH BO tlbi. -DHK_DO_TLBI de bat lai.")
+        print("  [OK] arm_vm_init.c: tlbi vmalle1 now OFF by default (HK_DO_TLBI to enable)")
+    # LED 10/11 (magenta) quanh vong L3 bootstrap
+    if "hk_led(10," not in c:
+        a = 'hk_con_log("[vm] 8: bootstrap L3 loop starting..."); }'
+        b = 'hk_con_log("[vm] 9: bootstrap L3 loop done"); }'
+        if a in c:
+            c = c.replace(a, a + " hk_led(10, 0x00FF00FF);", 1)
+        if b in c:
+            c = c.replace(b, b + " hk_led(11, 0x00FF00FF);", 1)
+        print("  [OK] arm_vm_init.c: LED10 (loop entry) / LED11 (loop done)")
     wr(p, c)
 
 
@@ -181,6 +196,21 @@ def patch_local_barriers(src):
             print("  [OK] %s: TLBI/DSB -> local" % os.path.relpath(p, src))
 
 
+def patch_no_tlbi_global(src):
+    """HK_NO_TLBI=1: bien MOI lenh tlbi trong tlb.h / machine_routines_asm.s thanh nop.
+    Chi de bring-up cpus=1: arm_vm_prot_finalize / pmap_bootstrap cung goi flush_mmu_tlb()."""
+    for rel in ("osfmk/arm64/tlb.h", "osfmk/arm64/machine_routines_asm.s"):
+        p = os.path.join(src, rel)
+        if not os.path.isfile(p):
+            continue
+        c = rd(p)
+        n = re.sub(r'"tlbi\s+[a-z0-9]+(?:\s*,\s*%[0-9a-z]+)?"', '"nop /* hk: tlbi off */"', c)
+        n = re.sub(r'(?m)^([ \t]*)tlbi[ \t]+[a-z0-9]+(?:[ \t]*,[ \t]*\w+)?', r'\1nop /* hk: tlbi off */', n)
+        if n != c:
+            wr(p, n)
+            print("  [OK] %s: tlbi -> nop" % rel)
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__); sys.exit(1)
@@ -189,6 +219,8 @@ def main():
     patch_monitor_defs(src)
     if not os.environ.get("HK_KEEP_BROADCAST"):
         patch_local_barriers(src)
+    if os.environ.get("HK_NO_TLBI"):
+        patch_no_tlbi_global(src)
     print("Done. Backup: *.hk_orig")
 
 

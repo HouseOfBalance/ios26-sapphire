@@ -53,7 +53,7 @@ fi
 
 # Apply Part 5a-bis: VM7 Hang Bisect & Local Barrier Patcher (Claude Code)
 if [ -f "$K/patch_vm7_hang.py" ]; then
-	python3 "$K/patch_vm7_hang.py" "$D"
+	HK_NO_TLBI=1 python3 "$K/patch_vm7_hang.py" "$D"
 fi
 
 # Apply Part 5b: 16KB RAM Alignment & Range Fix
