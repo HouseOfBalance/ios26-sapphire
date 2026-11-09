@@ -56,6 +56,11 @@ if [ -f "$K/patch_vm7_hang.py" ]; then
 	HK_NO_TLBI=1 python3 "$K/patch_vm7_hang.py" "$D"
 fi
 
+# Apply Part 5a-ter: VM10 Bisect & Extended Exception Register Dump (Claude Code)
+if [ -f "$K/patch_vm10_bisect.py" ]; then
+	python3 "$K/patch_vm10_bisect.py" "$D"
+fi
+
 # Apply Part 5b: 16KB RAM Alignment & Range Fix
 if [ -f "$K/patch_ram_alignment.py" ]; then
 	python3 "$K/patch_ram_alignment.py" "$D"
