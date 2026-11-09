@@ -250,6 +250,19 @@ def main():
         else:
             print("  [WARN] target_mstart not found in arm_init.c")
 
+        # hakios: bisect markers right before the call that currently hangs silently
+        t_dbg = 'kernel_debug_string_early("kernel_startup_bootstrap");'
+        if t_dbg in c_norm and "hk-bisect-ksb" not in c_norm:
+            c_norm = c_norm.replace(
+                t_dbg,
+                '{ extern void hk_con_log(const char *s); hk_con_log("[*] pre kernel_debug_string_early"); } /* hk-bisect-ksb */\n\t'
+                + t_dbg
+                + '\n\t{ extern void hk_con_log(const char *s); hk_con_log("[*] calling kernel_startup_bootstrap"); }',
+                1)
+            print("  [OK] osfmk/arm/arm_init.c: kernel_startup_bootstrap bisect markers installed")
+        elif "hk-bisect-ksb" not in c_norm:
+            print("  [WARN] kernel_debug_string_early(kernel_startup_bootstrap) not found in arm_init.c")
+
         c_norm += '\n' + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'console_engine.c'), 'r', encoding='utf-8').read().replace('\r\n', '\n')
         with open(p1, "w", encoding="utf-8", newline="\n") as f:
             f.write(c_norm)
@@ -358,57 +371,52 @@ def main():
 \t\t\treturn;
 \t\t}
 \t}"""
-        sleh_hook_new = """\tif (class == 0) {
-\t\tif (pac_patch_handle_trap(state, is_user)) {
-\t\t\treturn;
-\t\t}
-\t\tif (lse_patch_handle_trap(state, is_user)) {
-\t\t\treturn;
-\t\t}
-\t}
-\tif (!is_user) {
-\t\textern void hk_con_puts(const char *s);
-\t\textern void hk_con_log(const char *s);
-\t\textern void hk_con_hex(uint64_t val);
-\t\textern void hk_con_putc(char c);
+        # hakios: EL1 kernel exceptions dump (ESR/ELR/FAR/SP read straight from the system registers).
+        # Define HK_NO_EARLY_EXC_DUMP to compile this out once boot is stable.
+        HK_DUMP_CALL = r"""		extern void hk_con_dump_exception(uint64_t esr, uint64_t elr, uint64_t far, uint64_t sp);
+		extern void hk_con_red_ptr(const char *tag, uint64_t val);
+		uint64_t hk_esr, hk_elr, hk_far, hk_sp;
 
-\t\tuint64_t hk_kpc = (uint64_t)get_saved_state_pc(state);
-\t\tuint64_t hk_klr = (uint64_t)get_saved_state_reg(state, 30);
-\t\tuint64_t hk_ksp = (uint64_t)get_saved_state_sp(state);
-\t\tuint64_t hk_kesr = (uint64_t)esr;
-\t\tuint64_t hk_kfar = (uint64_t)far;
+		/* Doc thang thanh ghi that, khong qua saved state */
+		__asm__ volatile ("mrs %0, ESR_EL1" : "=r" (hk_esr));
+		__asm__ volatile ("mrs %0, ELR_EL1" : "=r" (hk_elr));
+		__asm__ volatile ("mrs %0, FAR_EL1" : "=r" (hk_far));
+		__asm__ volatile ("mov %0, sp" : "=r" (hk_sp));
 
-\t\thk_con_log("=== KERNEL EXCEPTION (EL1) ===");
-\t\thk_con_puts("CLASS: 0x");
-\t\thk_con_hex((uint64_t)class);
-\t\tif (class == 0x25) {
-\t\t\thk_con_puts(" (Data Abort EL1)");
-\t\t} else if (class == 0x21) {
-\t\t\thk_con_puts(" (Inst Abort EL1)");
-\t\t} else if (class == 0x00) {
-\t\t\thk_con_puts(" (Undefined / PAC)");
-\t\t} else if (class == 0x22) {
-\t\t\thk_con_puts(" (PC Alignment)");
-\t\t} else if (class == 0x26) {
-\t\t\thk_con_puts(" (SP Alignment)");
-\t\t}
-\t\thk_con_putc(10);
+		hk_con_dump_exception(hk_esr, hk_elr, hk_far, hk_sp);
+		/* gia tri trong saved state (SP/LR luc fault) de doi chieu */
+		hk_con_red_ptr("ESR*: ", (uint64_t)esr);
+		hk_con_red_ptr("FAR*: ", (uint64_t)far);
+		hk_con_red_ptr("PC* : ", (uint64_t)get_saved_state_pc(HK_STATE));
+		hk_con_red_ptr("LR* : ", (uint64_t)get_saved_state_reg(HK_STATE, 30));
+		hk_con_red_ptr("SP* : ", (uint64_t)get_saved_state_sp(HK_STATE));
 
-\t\thk_con_puts("PC   : "); hk_con_hex(hk_kpc); hk_con_putc(10);
-\t\thk_con_puts("LR   : "); hk_con_hex(hk_klr); hk_con_putc(10);
-\t\thk_con_puts("SP   : "); hk_con_hex(hk_ksp); hk_con_putc(10);
-\t\thk_con_puts("ESR  : "); hk_con_hex(hk_kesr); hk_con_putc(10);
-\t\thk_con_puts("FAR  : "); hk_con_hex(hk_kfar); hk_con_putc(10);
-
-\t\tfor (;;) {
-\t\t\t__asm__ volatile ("wfe");
-\t\t}
-\t}"""
+		for (;;) {
+			__asm__ volatile ("wfe");
+		}
+"""
+        sleh_hook_new = sleh_hook_old + r"""
+#ifndef HK_NO_EARLY_EXC_DUMP
+	if (!is_user) {
+""" + HK_DUMP_CALL.replace("HK_STATE", "state") + r"""	}
+#endif"""
         if sleh_hook_old in c_norm:
             c_norm = c_norm.replace(sleh_hook_old, sleh_hook_new)
             print("  [OK] osfmk/arm64/sleh.c: early kernel fault console dump installed")
         else:
             print("  [WARN] sleh_hook_old not found in sleh.c")
+
+        sleh_early_old = "\tASSERT_CONTEXT_SANITY(context);\n\n\ttask_vtimer_check(thread);"
+        if sleh_early_old in c_norm and "hk-early-dump" not in c_norm:
+            c_norm = c_norm.replace(sleh_early_old, r"""#ifndef HK_NO_EARLY_EXC_DUMP
+	/* hk-early-dump: kernel sync exception (EC != 0) is dumped before any complex logic */
+	if (class != 0 && !PSR64_IS_USER(get_saved_state_cpsr(&context->ss))) {
+""" + HK_DUMP_CALL.replace("HK_STATE", "&context->ss") + r"""	}
+#endif
+""" + sleh_early_old, 1)
+            print("  [OK] osfmk/arm64/sleh.c: early EL1 sync dump (ESR/ELR/FAR/SP) installed at sleh_synchronous entry")
+        elif "hk-early-dump" not in c_norm:
+            print("  [WARN] sleh_early_old not found in sleh.c")
 
         sleh_inv_old = """void
 sleh_invalid_stack(arm_context_t *context, uint64_t esr __unused, vm_offset_t far __unused)
@@ -438,17 +446,16 @@ sleh_invalid_stack(arm_context_t *context, uint64_t esr __unused, vm_offset_t fa
 \t\textern void hk_con_log(const char *s);
 \t\textern void hk_con_hex(uint64_t val);
 \t\textern void hk_con_putc(char c);
+\t\textern void hk_con_dump_exception(uint64_t esr, uint64_t elr, uint64_t far, uint64_t sp);
+\t\textern void hk_con_red_ptr(const char *tag, uint64_t val);
 
 \t\tuint64_t pc = (context != NULL) ? (uint64_t)get_saved_state_pc(&context->ss) : 0ULL;
 \t\tuint64_t sp_val = (context != NULL) ? (uint64_t)get_saved_state_sp(&context->ss) : 0ULL;
 \t\tuint64_t lr_val = (context != NULL) ? (uint64_t)get_saved_state_reg(&context->ss, 30) : 0ULL;
 
-\t\thk_con_log("=== EARLY INVALID STACK ===");
-\t\thk_con_puts("PC   : "); hk_con_hex(pc); hk_con_putc(10);
-\t\thk_con_puts("LR   : "); hk_con_hex(lr_val); hk_con_putc(10);
-\t\thk_con_puts("SP   : "); hk_con_hex(sp_val); hk_con_putc(10);
-\t\thk_con_puts("ESR  : "); hk_con_hex((uint64_t)esr); hk_con_putc(10);
-\t\thk_con_puts("FAR  : "); hk_con_hex((uint64_t)far); hk_con_putc(10);
+\t\thk_con_dump_exception((uint64_t)esr, pc, (uint64_t)far, sp_val);
+\t\thk_con_red_ptr("LR  : ", lr_val);
+\t\thk_con_log("(invalid kernel stack / NULL thread)");
 
 \t\tfor (;;) {
 \t\t\t__asm__ volatile ("wfe");
@@ -1635,37 +1642,68 @@ kernel_startup_bootstrap(void)
 \t\tkernel_startup_log(cur->subsystem);
 \t\tcur->func(cur->arg);"""
 
-        r_startup = """\t\tstartup_phase = cur->subsystem - 1;
-\t\tkernel_startup_log(cur->subsystem);
-\t\t{
-\t\t\textern void hk_con_log(const char *s);
-\t\t\textern void hk_con_puts(const char *s);
-\t\t\textern void hk_con_hex(uint64_t val);
-\t\t\textern void hk_con_putc(char c);
+        r_startup = r"""		startup_phase = cur->subsystem - 1;
+		{
+			extern void hk_con_puts(const char *s);
+			extern void hk_con_putc(char c);
+			extern void hk_con_print_dec(uint32_t val);
+			extern void hk_con_print_ptr(const char *tag, uint64_t val);
+			extern uint64_t hk_con_strip_ptr(uint64_t p);
 
-\t\t\tuintptr_t hk_fp = (uintptr_t)cur->func;
-\t\t\tif (hk_fp & (1ULL << 47)) {
-\t\t\t\thk_fp |= 0xFFFF000000000000ULL;
-\t\t\t} else {
-\t\t\t\thk_fp &= 0x0000FFFFFFFFFFFFULL;
-\t\t\t}
+			uint64_t hk_raw = (uint64_t)(uintptr_t)cur->func;
+			/* canonical 0xfffffff0_xxxxxxxx: bo PAC signature truoc khi nhay vao ham */
+			uint64_t hk_fp = hk_con_strip_ptr(hk_raw);
 
-\t\t\thk_con_puts("  sub=");
-\t\t\thk_con_hex((uint64_t)cur->subsystem);
-\t\t\thk_con_puts(" r=");
-\t\t\thk_con_hex((uint64_t)cur->rank);
-\t\t\thk_con_puts(" fn=");
-\t\t\thk_con_hex((uint64_t)hk_fp);
-\t\t\thk_con_putc(10);
+			/* in TRUOC khi goi: dong cuoi cung tren man hinh = entry gay treo */
+			hk_con_puts("[startup] rank: ");
+			hk_con_print_dec((uint32_t)cur->rank);
+			hk_con_puts(" sub: ");
+			hk_con_print_dec((uint32_t)cur->subsystem);
+			hk_con_putc(' ');
+			hk_con_print_ptr("func: ", hk_raw);
+			if (hk_fp != hk_raw) {
+				hk_con_print_ptr("[startup]   stripped: ", hk_fp);
+			}
 
-\t\t\t((void (*)(const void *))hk_fp)(cur->arg);
-\t\t}"""
+			kernel_startup_log(cur->subsystem);
+			hk_call_startup(hk_fp, cur->arg);
+		}"""
 
         if t_startup in c10:
             c10 = c10.replace(t_startup, r_startup, 1)
             print("  [OK] osfmk/kern/startup.c: startup loop trace and PAC stripping instrumented")
         else:
             print("  [WARN] t_startup not found in startup.c")
+
+        # Plain `blr` trampoline: a C call through a function pointer on arm64e compiles to
+        # blraaz/blrabz (combined PAC), which is UNDEF on Cortex-A73 (ARMv8.0). The stripped pointer
+        # is therefore called with a bare blr from inline asm.
+        t_hdr = "__startup_func\nvoid\nkernel_startup_initialize_upto(startup_subsystem_id_t upto)\n{"
+        r_hdr = r"""static __attribute__((noinline)) void
+hk_call_startup(uint64_t fp, const void *arg)
+{
+#if defined(__aarch64__)
+	register const void *hk_x0 __asm__("x0") = arg;
+	__asm__ volatile ("blr %1"
+	    : "+r" (hk_x0)
+	    : "r" (fp)
+	    : "x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11",
+	      "x12", "x13", "x14", "x15", "x16", "x17", "x30",
+	      "v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7",
+	      "v16", "v17", "v18", "v19", "v20", "v21", "v22", "v23",
+	      "v24", "v25", "v26", "v27", "v28", "v29", "v30", "v31",
+	      "memory", "cc");
+#else
+	((void (*)(const void *))fp)(arg);
+#endif
+}
+
+""" + t_hdr
+        if t_hdr in c10 and "hk_call_startup(uint64_t" not in c10:
+            c10 = c10.replace(t_hdr, r_hdr, 1)
+            print("  [OK] osfmk/kern/startup.c: hk_call_startup (plain blr, no combined PAC) installed")
+        elif "hk_call_startup(uint64_t" not in c10:
+            print("  [WARN] kernel_startup_initialize_upto header not found in startup.c")
 
         # Instrument kernel_bootstrap_log and kernel_bootstrap_thread_log
         t_kblog = """static inline void\nkernel_bootstrap_log(const char *message)\n{\n\tif ((startup_debug & STARTUP_DEBUG_VERBOSE) &&\n\t    startup_phase >= STARTUP_SUB_KPRINTF) {\n\t\tkprintf("kernel_bootstrap: %s\\n", message);\n\t}\n\tkernel_debug_string_early(message);\n}"""
@@ -2115,7 +2153,7 @@ kernel_debug_string_early(const char *message)
         t16_rel = '\tif (vm_himemory_mode) {\n\t\t\tvm_page_release_startup(vm_page_get(i));\n\t\t}'
         r16_rel = """\tif (vm_himemory_mode) {
 \t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); if (i == 0) { extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000FFFF, 332, 4); } } /* Cyan: before vm_page_release_startup(0) */
-\t\t\tvm_page_release_startup(vm_page_get(i));
+\t\tvm_page_release_startup(vm_page_get(i));
 \t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); if (i == 0) { extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00ADFF2F, 336, 4); } } /* GreenYellow: after vm_page_release_startup(0) */
 \t\t}
 		/* hakios: logarithmic milestones, gauges, and live clock heartbeat */
@@ -2279,8 +2317,7 @@ kernel_debug_string_early(const char *message)
         t19_exp = 'while ((ret = pmap_tt_allocate(pmap, &tt_p, ttlevel + 1, ((options & PMAP_TT_ALLOCATE_NOWAIT)? PMAP_PAGES_ALLOCATE_NOWAIT : 0))) != KERN_SUCCESS) {\n\t\t\t\tif (options & PMAP_OPTIONS_NOWAIT) {\n\t\t\t\t\t/* Can be KERN_RESOURCE_SHORTAGE or KERN_ABORTED. */\n\t\t\t\t\treturn ret;\n\t\t\t\t}'
         r19_exp = """while ((ret = pmap_tt_allocate(pmap, &tt_p, ttlevel + 1, ((options & PMAP_TT_ALLOCATE_NOWAIT)? PMAP_PAGES_ALLOCATE_NOWAIT : 0))) != KERN_SUCCESS) {
 \t\t\t\tif (options & PMAP_OPTIONS_NOWAIT) {
-\t\t\t\t\t/* Can be KERN_RESOURCE_SHORTAGE or KERN_ABORTED. */
-\t\t\t\t\treturn ret;
+\t\t\t\t\t/* Can be KERN_RESOURCE_SHORTAGE or KERN_ABORTED. */\n\t\t\t\t\treturn ret;
 \t\t\t\t}
 \t\t\t\tif (!pmap_initialized) {
 \t\t\t\t\treturn ret;
@@ -2310,8 +2347,7 @@ kernel_debug_string_early(const char *message)
         t19_ptd = 'while ((ptdp = ptd_alloc(pmap)) == NULL) {\n\t\t\tif (options & PMAP_OPTIONS_NOWAIT) {\n\t\t\t\t/* Deallocate all allocated resources so far. */\n\t\t\t\tpmap_pages_free(pa, PAGE_SIZE);\n\t\t\t\treturn KERN_RESOURCE_SHORTAGE;\n\t\t\t}\n\t\t\tVM_PAGE_WAIT();\n\t\t}'
         r19_ptd = """while ((ptdp = ptd_alloc(pmap)) == NULL) {
 \t\t\tif (options & PMAP_OPTIONS_NOWAIT) {
-\t\t\t\t/* Deallocate all allocated resources so far. */
-\t\t\t\tpmap_pages_free(pa, PAGE_SIZE);
+\t\t\t\t/* Deallocate all allocated resources so far. */\n\t\t\t\tpmap_pages_free(pa, PAGE_SIZE);
 \t\t\t\treturn KERN_RESOURCE_SHORTAGE;
 \t\t\t}
 \t\t\tif (!pmap_initialized) {
@@ -2584,25 +2620,68 @@ lck_mtx_assert(lck_mtx_t *lock, unsigned int type)
             c27 = c27.replace(t_pkp, r_pkp, 1)
             print("  [OK] pexpert/arm/pe_kprintf.c: PE_kputc default constructor installed")
 
-        # Mirror serial_putc_crlf to on-screen console
-        t_spc = "static void\nserial_putc_crlf(char c)\n{"
-        r_spc = """static void
+        # kprintf(): lock-free mirror to the on-screen console BEFORE kprintf_lock / interrupt masking / os_log
+        t_kp = "\tif (!disable_serial_output && !disable_kprintf_output) {\n\t\tva_start(listp, fmt);"
+        r_kp = r"""	{
+		/* hakios: lock-free on-screen mirror (no kprintf_lock, no os_log, works before STARTUP_SUB_LOCKS) */
+		extern void hk_con_putc(char c);
+		va_list hk_ap;
+		va_start(hk_ap, fmt);
+		_doprnt_log(fmt, &hk_ap, hk_con_putc, 16);
+		va_end(hk_ap);
+	}
+""" + t_kp
+        if t_kp in c27 and "hk_con_putc(char c);\n\t\tva_list hk_ap" not in c27:
+            c27 = c27.replace(t_kp, r_kp, 1)
+            print("  [OK] pexpert/arm/pe_kprintf.c: kprintf() mirrored lock-free to on-screen console")
+        elif "va_list hk_ap" not in c27:
+            print("  [WARN] kprintf() anchor not found in pe_kprintf.c")
+
+        # serial_putc*: screen only by default (no polling on an unmapped/unclocked UART). -DHK_ENABLE_UART restores uart.
+        t_spc = "static void\nserial_putc_crlf(char c)\n{\n\tif (c == '\\n') {\n\t\tuart_putc('\\r');\n\t}\n\tuart_putc(c);\n}"
+        r_spc = r"""static void
 serial_putc_crlf(char c)
 {
-\t{ extern void hk_con_putc(char c); hk_con_putc(c); }"""
+#ifdef HK_ENABLE_UART
+	if (c == '\n') {
+		uart_putc('\r');
+	}
+	uart_putc(c);
+#else
+	(void)c;        /* hakios: kprintf() already mirrors to the screen; UART polling can hang */
+#endif
+}"""
         if t_spc in c27:
             c27 = c27.replace(t_spc, r_spc, 1)
-            print("  [OK] pexpert/arm/pe_kprintf.c: mirrored serial_putc_crlf to on-screen console")
+            print("  [OK] pexpert/arm/pe_kprintf.c: serial_putc_crlf made UART-optional")
 
-        # Mirror serial_putc to on-screen console
-        t_sp = "void\nserial_putc(char c)\n{"
-        r_sp = """void
+        t_spo = "void\nserial_putc_options(char c, bool poll)\n{\n\tuart_putc_options(c, poll);\n}"
+        r_spo = r"""void
+serial_putc_options(char c, bool poll)
+{
+#ifdef HK_ENABLE_UART
+	uart_putc_options(c, poll);
+#else
+	(void)poll;
+	{ extern void hk_con_putc(char c); hk_con_putc(c); }
+#endif
+}"""
+        if t_spo in c27:
+            c27 = c27.replace(t_spo, r_spo, 1)
+            print("  [OK] pexpert/arm/pe_kprintf.c: serial_putc_options routed to on-screen console")
+
+        t_sp = "void\nserial_putc(char c)\n{\n\tuart_putc(c);\n}"
+        r_sp = r"""void
 serial_putc(char c)
 {
-\t{ extern void hk_con_putc(char c); hk_con_putc(c); }"""
+	{ extern void hk_con_putc(char c); hk_con_putc(c); }
+#ifdef HK_ENABLE_UART
+	uart_putc(c);
+#endif
+}"""
         if t_sp in c27:
             c27 = c27.replace(t_sp, r_sp, 1)
-            print("  [OK] pexpert/arm/pe_kprintf.c: mirrored serial_putc to on-screen console")
+            print("  [OK] pexpert/arm/pe_kprintf.c: serial_putc mirrored to on-screen console")
 
         with open(p27, "w", encoding="utf-8", newline="\n") as f:
             f.write(c27)
