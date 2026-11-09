@@ -1283,6 +1283,13 @@ LEXT(hk_draw_band_stackless)
             with open(p8, "r", encoding="utf-8", errors="replace") as f:
                 c8 = f.read().replace("\r\n", "\n")
             changed_asm = False
+            if asm_name == "machine_routines_asm.s":
+                # hakios: set_mmu_ttb uses 'dsb ish' which deadlocks on Cortex-A73/SM6225 interconnect
+                c8 = c8.replace("LEXT(set_mmu_ttb)\n\tARM64_PROLOG\n#if __ARM_KERNEL_PROTECT__\n\t/* All EL1-mode ASIDs are odd. */\n\torr\t\tx0, x0, #(1 << TTBR_ASID_SHIFT)\n#endif /* __ARM_KERNEL_PROTECT__ */\n\tdsb\t\tish", "LEXT(set_mmu_ttb)\n\tARM64_PROLOG\n#if __ARM_KERNEL_PROTECT__\n\t/* All EL1-mode ASIDs are odd. */\n\torr\t\tx0, x0, #(1 << TTBR_ASID_SHIFT)\n#endif /* __ARM_KERNEL_PROTECT__ */\n\tdsb\t\tsy /* hakios: sy avoids interconnect deadlock */")
+                if "dsb\t\tsy /* hakios: sy avoids interconnect deadlock */" in c8:
+                    changed_asm = True
+                    print("  [OK] osfmk/arm64/machine_routines_asm.s: set_mmu_ttb dsb ish -> dsb sy")
+
             if asm_name == "machine_routines_asm.s" and not os.environ.get("HK_KEEP_LSE"):
                 lse_old = "#if defined(__ARM_ARCH_8_2__) && !KASAN_TBI"
                 if lse_old in c8:
