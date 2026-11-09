@@ -2426,7 +2426,7 @@ kernel_debug_string_early(const char *message)
         t20_l1 = 'cpu_l1_tte = cpu_tte + L1_TABLE_T1_INDEX(va_l1, TCR_EL1_BOOT);\n\n\twhile (va_l1 < va_l1_end) {\n\t\tva_l2 = va_l1;'
         r20_l1 = """cpu_l1_tte = cpu_tte + L1_TABLE_T1_INDEX(va_l1, TCR_EL1_BOOT);
 
-\twhile (va_l1 < va_l1_end) {
+\t{ extern void hk_con_log(const char *s); hk_con_log("[vm] bootstrap L3 loop starting..."); }\n\twhile (va_l1 < va_l1_end) {
 \t\tif (*cpu_l1_tte == ARM_TTE_EMPTY) {
 \t\t\tvm_offset_t l2_page = alloc_ptpage(FALSE);
 \t\t\t*cpu_l1_tte = (kvtophys(l2_page) & ARM_TTE_TABLE_MASK) | ARM_TTE_TYPE_TABLE | ARM_TTE_VALID | ARM_DYNAMIC_TABLE_XN | ARM_TTE_TABLE_AP(ARM_TTE_TABLE_AP_USER_NA);
@@ -2450,7 +2450,7 @@ kernel_debug_string_early(const char *message)
 
         # 20c. Phase 2: Direct Framebuffer VA Mapping in cpu_tte before set_mmu_ttb_alternate
         t20_fb = '\tarm_vm_physmap_init(args);\n\tset_mmu_ttb_alternate(cpu_ttep & TTBR_BADDR_MASK);'
-        r20_fb = """\tarm_vm_physmap_init(args);
+        r20_fb = """\t{ extern void hk_con_log(const char *s); hk_con_log("[vm] bootstrap L3 loop done"); }\n\t{ extern void hk_con_log(const char *s); hk_con_log("[vm] calling arm_vm_physmap_init..."); }\n\tarm_vm_physmap_init(args);\n\t{ extern void hk_con_log(const char *s); hk_con_log("[vm] arm_vm_physmap_init done, mapping Phase 2 FB..."); }
 
 \t/* hakios Phase 2: Direct Framebuffer VA Mapping in cpu_tte (0xfffffff004000000) */
 \t{
@@ -2478,8 +2478,7 @@ kernel_debug_string_early(const char *message)
 \t\t__asm__ volatile("dsb sy; isb" ::: "memory");
 \t}
 
-\tset_mmu_ttb_alternate(cpu_ttep & TTBR_BADDR_MASK);
-\tflush_mmu_tlb();
+\t{ extern void hk_con_log(const char *s); hk_con_log("[vm] switching TTBR1 to cpu_tte..."); }\n\tset_mmu_ttb_alternate(cpu_ttep & TTBR_BADDR_MASK);\n\tflush_mmu_tlb();\n\t{ extern void hk_con_log(const char *s); hk_con_log("[vm] TTBR1 switch & flush_mmu_tlb OK"); }
 
 \t/* hakios visual marker: verify Phase 2 mapping in cpu_tte immediately after TTBR1 switch */
 \t{

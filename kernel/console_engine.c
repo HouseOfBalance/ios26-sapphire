@@ -485,7 +485,7 @@ static void hk_su_close_sub(void)
 /* goi TRUOC moi lan chay mot startup entry */
 void hk_startup_enter(uint32_t sub, const char *name, uint32_t rank, uint64_t raw, uint64_t stripped)
 {
-	uint8_t verbose = (sub >= 4) || (sub == 3 && rank >= 2);
+	uint8_t verbose = (sub >= 4);
 
 	if (hk_su_group && (sub != hk_su_sub || rank != hk_su_rank)) {
 		hk_su_close_group();
