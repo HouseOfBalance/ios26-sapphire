@@ -2548,11 +2548,6 @@ kernel_debug_string_early(const char *message)
 		/* Band at row 154 (Cyan): Right after set_mmu_ttb_alternate returns (under new TTBR1!) */
 		for (int i = 154 * 1080; i < 157 * 1080; i++) hk_fb_raw[i] = 0x0000FFFF;
 
-		flush_mmu_tlb();
-
-		/* Band at row 158 (White): Right after flush_mmu_tlb() */
-		for (int i = 158 * 1080; i < 161 * 1080; i++) hk_fb_raw[i] = 0x00FFFFFF;
-
 		hk_con_log("[vm] 6: TTBR1 switched OK");
 	}"""
 
@@ -2904,6 +2899,32 @@ consdebug_putc(char c)
             print("  [WARN] cswitch.s: found %d/2 UAO sites" % n29)
     else:
         print("  [WARN] osfmk/arm64/cswitch.s not found")
+
+    
+    # 30. osfmk/arm64/tlb.h (Convert broadcast TLBI to local core TLBI to avoid interconnect deadlock on single-core SM6225)
+    p30 = os.path.join(src, "osfmk", "arm64", "tlb.h")
+    if os.path.isfile(p30):
+        with open(p30, "r", encoding="utf-8", errors="replace") as f:
+            c30 = f.read().replace("\r\n", "\n")
+        
+        # Replace tlbi vmalle1is with tlbi vmalle1
+        c30_old1 = 'asm volatile ("tlbi vmalle1is");'
+        c30_new1 = 'asm volatile ("tlbi vmalle1"); /* hakios: local core TLBI avoids interconnect stall */'
+        if c30_old1 in c30:
+            c30 = c30.replace(c30_old1, c30_new1)
+            print("  [OK] osfmk/arm64/tlb.h: flush_mmu_tlb_async converted to local tlbi vmalle1")
+
+        # Replace DSB_ISH in sync_tlb_flush with DSB_NSH
+        c30_old2 = '__builtin_arm_dsb(DSB_ISH);'
+        c30_new2 = '__builtin_arm_dsb(DSB_NSH); /* hakios: local NSH barrier */'
+        if c30_old2 in c30:
+            c30 = c30.replace(c30_old2, c30_new2)
+            print("  [OK] osfmk/arm64/tlb.h: sync_tlb_flush converted to local DSB_NSH")
+
+        with open(p30, "w", encoding="utf-8", newline="\n") as f:
+            f.write(c30)
+    else:
+        print("  [WARN] osfmk/arm64/tlb.h not found")
 
     # Post-patch verification assertions: verify files on disk actually contain the patches!
     print("=== Post-patch Verification on Disk ===")
