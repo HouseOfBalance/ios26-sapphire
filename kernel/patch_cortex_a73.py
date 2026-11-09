@@ -400,15 +400,15 @@ def main():
 		extern void hk_trap_log(const char *what, uint64_t pc);
 		hk_trap_log(is_user ? "EC0 user pc" : "EC0 kernel pc", (uint64_t)get_saved_state_pc(state));
 #endif
-		if (pac_patch_handle_trap(state, is_user)) {
-#ifndef HK_NO_TRAP_TRACE
-			hk_trap_log("pac handled, resume pc", (uint64_t)get_saved_state_pc(state));
-#endif
-			return;
-		}
 		if (lse_patch_handle_trap(state, is_user)) {
 #ifndef HK_NO_TRAP_TRACE
 			hk_trap_log("lse handled, resume pc", (uint64_t)get_saved_state_pc(state));
+#endif
+			return;
+		}
+		if (pac_patch_handle_trap(state, is_user)) {
+#ifndef HK_NO_TRAP_TRACE
+			hk_trap_log("pac handled, resume pc", (uint64_t)get_saved_state_pc(state));
 #endif
 			return;
 		}
@@ -1939,8 +1939,8 @@ hk_call_startup(uint64_t fp, const void *arg)
             smp_old = "(insn & 0xffe00000u) == 0xf8400000u) {"
             smp_new = """(insn & 0xffe00000u) == 0xf8400000u ||
 \t    (insn & 0x3ffffc00u) == 0x08dffc00u || /* LDAR (ARMv8.0) */
-\t    (insn & 0x3fc00c00u) == 0x38400000u || /* LDUR (ARMv8.0) */
-\t    (insn & 0x3fc00c00u) == 0x38000000u) { /* STUR (ARMv8.0) */"""
+\t    (insn & 0x3fe00c00u) == 0x38400000u || /* LDUR (ARMv8.0) */
+\t    (insn & 0x3fe00c00u) == 0x38000000u) { /* STUR (ARMv8.0) */"""
             if smp_old in c14_c:
                 c14_c = c14_c.replace(smp_old, smp_new, 1)
                 with open(p14_c, "w", encoding="utf-8", newline="\n") as f:

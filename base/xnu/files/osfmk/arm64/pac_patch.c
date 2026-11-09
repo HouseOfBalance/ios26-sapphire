@@ -168,8 +168,8 @@ pac_patch_handle_trap(arm_saved_state_t *state, bool is_user)
 	    (insn & 0xffc00000u) == A64_LDR_UIMM ||
 	    (insn & 0xffe00000u) == 0xf8400000u ||
 	    (insn & 0x3ffffc00u) == 0x08dffc00u || /* LDAR (ARMv8.0) */
-	    (insn & 0x3fc00c00u) == 0x38400000u || /* LDUR (ARMv8.0) */
-	    (insn & 0x3fc00c00u) == 0x38000000u) { /* STUR (ARMv8.0) */
+	    (insn & 0x3fe00c00u) == 0x38400000u || /* LDUR (ARMv8.0) */
+	    (insn & 0x3fe00c00u) == 0x38000000u) { /* STUR (ARMv8.0) */
 		pac_smp_races++;
 		return true;
 	}
