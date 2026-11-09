@@ -482,10 +482,21 @@ static void hk_su_close_sub(void)
 	hk_su_sub_valid = 0;
 }
 
+/* Sub 1..7 (TUNABLES, TIMEOUTS, LOCKS, KPRINTF, PMAP_STEAL, KMEM, ZALLOC) duoc gom nhom:
+ * chi in "starting..." / "OK (n entries)"; status row van hien ham dang chay.
+ * Doi -DHK_VERBOSE_SUB_MIN=<n> de in tung ham tu Sub n tro len. */
+#ifndef HK_VERBOSE_SUB_MIN
+#define HK_VERBOSE_SUB_MIN 8
+#endif
+static uint8_t hk_su_should_group(uint32_t sub)
+{
+	return sub < HK_VERBOSE_SUB_MIN;
+}
+
 /* goi TRUOC moi lan chay mot startup entry */
 void hk_startup_enter(uint32_t sub, const char *name, uint32_t rank, uint64_t raw, uint64_t stripped)
 {
-	uint8_t verbose = (sub >= 4);
+	uint8_t verbose = !hk_su_should_group(sub);
 
 	if (hk_su_group && (sub != hk_su_sub || rank != hk_su_rank)) {
 		hk_su_close_group();

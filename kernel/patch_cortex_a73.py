@@ -2426,7 +2426,7 @@ kernel_debug_string_early(const char *message)
         t20_l1 = 'cpu_l1_tte = cpu_tte + L1_TABLE_T1_INDEX(va_l1, TCR_EL1_BOOT);\n\n\twhile (va_l1 < va_l1_end) {\n\t\tva_l2 = va_l1;'
         r20_l1 = """cpu_l1_tte = cpu_tte + L1_TABLE_T1_INDEX(va_l1, TCR_EL1_BOOT);
 
-\t{ extern void hk_con_log(const char *s); hk_con_log("[vm] bootstrap L3 loop starting..."); }\n\twhile (va_l1 < va_l1_end) {
+\t{ extern void hk_con_log(const char *s); hk_con_log("[vm] 8: bootstrap L3 loop starting..."); }\n\twhile (va_l1 < va_l1_end) {
 \t\tif (*cpu_l1_tte == ARM_TTE_EMPTY) {
 \t\t\tvm_offset_t l2_page = alloc_ptpage(FALSE);
 \t\t\t*cpu_l1_tte = (kvtophys(l2_page) & ARM_TTE_TABLE_MASK) | ARM_TTE_TYPE_TABLE | ARM_TTE_VALID | ARM_DYNAMIC_TABLE_XN | ARM_TTE_TABLE_AP(ARM_TTE_TABLE_AP_USER_NA);
@@ -2450,46 +2450,130 @@ kernel_debug_string_early(const char *message)
 
         # 20c. Phase 2: Direct Framebuffer VA Mapping in cpu_tte before set_mmu_ttb_alternate
         t20_fb = '\tarm_vm_physmap_init(args);\n\tset_mmu_ttb_alternate(cpu_ttep & TTBR_BADDR_MASK);'
-        r20_fb = """\t{ extern void hk_con_log(const char *s); hk_con_log("[vm] bootstrap L3 loop done"); }\n\t{ extern void hk_con_log(const char *s); hk_con_log("[vm] calling arm_vm_physmap_init..."); }\n\tarm_vm_physmap_init(args);\n\t{ extern void hk_con_log(const char *s); hk_con_log("[vm] arm_vm_physmap_init done, mapping Phase 2 FB..."); }
+        r20_fb = r"""	{ extern void hk_con_log(const char *s); hk_con_log("[vm] 3: arm_vm_physmap_init starting"); }
+	arm_vm_physmap_init(args);
+	{ extern void hk_con_log(const char *s); hk_con_log("[vm] 4: arm_vm_physmap_init done"); }
 
-\t/* hakios Phase 2: Direct Framebuffer VA Mapping in cpu_tte (0xfffffff004000000) */
-\t{
-\t\textern void hk_draw_band_direct(uint32_t color, uint32_t row_start, uint32_t row_count);
-\t\ttt_entry_t *fb_l1_tte = cpu_tte + L1_TABLE_T1_INDEX(0xfffffff004000000ULL, TCR_EL1_BOOT);
-\t\ttt_entry_t *fb_l2_base;
-\t\tif ((*fb_l1_tte & ARM_TTE_VALID) == 0) {
-\t\t\tvm_offset_t l2_page = alloc_ptpage(FALSE);
-\t\t\t*fb_l1_tte = (kvtophys(l2_page) & ARM_TTE_TABLE_MASK) | ARM_TTE_TYPE_TABLE | ARM_TTE_VALID | ARM_DYNAMIC_TABLE_XN | ARM_TTE_TABLE_AP(ARM_TTE_TABLE_AP_USER_NA);
-\t\t\tbzero((void *)l2_page, ARM_PGBYTES);
-\t\t\tfb_l2_base = (tt_entry_t *)l2_page;
-\t\t} else {
-\t\t\tfb_l2_base = (tt_entry_t *)phystokv((*fb_l1_tte) & ARM_TTE_TABLE_MASK);
-\t\t}
-\t\ttt_entry_t *fb_l2_tte = fb_l2_base + ((0x04000000ULL & ARM_TT_L2_INDEX_MASK) >> ARM_TT_L2_SHIFT);
-\t\tfor (int k = 0; k < 5; k++) {
-\t\t\tuint64_t target_desc = (0x5c000000ULL + ((uint64_t)k * 0x200000ULL)) | 0x0060000000000605ULL;
-\t\t\tfb_l2_tte[k] = target_desc;
-\t\t}
-\t\t__asm__ volatile("dsb sy; isb" ::: "memory");
-\t\t__asm__ volatile("dc civac, %0; dsb sy; isb" : : "r" (fb_l1_tte) : "memory");
-\t\tfor (int k = 0; k < 5; k++) {
-\t\t\t__asm__ volatile("dc civac, %0" : : "r" (&fb_l2_tte[k]) : "memory");
-\t\t}
-\t\t__asm__ volatile("dsb sy; isb" ::: "memory");
-\t}
+	/* hakios Phase 2: map the framebuffer (PA 0x5c000000, 1080x2400x4 = 10.4 MB) at VA 0xfffffff004000000 in cpu_tte.
+	 * Block size follows the build granule (ARM_TT_L2_SIZE: 32 MB for 16K, 2 MB for 4K), so the whole FB is covered. */
+	{
+		extern void hk_con_log(const char *s);
+		extern void hk_con_puts(const char *s);
+		extern void hk_con_print_dec(uint32_t val);
+		extern void hk_con_print_ptr(const char *tag, uint64_t val);
+		extern void hk_draw_band_direct(uint32_t color, uint32_t row_start, uint32_t row_count);
 
-\t{ extern void hk_con_log(const char *s); hk_con_log("[vm] switching TTBR1 to cpu_tte..."); }\n\tset_mmu_ttb_alternate(cpu_ttep & TTBR_BADDR_MASK);\n\tflush_mmu_tlb();\n\t{ extern void hk_con_log(const char *s); hk_con_log("[vm] TTBR1 switch & flush_mmu_tlb OK"); }
+		const uint64_t hk_fb_va = 0xfffffff004000000ULL;
+		const uint64_t hk_fb_pa = 0x5c000000ULL;
+		const uint64_t hk_fb_bytes = 1080ULL * 2400ULL * 4ULL;
+		/* PXN|UXN | AF | SH=outer | AttrIdx=1 (CACHE_ATTRINDX_WRITECOMB, Normal Non-Cacheable) | AP=RW(EL1) | BLOCK */
+		const uint64_t hk_fb_attr = 0x0060000000000605ULL;
+		const uint64_t l2sz = (uint64_t)ARM_TT_L2_SIZE;
+		const uint64_t off = hk_fb_pa & (l2sz - 1);
 
-\t/* hakios visual marker: verify Phase 2 mapping in cpu_tte immediately after TTBR1 switch */
-\t{
-\t\textern void hk_draw_band_direct(uint32_t color, uint32_t row_start, uint32_t row_count);
-\t\thk_draw_band_direct(0x00FF007F, 160, 3); /* Rose at rows 160-162 */
-\t}"""
+		if (((hk_fb_va ^ hk_fb_pa) & (l2sz - 1)) != 0) {
+			hk_con_log("[vm] 5: FB VA/PA not congruent modulo L2 block - mapping SKIPPED");
+		} else {
+			const uint64_t va0 = hk_fb_va - off;
+			const uint64_t pa0 = hk_fb_pa - off;
+			const uint32_t nblk = (uint32_t)((off + hk_fb_bytes + l2sz - 1) / l2sz);
+			tt_entry_t *fb_l1_tte = cpu_tte + L1_TABLE_T1_INDEX(va0, TCR_EL1_BOOT);
+			tt_entry_t *fb_l2_base = NULL;
+
+			if ((*fb_l1_tte & ARM_TTE_VALID) == 0) {
+				vm_offset_t l2_page = alloc_ptpage(FALSE);
+				bzero((void *)l2_page, ARM_PGBYTES);
+				*fb_l1_tte = (kvtophys(l2_page) & ARM_TTE_TABLE_MASK) | ARM_TTE_TYPE_TABLE | ARM_TTE_VALID | ARM_DYNAMIC_TABLE_XN | ARM_TTE_TABLE_AP(ARM_TTE_TABLE_AP_USER_NA);
+				fb_l2_base = (tt_entry_t *)l2_page;
+			} else if ((*fb_l1_tte & ARM_TTE_TYPE_MASK) == ARM_TTE_TYPE_TABLE) {
+				fb_l2_base = (tt_entry_t *)phystokv((*fb_l1_tte) & ARM_TTE_TABLE_MASK);
+			}
+
+			if (fb_l2_base == NULL) {
+				hk_con_log("[vm] 5: FB L1 entry is a block, not a table - mapping SKIPPED");
+			} else {
+				tt_entry_t *fb_l2_tte = fb_l2_base + ((va0 & ARM_TT_L2_INDEX_MASK) >> ARM_TT_L2_SHIFT);
+				uint32_t mapped = 0;
+
+				for (uint32_t k = 0; k < nblk; k++) {
+					uint64_t desc = (pa0 + (uint64_t)k * l2sz) | hk_fb_attr;
+					if ((fb_l2_tte[k] & ARM_TTE_VALID) != 0 && fb_l2_tte[k] != desc) {
+						hk_con_print_ptr("[vm]   L2 slot already in use, kept: ", (uint64_t)fb_l2_tte[k]);
+						continue;
+					}
+					fb_l2_tte[k] = desc;
+					mapped++;
+				}
+
+				/* clean the whole L2 page + the L1 entry to PoC, then barrier, before TTBR1 is switched */
+				for (vm_offset_t p = (vm_offset_t)fb_l2_base; p < (vm_offset_t)fb_l2_base + ARM_PGBYTES; p += 64) {
+					__asm__ volatile ("dc civac, %0" : : "r" (p) : "memory");
+				}
+				__asm__ volatile ("dc civac, %0" : : "r" (fb_l1_tte) : "memory");
+				__asm__ volatile ("dsb sy; isb" ::: "memory");
+
+				hk_con_print_ptr("[vm]   cpu_ttep : ", (uint64_t)cpu_ttep);
+				hk_con_print_ptr("[vm]   FB L1 tte: ", (uint64_t)*fb_l1_tte);
+				hk_con_print_ptr("[vm]   FB L2 tte: ", (uint64_t)fb_l2_tte[0]);
+				hk_con_puts("[vm] 5: Phase 2 FB mapped, blocks: ");
+				hk_con_print_dec(mapped);
+				hk_con_puts("/");
+				hk_con_print_dec(nblk);
+				hk_con_puts("\n");
+			}
+		}
+
+		set_mmu_ttb_alternate(cpu_ttep & TTBR_BADDR_MASK);
+		flush_mmu_tlb();
+		hk_con_log("[vm] 6: TTBR1 switched OK");
+		hk_draw_band_direct(0x00FF007F, 160, 3); /* Rose at rows 160-162 */
+	}"""
+
         if t20_fb in c20:
             c20 = c20.replace(t20_fb, r20_fb, 1)
             print("  [OK] osfmk/arm64/arm_vm_init.c: Phase 2 direct FB mapping in cpu_tte installed")
         else:
             print("  [WARN] t20_fb not found in arm_vm_init.c")
+        # 20d. [vm] 1/2: MMU/granule telemetry before and after arm_vm_prot_init
+        t20_prot = "\tarm_vm_prot_init(args);\n"
+        r20_prot = r"""	{
+		extern void hk_con_log(const char *s);
+		extern void hk_con_puts(const char *s);
+		extern void hk_con_print_ptr(const char *tag, uint64_t val);
+		uint64_t hk_mmfr0, hk_tcr, hk_mair, hk_sctlr, hk_ttbr1;
+		__asm__ volatile ("mrs %0, ID_AA64MMFR0_EL1" : "=r" (hk_mmfr0));
+		__asm__ volatile ("mrs %0, TCR_EL1" : "=r" (hk_tcr));
+		__asm__ volatile ("mrs %0, MAIR_EL1" : "=r" (hk_mair));
+		__asm__ volatile ("mrs %0, SCTLR_EL1" : "=r" (hk_sctlr));
+		__asm__ volatile ("mrs %0, TTBR1_EL1" : "=r" (hk_ttbr1));
+		hk_con_log("[vm] 1: segdata parsed");
+		hk_con_print_ptr("[vm]   MMFR0 : ", hk_mmfr0);
+		hk_con_puts("[vm]   TGran16: ");
+		hk_con_log(((hk_mmfr0 >> 20) & 0xf) ? "supported" : "NOT SUPPORTED (hw ignores 16K!)");
+		hk_con_print_ptr("[vm]   TCR    : ", hk_tcr);
+		hk_con_print_ptr("[vm]   MAIR   : ", hk_mair);
+		hk_con_print_ptr("[vm]   SCTLR  : ", hk_sctlr);
+		hk_con_print_ptr("[vm]   TTBR1  : ", hk_ttbr1);
+	}
+	arm_vm_prot_init(args);
+	{ extern void hk_con_log(const char *s); hk_con_log("[vm] 2: prot_init done"); }
+"""
+        if c20.count(t20_prot) == 1 and "[vm] 1: segdata parsed" not in c20:
+            c20 = c20.replace(t20_prot, r20_prot, 1)
+            print("  [OK] osfmk/arm64/arm_vm_init.c: [vm] 1/2 MMU+granule telemetry installed")
+        elif "[vm] 1: segdata parsed" not in c20:
+            print("  [WARN] arm_vm_prot_init(args) anchor not found/unique in arm_vm_init.c")
+
+        # 20e. [vm] 7: after upstream invalidates TTBR0 (identity map gone) and sets kva_active
+        t20_kva = "\tflush_mmu_tlb();\n\tkva_active = TRUE;\n"
+        if t20_kva in c20 and "[vm] 7:" not in c20:
+            c20 = c20.replace(t20_kva, t20_kva + '\t{ extern void hk_con_log(const char *s); hk_con_log("[vm] 7: TTBR0 invalidated, kva_active"); }\n', 1)
+            print("  [OK] osfmk/arm64/arm_vm_init.c: [vm] 7 marker installed")
+        # 20f. [vm] 9: end of the bootstrap L3 loop (it runs AFTER the TTBR1 switch in upstream)
+        t20_end_loop = "\t\tva_l1 = va_l2_end;\n\t\tcpu_l1_tte++;\n\t}\n"
+        if t20_end_loop in c20 and "[vm] 9:" not in c20:
+            c20 = c20.replace(t20_end_loop, t20_end_loop + '\t{ extern void hk_con_log(const char *s); hk_con_log("[vm] 9: bootstrap L3 loop done"); }\n', 1)
+            print("  [OK] osfmk/arm64/arm_vm_init.c: [vm] 9 marker installed")
         with open(p20, "w", encoding="utf-8", newline="\n") as f:
             f.write(c20)
 
@@ -2769,6 +2853,30 @@ consdebug_putc(char c)
             f.write(c28)
     else:
         print("  [WARN] osfmk/kern/printf.c not found")
+
+    # 29. osfmk/arm64/cswitch.s (UAO is ARMv8.2: `mrs/msr UAO` is UNDEF on Cortex-A73 -> an EC==0 trap on EVERY context switch)
+    p29 = os.path.join(src, "osfmk", "arm64", "cswitch.s")
+    if os.path.isfile(p29):
+        with open(p29, "r", encoding="utf-8", errors="replace") as f:
+            c29 = f.read().replace("\r\n", "\n")
+        g_old = "#if __ARM_ARCH_8_2__\n"
+        g_new = "#if 0 /* hakios: UAO is ARMv8.2, UNDEF on Cortex-A73 */\n"
+        sites = ("\tmrs\t\tx$1, UAO", "\tldrb\tw$1, [$0, SS64_KERNEL_UAO]")
+        n29 = 0
+        for s in sites:
+            if (g_old + s) in c29:
+                c29 = c29.replace(g_old + s, g_new + s, 1)
+                n29 += 1
+        if n29 == 2:
+            with open(p29, "w", encoding="utf-8", newline="\n") as f:
+                f.write(c29)
+            print("  [OK] osfmk/arm64/cswitch.s: UAO save/restore compiled out (2 sites)")
+        elif "hakios: UAO is ARMv8.2" in c29:
+            print("  [OK] osfmk/arm64/cswitch.s: UAO already compiled out")
+        else:
+            print("  [WARN] cswitch.s: found %d/2 UAO sites" % n29)
+    else:
+        print("  [WARN] osfmk/arm64/cswitch.s not found")
 
     # Post-patch verification assertions: verify files on disk actually contain the patches!
     print("=== Post-patch Verification on Disk ===")
