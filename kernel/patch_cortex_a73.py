@@ -2523,10 +2523,37 @@ kernel_debug_string_early(const char *message)
 			}
 		}
 
+		/* hakios: Clean ALL translation table pages to PoC for Cortex-A73 MMU walker */
+		/* 1. Root L1 page table (cpu_tte) */
+		for (vm_offset_t p = (vm_offset_t)cpu_tte; p < (vm_offset_t)cpu_tte + ARM_PGBYTES; p += 64) {
+			__asm__ volatile ("dc civac, %0" : : "r" (p) : "memory");
+		}
+		/* 2. All L2 and L3 ptpages allocated between first_avail_phys and avail_start */
+		if (first_avail_phys != 0 && avail_start > first_avail_phys) {
+			vm_offset_t pt_va_start = phystokv(first_avail_phys);
+			vm_offset_t pt_va_end   = phystokv(avail_start);
+			for (vm_offset_t p = pt_va_start; p < pt_va_end; p += 64) {
+				__asm__ volatile ("dc civac, %0" : : "r" (p) : "memory");
+			}
+		}
+		__asm__ volatile ("dsb sy; isb" ::: "memory");
+
+		/* Micro visual bands via Framebuffer VA 0xfffffff004000000 */
+		volatile uint32_t *hk_fb_raw = (volatile uint32_t *)0xfffffff004000000ULL;
+		/* Band at row 150 (Yellow): Right before set_mmu_ttb_alternate */
+		for (int i = 150 * 1080; i < 153 * 1080; i++) hk_fb_raw[i] = 0x00FFFF00;
+
 		set_mmu_ttb_alternate(cpu_ttep & TTBR_BADDR_MASK);
+
+		/* Band at row 154 (Cyan): Right after set_mmu_ttb_alternate returns (under new TTBR1!) */
+		for (int i = 154 * 1080; i < 157 * 1080; i++) hk_fb_raw[i] = 0x0000FFFF;
+
 		flush_mmu_tlb();
+
+		/* Band at row 158 (White): Right after flush_mmu_tlb() */
+		for (int i = 158 * 1080; i < 161 * 1080; i++) hk_fb_raw[i] = 0x00FFFFFF;
+
 		hk_con_log("[vm] 6: TTBR1 switched OK");
-		hk_draw_band_direct(0x00FF007F, 160, 3); /* Rose at rows 160-162 */
 	}"""
 
         if t20_fb in c20:
