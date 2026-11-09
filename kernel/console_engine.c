@@ -21,6 +21,7 @@ void     hk_con_red_ptr(const char *tag, uint64_t val);
 uint64_t hk_con_strip_ptr(uint64_t p);
 void     hk_startup_enter(uint32_t sub, const char *name, uint32_t rank, uint64_t raw, uint64_t stripped);
 void     hk_startup_leave(void);
+void     hk_trap_log(const char *what, uint64_t pc);
 void     hk_con_dump_exception(uint64_t esr, uint64_t elr, uint64_t far, uint64_t sp);
 
 #ifndef HK_FB_BASE
@@ -538,4 +539,34 @@ void hk_startup_leave(void)
 {
 	hk_su_close_group();
 	hk_su_close_sub();
+}
+
+/* ====================================================================
+ * Trap trace (EC==0: LSE/PAC/RCpc emulation). Gioi han 40 dong de khong flood.
+ * In: "[trap] <what>: 0x<pc> insn: 0x<8 hex>"  (insn chi doc khi pc la dia chi kernel)
+ * ==================================================================== */
+void hk_trap_log(const char *what, uint64_t pc)
+{
+	static const char hx[] = "0123456789abcdef";
+	static uint32_t n;
+
+	if (n > 40) {
+		return;
+	}
+	if (n++ == 40) {
+		hk_con_log("[trap] log limit reached (40 lines)");
+		return;
+	}
+	hk_con_puts("[trap] ");
+	hk_con_puts(what);
+	hk_con_puts(": ");
+	hk_con_hex(pc);
+	if ((pc >> 36) == 0xfffffffULL) {
+		uint32_t insn = *(volatile uint32_t *)pc;
+		hk_con_puts(" insn: 0x");
+		for (int i = 28; i >= 0; i -= 4) {
+			hk_con_putc(hx[(insn >> i) & 0xf]);
+		}
+	}
+	hk_con_putc('\n');
 }

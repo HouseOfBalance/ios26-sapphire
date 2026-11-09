@@ -395,7 +395,25 @@ def main():
 			__asm__ volatile ("wfe");
 		}
 """
-        sleh_hook_new = sleh_hook_old + r"""
+        HK_TRAPS = r"""	if (class == 0) {
+#ifndef HK_NO_TRAP_TRACE
+		extern void hk_trap_log(const char *what, uint64_t pc);
+		hk_trap_log(is_user ? "EC0 user pc" : "EC0 kernel pc", (uint64_t)get_saved_state_pc(state));
+#endif
+		if (pac_patch_handle_trap(state, is_user)) {
+#ifndef HK_NO_TRAP_TRACE
+			hk_trap_log("pac handled, resume pc", (uint64_t)get_saved_state_pc(state));
+#endif
+			return;
+		}
+		if (lse_patch_handle_trap(state, is_user)) {
+#ifndef HK_NO_TRAP_TRACE
+			hk_trap_log("lse handled, resume pc", (uint64_t)get_saved_state_pc(state));
+#endif
+			return;
+		}
+	}"""
+        sleh_hook_new = HK_TRAPS + r"""
 #ifndef HK_NO_EARLY_EXC_DUMP
 	if (!is_user) {
 """ + HK_DUMP_CALL.replace("HK_STATE", "state") + r"""	}
@@ -1245,18 +1263,31 @@ LEXT(hk_draw_band_stackless)
         else:
             print("  [WARN] __ARM_PAN_AVAILABLE__ not found in BCM2837.h")
 
-    # 7. makedefs/MakeInc.def (replace +pan with -pan for BCM2837 Cortex-A73/A53)
+    # 7. makedefs/MakeInc.def (-pan for Cortex-A73/A53, and -lse: no ldadd/cas/swp in compiled C)
+    #    Set HK_KEEP_LSE=1 to keep LSE codegen (then every atomic traps to lse_patch_handle_trap).
     p7 = os.path.join(src, "makedefs", "MakeInc.def")
     if os.path.isfile(p7):
         with open(p7, "r", encoding="utf-8", errors="replace") as f:
             c7 = f.read().replace("\r\n", "\n")
+        ch7 = False
         if "-Xclang -target-feature -Xclang +pan" in c7:
             c7 = c7.replace("-Xclang -target-feature -Xclang +pan", "-Xclang -target-feature -Xclang -pan")
+            ch7 = True
+            print("  [OK] makedefs/MakeInc.def: +pan replaced with -pan")
+        if os.environ.get("HK_KEEP_LSE"):
+            print("  [OK] makedefs/MakeInc.def: HK_KEEP_LSE set, -lse not added")
+        elif "-Xclang -target-feature -Xclang -pan" in c7 and "-Xclang -target-feature -Xclang -lse" not in c7:
+            c7 = c7.replace("-Xclang -target-feature -Xclang -pan",
+                            "-Xclang -target-feature -Xclang -pan -Xclang -target-feature -Xclang -lse")
+            ch7 = True
+            print("  [OK] makedefs/MakeInc.def: -lse added (compiler emits ldxr/stxr instead of ldadd/cas)")
+        elif "-Xclang -target-feature -Xclang -lse" in c7:
+            print("  [OK] makedefs/MakeInc.def: -lse already present")
+        else:
+            print("  [WARN] -pan/-lse anchor not found in MakeInc.def")
+        if ch7:
             with open(p7, "w", encoding="utf-8", newline="\n") as f:
                 f.write(c7)
-            print("  [OK] makedefs/MakeInc.def: +pan replaced with -pan")
-        else:
-            print("  [WARN] +pan not found in MakeInc.def")
 
     # 8. osfmk/arm64/locore.s & machine_routines_asm.s (fix CHECK_KERNEL_STACK on intstack & stub ml_sign_thread_state / ml_check_signed_state)
     for asm_name in ("locore.s", "machine_routines_asm.s", "cswitch.s"):
@@ -1265,6 +1296,13 @@ LEXT(hk_draw_band_stackless)
             with open(p8, "r", encoding="utf-8", errors="replace") as f:
                 c8 = f.read().replace("\r\n", "\n")
             changed_asm = False
+            if asm_name == "machine_routines_asm.s" and not os.environ.get("HK_KEEP_LSE"):
+                lse_old = "#if defined(__ARM_ARCH_8_2__) && !KASAN_TBI"
+                if lse_old in c8:
+                    c8 = c8.replace(lse_old, "#if 0 /* hakios: Cortex-A73 has no LSE (casa) */")
+                    c8 = c8.replace("#if !defined(__ARM_ARCH_8_2__)\n\tclrex", "#if 1 /* hakios: LL/SC path needs clrex */\n\tclrex")
+                    changed_asm = True
+                    print(f"  [OK] osfmk/arm64/{asm_name}: hw_lck_ticket_reserve_orig_allow_invalid uses ldaxr/stxr instead of casa")
             if "LEXT(ml_sign_thread_state)\n" in c8 and "LEXT(ml_sign_thread_state)\n\tret\n" not in c8:
                 c8 = c8.replace("LEXT(ml_sign_thread_state)\n", "LEXT(ml_sign_thread_state)\n\tret\n", 1)
                 changed_asm = True
@@ -1289,7 +1327,7 @@ LEXT(hk_draw_band_stackless)
 \tmov\t\tx18, lr
 \tmrs\t\tx1, ESR_EL1
 \tlsr\t\tx0, x1, #26\t\t\t\t\t\t\t// x0 = EC
-\tcbz\t\tx0, 88f\t\t\t\t\t\t\t\t// If EC == 0 (LSE/PAC trap), bypass!
+\tcbz\t\tx0, 86f\t\t\t\t\t\t\t\t// EC == 0 (LSE/PAC trap): teal one-shot marker below
 \tmrs\t\tx0, TPIDR_EL0
 \ttbnz\tx0, #63, 88f\t\t\t\t\t\t// If bit 63 set, already drawn, bypass!
 \torr\t\tx0, x0, #(1ULL << 63)
@@ -1298,6 +1336,18 @@ LEXT(hk_draw_band_stackless)
 \tmovk\tw0, #0x00ff, lsl #16
 \tmov\t\tw1, #230\t\t\t\t\t\t\t// Row 230
 \tmov\t\tw2, #6\t\t\t\t\t\t\t\t// 6 rows thick (230..235)
+\tbl\t\tEXT(hk_draw_band_stackless)
+\tb\t\t88f
+86:
+\t/* hakios: EC == 0 reached the vector -> one-shot teal band on row 226 (TPIDR_EL0 bit 61) */
+\tmrs\t\tx0, TPIDR_EL0
+\ttbnz\tx0, #61, 88f
+\torr\t\tx0, x0, #(1ULL << 61)
+\tmsr\t\tTPIDR_EL0, x0
+\tmovz\tw0, #0xced1\t\t\t\t\t\t\t// Teal (0x0000CED1)
+\tmovk\tw0, #0x0000, lsl #16
+\tmov\t\tw1, #226
+\tmov\t\tw2, #4
 \tbl\t\tEXT(hk_draw_band_stackless)
 88:
 \tmov\t\tlr, x18
