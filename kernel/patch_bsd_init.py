@@ -39,7 +39,7 @@ def patch_bsd_init(src_dir):
     r_entry = (
         "bsd_init(void)\n{\n"
         "\t/* hakios: bsd_init lifecycle milestone ladder bands */\n"
-        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00DAA520, 600, 4); } /* Goldenrod: bsd_init entered */\n"
+        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); extern void hk_con_log(const char *); hk_draw_band_direct(0x00DAA520, 600, 4); hk_con_log(\"[+] bsd_init: entered BSD bootstrap\"); } /* Goldenrod: bsd_init entered */\n"
     )
     if t_entry in c:
         c = c.replace(t_entry, r_entry, 1)
@@ -51,7 +51,7 @@ def patch_bsd_init(src_dir):
     t_bcache = "bsd_bufferinit();"
     r_bcache = (
         "bsd_bufferinit();\n"
-        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FFA500, 606, 4); } /* Orange: bsd_bufferinit done */"
+        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); extern void hk_con_log(const char *); hk_draw_band_direct(0x00FFA500, 606, 4); hk_con_log(\"[+] bsd_init: buffer cache initialized\"); } /* Orange: bsd_bufferinit done */"
     )
     if t_bcache in c:
         c = c.replace(t_bcache, r_bcache, 1)
@@ -73,7 +73,7 @@ def patch_bsd_init(src_dir):
     t_vfs = "vfsinit();"
     r_vfs = (
         "vfsinit();\n"
-        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x009ACD32, 612, 4); } /* Yellow Green: vfsinit done */"
+        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); extern void hk_con_log(const char *); hk_draw_band_direct(0x009ACD32, 612, 4); hk_con_log(\"[+] bsd_init: vfs initialized\"); } /* Yellow Green: vfsinit done */"
     )
     if t_vfs in c:
         c = c.replace(t_vfs, r_vfs, 1)
@@ -95,7 +95,7 @@ def patch_bsd_init(src_dir):
     t_devfs = "devfs_kernel_mount(mounthere);"
     r_devfs = (
         "devfs_kernel_mount(mounthere);\n"
-        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x001E90FF, 618, 4); } /* Dodger Blue: devfs mounted */"
+        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); extern void hk_con_log(const char *); hk_draw_band_direct(0x001E90FF, 618, 4); hk_con_log(\"[+] bsd_init: devfs mounted\"); } /* Dodger Blue: devfs mounted */"
     )
     if t_devfs in c:
         c = c.replace(t_devfs, r_devfs, 1)
@@ -173,7 +173,7 @@ def patch_bsd_init(src_dir):
     t_vfsroot = "if (0 == (err = vfs_mountroot())) {"
     r_vfsroot = (
         "if (0 == (err = vfs_mountroot())) {\n"
-        "\t\t\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000FF7F, 642, 4); } /* Spring Green: vfs_mountroot succeeded */"
+        "\t\t\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); extern void hk_con_log(const char *); hk_draw_band_direct(0x0000FF7F, 642, 4); hk_con_log(\"[+] bsd_init: root filesystem mounted OK! (mockfs/ramdisk)\"); } /* Spring Green: vfs_mountroot succeeded */"
     )
     if t_vfsroot in c:
         c = c.replace(t_vfsroot, r_vfsroot, 1)
@@ -185,7 +185,7 @@ def patch_bsd_init(src_dir):
     t_utask = "bsd_utaskbootstrap();"
     r_utask = (
         "bsd_utaskbootstrap();\n"
-        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000BFFF, 648, 4); } /* Deep Sky Blue: PID 1 process created */"
+        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); extern void hk_con_log(const char *); hk_draw_band_direct(0x0000BFFF, 648, 4); hk_con_log(\"[+] bsd_init: bsd_utaskbootstrap (PID 1 task created)\"); } /* Deep Sky Blue: PID 1 process created */"
     )
     if t_utask in c:
         c = c.replace(t_utask, r_utask, 1)
@@ -200,7 +200,7 @@ def patch_bsd_init(src_dir):
         "\t/* hakios: PID 1 kernel bootstrap */\n"
         "\t/* hakios/claude: clear diagnostic bit 63 in TPIDR_EL0 before userland */\n"
         "\t__asm__ volatile (\"mrs x0, tpidr_el0; bic x0, x0, #(1ULL << 63); msr tpidr_el0, x0\" ::: \"x0\");\n"
-        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF8C00, 654, 4); } /* Dark Orange: bsdinit_task entered */\n"
+        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); extern void hk_con_log(const char *); hk_draw_band_direct(0x00FF8C00, 654, 4); hk_con_log(\"[+] bsdinit_task: PID 1 bootstrap thread running\"); } /* Dark Orange: bsdinit_task entered */\n"
     )
     if t_bsdinit in c:
         c = c.replace(t_bsdinit, r_bsdinit, 1)
@@ -210,13 +210,14 @@ def patch_bsd_init(src_dir):
 
     # 11. load_init_program return band (Row 660: Magenta, Row 666: DodgerBlue)
     t_loadinit = "load_init_program(p);\n"
+    r_pre_loadinit = "\t{ extern void hk_con_log(const char *); hk_con_log(\"[*] bsdinit_task: executing load_init_program(/sbin/launchd)...\"); }\n\tload_init_program(p);\n"
     r_loadinit = (
         "load_init_program(p);\n"
-        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00FF00FF, 660, 4); } /* Magenta: load_init_program returned */\n"
-        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x001E90FF, 666, 4); } /* DodgerBlue: bsdinit_task returning to user AST */\n"
+        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); extern void hk_con_log(const char *); hk_draw_band_direct(0x00FF00FF, 660, 4); hk_con_log(\"[+] bsdinit_task: load_init_program returned OK!\"); } /* Magenta: load_init_program returned */\n"
+        "\t{ extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); extern void hk_con_log(const char *); hk_draw_band_direct(0x001E90FF, 666, 4); hk_con_log(\"[+] HakiOS: Spawning PID 1 (/sbin/launchd) at EL0...\"); hk_con_log(\"[+] ========================================\"); hk_con_log(\"[+] WELCOME TO USERLAND (EL0)!\"); hk_con_log(\"[+] ========================================\"); } /* DodgerBlue: bsdinit_task returning to user AST */\n"
     )
     if t_loadinit in c:
-        c = c.replace(t_loadinit, r_loadinit, 1)
+        c = c.replace(t_loadinit, r_loadinit.replace("load_init_program(p);\n", r_pre_loadinit, 1), 1)
         print("  [OK] bsd/kern/bsd_init.c: load_init_program band installed (row 660)")
     else:
         print("  [WARN] bsd/kern/bsd_init.c: load_init_program pattern not found")
