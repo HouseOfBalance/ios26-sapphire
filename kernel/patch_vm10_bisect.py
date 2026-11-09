@@ -68,8 +68,8 @@ def patch_vm_tail(src):
                 out.append('\t{ extern void hk_con_log(const char *s); '
                            'hk_con_log("[vm] 10.%d after: %s"); } /* hk-vm10 */\n' % (n, esc(stmt)))
             stmt = ""
-    out.append(c[k:] if depth_b >= 0 else "")
-    # neu da break vi '}' thi out da chua dong '}' va c[k:] la phan con lai
+    out.append(c[k:])
+    # neu da break vi '}' thi out da chua dong '}' va c[k:] la phan con lai cua file
     wr(p, "".join(out))
     print("  [OK] arm_vm_init.c: %d marker [vm] 10.N chen sau [vm] 9" % n)
 
