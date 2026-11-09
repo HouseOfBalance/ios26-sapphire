@@ -38,6 +38,42 @@ static inline __attribute__((always_inline)) void hk_led(unsigned n, uint32_t co
 }
 '''
 
+
+HELPER_NB = r"""
+/* hk-vm7-nb: LED khong barrier - de LED khong tu 'hoan tat' hoac che lenh dang test */
+static inline __attribute__((always_inline)) void hk_led_nb(unsigned n, uint32_t color)
+{
+	volatile uint32_t *fb = (volatile uint32_t *)0xfffffff004000000ULL;
+	for (unsigned y = 0; y < 16; y++) {
+		for (unsigned x = 0; x < 16; x++) {
+			fb[(64u + n * 20u + y) * 1080u + 1062u + x] = color;
+		}
+	}
+}
+"""
+
+FLUSH_NEW = r"""/* hakios: thay flush_mmu_tlb() bang chuoi ARMv8.0 local; LED 5..9 (cyan) tung buoc.
+	 * -DHK_SKIP_TLBI de bo han lenh tlbi (kiem tra xem tlbi co phai thu pham). */
+	{
+		uint64_t hk_tcr;
+		__asm__ volatile ("mrs %0, TCR_EL1" : "=r" (hk_tcr));
+		hk_tcr |= (1ULL << 7);                          /* EPD0 = 1: cam walker TTBR0 */
+		__asm__ volatile ("msr TCR_EL1, %0" : : "r" (hk_tcr) : "memory");
+		hk_led_nb(5, 0x0000FFFF);                       /* 2a: sau msr TCR_EL1 */
+		__asm__ volatile ("isb sy" ::: "memory");
+		hk_led_nb(6, 0x0000FFFF);                       /* 2b: sau isb */
+#ifndef HK_SKIP_TLBI
+		__asm__ volatile ("tlbi vmalle1" ::: "memory");
+#endif
+		hk_led_nb(7, 0x0000FFFF);                       /* 2c: sau tlbi vmalle1 (chua cho hoan tat) */
+		__asm__ volatile ("dsb nsh" ::: "memory");
+		hk_led_nb(8, 0x0000FFFF);                       /* 2d: sau dsb nsh = tlbi da hoan tat */
+		__asm__ volatile ("isb sy" ::: "memory");
+		hk_led_nb(9, 0x0000FFFF);                       /* 2e: sau isb */
+	}
+	hk_led(3, 0x00FFFF00);                                 /* LED3: qua flush */
+"""
+
 SEQ_NEW = r'''{
 		uint64_t hk_vbar, hk_t0, hk_t1;
 		__asm__ volatile ("mrs %0, VBAR_EL1" : "=r" (hk_vbar));
@@ -52,9 +88,7 @@ SEQ_NEW = r'''{
 	hk_led(1, 0x00FFFF00);                                 /* LED1: qua monitor */
 	set_mmu_ttb(invalid_ttep & TTBR_BADDR_MASK);
 	hk_led(2, 0x00FFFF00);                                 /* LED2: qua set_mmu_ttb (TTBR0 da chet) */
-	flush_mmu_tlb();
-	hk_led(3, 0x00FFFF00);                                 /* LED3: qua flush_mmu_tlb */
-	kva_active = TRUE;
+	@@FLUSH@@	kva_active = TRUE;
 	hk_led(4, 0x0000FF00);                                 /* LED4 xanh: xong doan nay */
 '''
 
@@ -74,10 +108,17 @@ def patch_arm_vm_init(src):
         r"set_mmu_ttb\(invalid_ttep & TTBR_BADDR_MASK\);\s*"
         r"flush_mmu_tlb\(\);\s*"
         r"kva_active = TRUE;\n")
-    if "hk_led(0," in c:
-        print("  [OK] arm_vm_init.c: LED bisect already present")
+    if "hk-vm7-nb" not in c:
+        c = c.replace("/* hk-vm7-helper:", HELPER_NB + "/* hk-vm7-helper:", 1)
+        print("  [OK] arm_vm_init.c: hk_led_nb helper")
+    upg = re.compile(r"flush_mmu_tlb\(\);\s*hk_led\(3, 0x00FFFF00\);[^\n]*\n")
+    if "hk_led_nb(5," in c:
+        print("  [OK] arm_vm_init.c: micro-LED flush already present")
+    elif "hk_led(0," in c and upg.search(c):
+        c = upg.sub(lambda m: FLUSH_NEW, c, count=1)
+        print("  [OK] arm_vm_init.c: flush_mmu_tlb() -> EPD0 + tlbi vmalle1 + micro-LED 5..9 (upgrade)")
     elif pat.search(c):
-        c = pat.sub(lambda m: SEQ_NEW, c, count=1)
+        c = pat.sub(lambda m: SEQ_NEW.replace('@@FLUSH@@', FLUSH_NEW), c, count=1)
         print("  [OK] arm_vm_init.c: monitor stubbed + LED0..4 bisect installed")
     else:
         print("  [WARN] khong khop chuoi ml_enable_monitor/set_mmu_ttb/flush/kva_active -"
