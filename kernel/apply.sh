@@ -51,6 +51,11 @@ if [ -f "$K/patch_cortex_a73.py" ]; then
 	python3 "$K/patch_cortex_a73.py" "$D"
 fi
 
+# Apply Part 5a-bis: VM7 Hang Bisect & Local Barrier Patcher (Claude Code)
+if [ -f "$K/patch_vm7_hang.py" ]; then
+	python3 "$K/patch_vm7_hang.py" "$D"
+fi
+
 # Apply Part 5b: 16KB RAM Alignment & Range Fix
 if [ -f "$K/patch_ram_alignment.py" ]; then
 	python3 "$K/patch_ram_alignment.py" "$D"

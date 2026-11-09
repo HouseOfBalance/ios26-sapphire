@@ -1,0 +1,155 @@
+#!/usr/bin/env python3
+"""patch_vm7_hang.py <xnu_src_dir>
+
+Chay SAU patch_cortex_a73.py. Idempotent, co backup *.hk_orig.
+  1. Stub ml_enable_monitor (call site + dinh nghia C/asm)
+  2. Bien TLBI/DSB broadcast (is/ish) thanh local (nsh) - CHI cho bring-up cpus=1
+  3. Chen "LED" bisect + in VBAR/TTBR0 quanh doan treo sau [vm] 6
+  4. Telemetry cho vong L3 bootstrap ([vm] 8)
+"""
+import glob, os, re, shutil, sys
+
+
+def rd(p):
+    with open(p, encoding="utf-8", errors="replace") as f:
+        return f.read().replace("\r\n", "\n")
+
+
+def wr(p, s):
+    if not os.path.exists(p + ".hk_orig"):
+        shutil.copy2(p, p + ".hk_orig")
+    with open(p, "w", encoding="utf-8", newline="\n") as f:
+        f.write(s)
+
+
+HELPER = r'''
+/* hk-vm7-helper: LED o le phai (x=1062..1077) - text console khong bao gio de len */
+extern void hk_con_log(const char *s);
+extern void hk_con_print_ptr(const char *tag, uint64_t val);
+static inline __attribute__((always_inline)) void hk_led(unsigned n, uint32_t color)
+{
+	volatile uint32_t *fb = (volatile uint32_t *)0xfffffff004000000ULL; /* KVA, khong phai PA 0x5c000000 */
+	for (unsigned y = 0; y < 16; y++) {
+		for (unsigned x = 0; x < 16; x++) {
+			fb[(64u + n * 20u + y) * 1080u + 1062u + x] = color;
+		}
+	}
+	__asm__ volatile ("dsb sy" ::: "memory");
+}
+'''
+
+SEQ_NEW = r'''{
+		uint64_t hk_vbar, hk_t0, hk_t1;
+		__asm__ volatile ("mrs %0, VBAR_EL1" : "=r" (hk_vbar));
+		__asm__ volatile ("mrs %0, TTBR0_EL1" : "=r" (hk_t0));
+		__asm__ volatile ("mrs %0, TTBR1_EL1" : "=r" (hk_t1));
+		hk_con_print_ptr("[vm]   VBAR   : ", hk_vbar);   /* PHAI la 0xfffffff0xxxxxxxx */
+		hk_con_print_ptr("[vm]   TTBR0  : ", hk_t0);
+		hk_con_print_ptr("[vm]   TTBR1  : ", hk_t1);
+	}
+	hk_led(0, 0x00FFFF00);                                 /* LED0: toi truoc monitor */
+	/* hakios: ml_enable_monitor() bo - SM6225 khong co Apple Monitor/PPL */
+	hk_led(1, 0x00FFFF00);                                 /* LED1: qua monitor */
+	set_mmu_ttb(invalid_ttep & TTBR_BADDR_MASK);
+	hk_led(2, 0x00FFFF00);                                 /* LED2: qua set_mmu_ttb (TTBR0 da chet) */
+	flush_mmu_tlb();
+	hk_led(3, 0x00FFFF00);                                 /* LED3: qua flush_mmu_tlb */
+	kva_active = TRUE;
+	hk_led(4, 0x0000FF00);                                 /* LED4 xanh: xong doan nay */
+'''
+
+
+def patch_arm_vm_init(src):
+    p = os.path.join(src, "osfmk", "arm64", "arm_vm_init.c")
+    if not os.path.isfile(p):
+        print("  [WARN] arm_vm_init.c not found"); return
+    c = rd(p)
+    if "hk-vm7-helper" not in c:
+        incs = list(re.finditer(r"^#include[^\n]*\n", c, re.M))
+        pos = incs[-1].end() if incs else 0
+        c = c[:pos] + HELPER + c[pos:]
+        print("  [OK] arm_vm_init.c: hk_led helper")
+    pat = re.compile(
+        r"ml_enable_monitor\(\);\s*"
+        r"set_mmu_ttb\(invalid_ttep & TTBR_BADDR_MASK\);\s*"
+        r"flush_mmu_tlb\(\);\s*"
+        r"kva_active = TRUE;\n")
+    if "hk_led(0," in c:
+        print("  [OK] arm_vm_init.c: LED bisect already present")
+    elif pat.search(c):
+        c = pat.sub(lambda m: SEQ_NEW, c, count=1)
+        print("  [OK] arm_vm_init.c: monitor stubbed + LED0..4 bisect installed")
+    else:
+        print("  [WARN] khong khop chuoi ml_enable_monitor/set_mmu_ttb/flush/kva_active -"
+              " dan tay: grep -n 'ml_enable_monitor' osfmk/arm64/arm_vm_init.c")
+
+    # Vong L3 bootstrap: in KVA/PA cua L2 page cap theo yeu cau (toi da 4 dong)
+    m = re.search(r"\[vm\] 8:", c)
+    old = "*cpu_l1_tte = (kvtophys(l2_page) & ARM_TTE_TABLE_MASK)"
+    if m and "hk_l2n" not in c:
+        i = c.find(old, m.end())
+        if i >= 0:
+            tele = ("{ static int hk_l2n; if (hk_l2n++ < 4) {\n"
+                    "\t\t\t\thk_con_print_ptr(\"[vm]   L2 KVA: \", (uint64_t)l2_page);\n"
+                    "\t\t\t\thk_con_print_ptr(\"[vm]   L2 PA : \", (uint64_t)kvtophys(l2_page)); } }\n\t\t\t")
+            c = c[:i] + tele + c[i:]
+            print("  [OK] arm_vm_init.c: [vm] 8 L2 telemetry")
+        else:
+            print("  [WARN] L2 alloc statement not found after [vm] 8")
+    wr(p, c)
+
+
+def patch_monitor_defs(src):
+    n = 0
+    files = []
+    for ext in ("c", "h", "s", "S"):
+        files += glob.glob(os.path.join(src, "osfmk", "arm64", "*." + ext))
+        files += glob.glob(os.path.join(src, "osfmk", "arm", "*." + ext))
+    for p in files:
+        c = rd(p)
+        if "ml_enable_monitor" not in c or "hk: monitor stub" in c:
+            continue
+        new = re.sub(r"(\bml_enable_monitor\s*\(\s*void\s*\)\s*\{)",
+                     r"\1\n\treturn; /* hk: monitor stub */", c)
+        new = re.sub(r"(LEXT\(ml_enable_monitor\)[ \t]*\n)",
+                     r"\1\tret /* hk: monitor stub */\n", new)
+        if new != c:
+            wr(p, new); n += 1
+            print("  [OK] %s: ml_enable_monitor body -> return" % os.path.relpath(p, src))
+    if n == 0:
+        print("  [INFO] khong thay dinh nghia ml_enable_monitor (co the o #if XNU_MONITOR - khong build)."
+              " Kiem tra: grep -rn ml_enable_monitor osfmk/")
+
+
+def patch_local_barriers(src):
+    """CHI cho cpus=1. Phai revert (dung .hk_orig) truoc khi bat SMP."""
+    files = []
+    for d, exts in (("osfmk/arm64", ("h", "c", "s", "S")), ("osfmk/arm/pmap", ("h", "c"))):
+        for e in exts:
+            files += glob.glob(os.path.join(src, d, "*." + e))
+    for p in files:
+        c = rd(p)
+        n = c
+        n = re.sub(r"(tlbi\s+[a-z0-9]+?)is\b", r"\1", n)              # vmalle1is -> vmalle1
+        n = re.sub(r"\bDSB_ISH(ST)?\b", r"DSB_NSH\1", n)               # C
+        n = re.sub(r"\bdsb(\s+)ish(st)?\b", r"dsb\1nsh\2", n)          # asm
+        n = re.sub(r"\bdsb(\s+)sy /\* hakios: sy avoids interconnect deadlock \*/",
+                   r"dsb\1nsh /* hakios: local */", n)
+        if n != c:
+            wr(p, n)
+            print("  [OK] %s: TLBI/DSB -> local" % os.path.relpath(p, src))
+
+
+def main():
+    if len(sys.argv) < 2:
+        print(__doc__); sys.exit(1)
+    src = sys.argv[1]
+    patch_arm_vm_init(src)
+    patch_monitor_defs(src)
+    if not os.environ.get("HK_KEEP_BROADCAST"):
+        patch_local_barriers(src)
+    print("Done. Backup: *.hk_orig")
+
+
+if __name__ == "__main__":
+    main()
