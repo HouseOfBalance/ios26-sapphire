@@ -1644,26 +1644,16 @@ kernel_startup_bootstrap(void)
 
         r_startup = r"""		startup_phase = cur->subsystem - 1;
 		{
-			extern void hk_con_puts(const char *s);
-			extern void hk_con_putc(char c);
-			extern void hk_con_print_dec(uint32_t val);
-			extern void hk_con_print_ptr(const char *tag, uint64_t val);
+			extern void hk_startup_enter(uint32_t sub, const char *name, uint32_t rank, uint64_t raw, uint64_t stripped);
 			extern uint64_t hk_con_strip_ptr(uint64_t p);
 
 			uint64_t hk_raw = (uint64_t)(uintptr_t)cur->func;
 			/* canonical 0xfffffff0_xxxxxxxx: bo PAC signature truoc khi nhay vao ham */
 			uint64_t hk_fp = hk_con_strip_ptr(hk_raw);
 
-			/* in TRUOC khi goi: dong cuoi cung tren man hinh = entry gay treo */
-			hk_con_puts("[startup] rank: ");
-			hk_con_print_dec((uint32_t)cur->rank);
-			hk_con_puts(" sub: ");
-			hk_con_print_dec((uint32_t)cur->subsystem);
-			hk_con_putc(' ');
-			hk_con_print_ptr("func: ", hk_raw);
-			if (hk_fp != hk_raw) {
-				hk_con_print_ptr("[startup]   stripped: ", hk_fp);
-			}
+			/* gom log theo (sub, rank); status row (dong cuoi man hinh) luon hien entry dang chay */
+			hk_startup_enter((uint32_t)cur->subsystem, hk_sub_name(cur->subsystem),
+			    (uint32_t)cur->rank, hk_raw, hk_fp);
 
 			kernel_startup_log(cur->subsystem);
 			hk_call_startup(hk_fp, cur->arg);
@@ -1679,7 +1669,21 @@ kernel_startup_bootstrap(void)
         # blraaz/blrabz (combined PAC), which is UNDEF on Cortex-A73 (ARMv8.0). The stripped pointer
         # is therefore called with a bare blr from inline asm.
         t_hdr = "__startup_func\nvoid\nkernel_startup_initialize_upto(startup_subsystem_id_t upto)\n{"
-        r_hdr = r"""static __attribute__((noinline)) void
+        r_hdr = r"""static const char *
+hk_sub_name(startup_subsystem_id_t s)
+{
+	switch (s) {
+#define HK_SUB(n) case STARTUP_SUB_##n: return #n;
+	HK_SUB(TUNABLES) HK_SUB(TIMEOUTS) HK_SUB(LOCKS) HK_SUB(KPRINTF)
+	HK_SUB(PMAP_STEAL) HK_SUB(KMEM) HK_SUB(ZALLOC) HK_SUB(PERCPU)
+	HK_SUB(EVENT) HK_SUB(CODESIGNING) HK_SUB(KTRACE) HK_SUB(OSLOG)
+	HK_SUB(MACH_IPC) HK_SUB(THREAD_CALL) HK_SUB(SYSCTL) HK_SUB(EARLY_BOOT)
+#undef HK_SUB
+	default: return "?";
+	}
+}
+
+static __attribute__((noinline)) void
 hk_call_startup(uint64_t fp, const void *arg)
 {
 #if defined(__aarch64__)
@@ -1704,6 +1708,14 @@ hk_call_startup(uint64_t fp, const void *arg)
             print("  [OK] osfmk/kern/startup.c: hk_call_startup (plain blr, no combined PAC) installed")
         elif "hk_call_startup(uint64_t" not in c10:
             print("  [WARN] kernel_startup_initialize_upto header not found in startup.c")
+
+        # flush the last (sub, rank) group + "SUB n COMPLETED OK" when kernel_startup_initialize_upto() finishes
+        t_leave = "\tkernel_startup_log(upto);\n"
+        if t_leave in c10 and "hk_startup_leave" not in c10:
+            c10 = c10.replace(t_leave, "\t{ extern void hk_startup_leave(void); hk_startup_leave(); }\n" + t_leave, 1)
+            print("  [OK] osfmk/kern/startup.c: hk_startup_leave installed (sub completion lines)")
+        elif "hk_startup_leave" not in c10:
+            print("  [WARN] kernel_startup_log(upto) not found in startup.c")
 
         # Instrument kernel_bootstrap_log and kernel_bootstrap_thread_log
         t_kblog = """static inline void\nkernel_bootstrap_log(const char *message)\n{\n\tif ((startup_debug & STARTUP_DEBUG_VERBOSE) &&\n\t    startup_phase >= STARTUP_SUB_KPRINTF) {\n\t\tkprintf("kernel_bootstrap: %s\\n", message);\n\t}\n\tkernel_debug_string_early(message);\n}"""
@@ -2153,7 +2165,7 @@ kernel_debug_string_early(const char *message)
         t16_rel = '\tif (vm_himemory_mode) {\n\t\t\tvm_page_release_startup(vm_page_get(i));\n\t\t}'
         r16_rel = """\tif (vm_himemory_mode) {
 \t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); if (i == 0) { extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x0000FFFF, 332, 4); } } /* Cyan: before vm_page_release_startup(0) */
-\t\tvm_page_release_startup(vm_page_get(i));
+\t\t\tvm_page_release_startup(vm_page_get(i));
 \t\t\t{ extern void hk_draw_band(uint32_t, uint32_t, uint32_t); if (i == 0) { extern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t); hk_draw_band_direct(0x00ADFF2F, 336, 4); } } /* GreenYellow: after vm_page_release_startup(0) */
 \t\t}
 		/* hakios: logarithmic milestones, gauges, and live clock heartbeat */
@@ -2317,7 +2329,8 @@ kernel_debug_string_early(const char *message)
         t19_exp = 'while ((ret = pmap_tt_allocate(pmap, &tt_p, ttlevel + 1, ((options & PMAP_TT_ALLOCATE_NOWAIT)? PMAP_PAGES_ALLOCATE_NOWAIT : 0))) != KERN_SUCCESS) {\n\t\t\t\tif (options & PMAP_OPTIONS_NOWAIT) {\n\t\t\t\t\t/* Can be KERN_RESOURCE_SHORTAGE or KERN_ABORTED. */\n\t\t\t\t\treturn ret;\n\t\t\t\t}'
         r19_exp = """while ((ret = pmap_tt_allocate(pmap, &tt_p, ttlevel + 1, ((options & PMAP_TT_ALLOCATE_NOWAIT)? PMAP_PAGES_ALLOCATE_NOWAIT : 0))) != KERN_SUCCESS) {
 \t\t\t\tif (options & PMAP_OPTIONS_NOWAIT) {
-\t\t\t\t\t/* Can be KERN_RESOURCE_SHORTAGE or KERN_ABORTED. */\n\t\t\t\t\treturn ret;
+\t\t\t\t\t/* Can be KERN_RESOURCE_SHORTAGE or KERN_ABORTED. */
+\t\t\t\t\treturn ret;
 \t\t\t\t}
 \t\t\t\tif (!pmap_initialized) {
 \t\t\t\t\treturn ret;
@@ -2347,7 +2360,8 @@ kernel_debug_string_early(const char *message)
         t19_ptd = 'while ((ptdp = ptd_alloc(pmap)) == NULL) {\n\t\t\tif (options & PMAP_OPTIONS_NOWAIT) {\n\t\t\t\t/* Deallocate all allocated resources so far. */\n\t\t\t\tpmap_pages_free(pa, PAGE_SIZE);\n\t\t\t\treturn KERN_RESOURCE_SHORTAGE;\n\t\t\t}\n\t\t\tVM_PAGE_WAIT();\n\t\t}'
         r19_ptd = """while ((ptdp = ptd_alloc(pmap)) == NULL) {
 \t\t\tif (options & PMAP_OPTIONS_NOWAIT) {
-\t\t\t\t/* Deallocate all allocated resources so far. */\n\t\t\t\tpmap_pages_free(pa, PAGE_SIZE);
+\t\t\t\t/* Deallocate all allocated resources so far. */
+\t\t\t\tpmap_pages_free(pa, PAGE_SIZE);
 \t\t\t\treturn KERN_RESOURCE_SHORTAGE;
 \t\t\t}
 \t\t\tif (!pmap_initialized) {

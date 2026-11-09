@@ -19,10 +19,20 @@ void     hk_con_print_dec(uint32_t val);
 void     hk_con_print_ptr(const char *tag, uint64_t val);
 void     hk_con_red_ptr(const char *tag, uint64_t val);
 uint64_t hk_con_strip_ptr(uint64_t p);
+void     hk_startup_enter(uint32_t sub, const char *name, uint32_t rank, uint64_t raw, uint64_t stripped);
+void     hk_startup_leave(void);
 void     hk_con_dump_exception(uint64_t esr, uint64_t elr, uint64_t far, uint64_t sp);
 
 #ifndef HK_FB_BASE
 #define HK_FB_BASE   ((volatile uint32_t *)0xfffffff004000000ULL)
+#endif
+
+/* iso_font cua XNU: bit0 = pixel ngoai cung ben TRAI (da kiem chung tren may that).
+ * Neu font cua ban bi lat guong thi build them -DHK_FONT_MSB_LEFT. */
+#ifdef HK_FONT_MSB_LEFT
+#define HK_GLYPH_BIT(col)  (0x80u >> (col))
+#else
+#define HK_GLYPH_BIT(col)  (1u << (col))
 #endif
 
 #define HK_FB_W      1080
@@ -31,6 +41,7 @@ void     hk_con_dump_exception(uint64_t esr, uint64_t elr, uint64_t far, uint64_
 #define HK_GLYPH_H   16
 #define HK_COLS      130                 /* 130*8  = 1040 px */
 #define HK_ROWS      140                 /* 140*16 = 2240 px */
+#define HK_TEXT_ROWS (HK_ROWS - 1)       /* 139 dong cuon + 1 dong status co dinh o day */
 #define HK_X0        20                  /* (1080-1040)/2    */
 #define HK_Y0        60                  /* chua cho camera  */
 
@@ -81,7 +92,7 @@ static void hk_draw_cell(uint32_t cx, uint32_t cy, uint16_t cell)
 		unsigned char bits = glyph[row];
 		volatile uint32_t *p = fb + base + row * HK_FB_W;
 		for (int col = 0; col < HK_GLYPH_W; col++) {
-			p[col] = (bits & (1u << col)) ? fg : HK_C_BG;
+			p[col] = (bits & HK_GLYPH_BIT(col)) ? fg : HK_C_BG;
 		}
 	}
 	hk_scr[cy][cx] = cell;
@@ -98,16 +109,16 @@ static void hk_sync_row(uint32_t r)
 
 static void hk_scroll(void)
 {
-	for (uint32_t r = 1; r < HK_ROWS; r++) {
+	for (uint32_t r = 1; r < HK_TEXT_ROWS; r++) {
 		for (uint32_t c = 0; c < HK_COLS; c++) {
 			hk_txt[r - 1][c] = hk_txt[r][c];
 		}
 	}
 	for (uint32_t c = 0; c < HK_COLS; c++) {
-		hk_txt[HK_ROWS - 1][c] = 0x0020;
+		hk_txt[HK_TEXT_ROWS - 1][c] = 0x0020;
 	}
 	/* chi ve lai cac o thay doi (o trong giong nhau duoc bo qua) */
-	for (uint32_t r = 0; r < HK_ROWS; r++) {
+	for (uint32_t r = 0; r < HK_TEXT_ROWS; r++) {
 		hk_sync_row(r);
 	}
 }
@@ -116,7 +127,7 @@ static void hk_newline(void)
 {
 	hk_cx = 0;
 	hk_line_col = HK_COL_WHITE;
-	if (hk_cy + 1 >= HK_ROWS) {
+	if (hk_cy + 1 >= HK_TEXT_ROWS) {
 		hk_scroll();
 	} else {
 		hk_cy++;
@@ -339,4 +350,192 @@ void hk_con_dump_exception(uint64_t esr, uint64_t elr, uint64_t far, uint64_t sp
 	hk_con_red_ptr("SP : ", sp);
 
 	hk_in_dump = 0;
+}
+
+/* ====================================================================
+ * Startup trace: gom log theo (subsystem, rank), tranh flood framebuffer
+ *  - Sub 1,2 va Sub 3 rank 0/1 : chi in "starting..." / "OK (n entries)"
+ *  - Sub 3 rank >= 2 va Sub >= 4: in tung ham
+ *  - Moi subsystem xong: "[*] SUB n (NAME) COMPLETED OK (n entries)" mau xanh
+ *  - Dong cuoi man hinh (status row) luon hien entry dang chay -> neu treo
+ *    ben trong mot nhom da gom, van thay duoc ham gay treo.
+ * ==================================================================== */
+static uint8_t     hk_su_group;        /* dang co nhom mo        */
+static uint8_t     hk_su_grouped;      /* nhom do co gom log     */
+static uint8_t     hk_su_sub_valid;
+static uint32_t    hk_su_sub, hk_su_rank, hk_su_cnt, hk_su_sub_cnt;
+static const char *hk_su_name;
+
+static void hk_print_rank(uint32_t rank)
+{
+	if (rank == 0x7fffffffu) {
+		hk_con_puts("MID");
+	} else if (rank == 0xffffffffu) {
+		hk_con_puts("LAST");
+	} else {
+		hk_con_print_dec(rank);
+	}
+}
+
+/* ---- status row (dong cuoi, co dinh, ve lai chi cac o thay doi) ---- */
+static uint32_t hk_stx;
+
+static void hk_st_ch(char c)
+{
+	if (hk_stx < HK_COLS) {
+		hk_txt[HK_ROWS - 1][hk_stx++] =
+		    (uint16_t)(((c == ' ') ? 0 : HK_COL_CYAN) << 8) | (unsigned char)c;
+	}
+}
+
+static void hk_st_str(const char *s)
+{
+	while (s && *s) {
+		hk_st_ch(*s++);
+	}
+}
+
+static void hk_st_dec(uint32_t v)
+{
+	char b[10];
+	int n = 0;
+	if (v == 0) {
+		hk_st_ch('0');
+		return;
+	}
+	while (v) {
+		b[n++] = (char)('0' + (v % 10));
+		v /= 10;
+	}
+	while (n) {
+		hk_st_ch(b[--n]);
+	}
+}
+
+static void hk_st_hex(uint64_t v)
+{
+	static const char hx[] = "0123456789abcdef";
+	hk_st_str("0x");
+	for (int i = 60; i >= 0; i -= 4) {
+		hk_st_ch(hx[(v >> i) & 0xf]);
+	}
+}
+
+static void hk_status_startup(uint32_t sub, const char *name, uint32_t rank,
+    uint32_t n, uint64_t fn)
+{
+	hk_stx = 0;
+	hk_st_str("> sub ");
+	hk_st_dec(sub);
+	hk_st_ch(' ');
+	hk_st_str(name ? name : "?");
+	hk_st_str(" rank ");
+	if (rank == 0x7fffffffu) {
+		hk_st_str("MID");
+	} else if (rank == 0xffffffffu) {
+		hk_st_str("LAST");
+	} else {
+		hk_st_dec(rank);
+	}
+	hk_st_str(" #");
+	hk_st_dec(n);
+	hk_st_str(" fn ");
+	hk_st_hex(fn);
+	while (hk_stx < HK_COLS) {
+		hk_txt[HK_ROWS - 1][hk_stx++] = 0x0020;
+	}
+	hk_sync_row(HK_ROWS - 1);
+}
+
+static void hk_su_close_group(void)
+{
+	if (!hk_su_group) {
+		return;
+	}
+	if (hk_su_grouped) {
+		hk_con_puts("[startup] sub: ");
+		hk_con_print_dec(hk_su_sub);
+		hk_con_puts(" rank: ");
+		hk_print_rank(hk_su_rank);
+		hk_con_puts(" OK (");
+		hk_con_print_dec(hk_su_cnt);
+		hk_con_puts(" entries)");
+		hk_con_putc('\n');
+	}
+	hk_su_group = 0;
+}
+
+static void hk_su_close_sub(void)
+{
+	if (!hk_su_sub_valid) {
+		return;
+	}
+	hk_con_puts("[*] SUB ");
+	hk_con_print_dec(hk_su_sub);
+	hk_con_puts(" (");
+	hk_con_puts(hk_su_name ? hk_su_name : "?");
+	hk_con_puts(") COMPLETED OK (");
+	hk_con_print_dec(hk_su_sub_cnt);
+	hk_con_puts(" entries)");
+	hk_con_putc('\n');
+	hk_su_sub_valid = 0;
+}
+
+/* goi TRUOC moi lan chay mot startup entry */
+void hk_startup_enter(uint32_t sub, const char *name, uint32_t rank, uint64_t raw, uint64_t stripped)
+{
+	uint8_t verbose = (sub >= 4) || (sub == 3 && rank >= 2);
+
+	if (hk_su_group && (sub != hk_su_sub || rank != hk_su_rank)) {
+		hk_su_close_group();
+	}
+	if (hk_su_sub_valid && sub != hk_su_sub) {
+		hk_su_close_sub();
+	}
+
+	if (!hk_su_sub_valid) {
+		hk_su_sub_valid = 1;
+		hk_su_sub = sub;
+		hk_su_name = name;
+		hk_su_sub_cnt = 0;
+	}
+	if (!hk_su_group) {
+		hk_su_group = 1;
+		hk_su_grouped = !verbose;
+		hk_su_sub = sub;
+		hk_su_rank = rank;
+		hk_su_cnt = 0;
+		if (!verbose) {
+			hk_con_puts("[startup] sub: ");
+			hk_con_print_dec(sub);
+			hk_con_puts(" rank: ");
+			hk_print_rank(rank);
+			hk_con_puts(" starting...");
+			hk_con_putc('\n');
+		}
+	}
+	hk_su_cnt++;
+	hk_su_sub_cnt++;
+
+	/* luon cap nhat status row truoc khi chay ham */
+	hk_status_startup(sub, name, rank, hk_su_cnt, raw);
+
+	if (verbose) {
+		hk_con_puts("[startup] rank: ");
+		hk_print_rank(rank);
+		hk_con_puts(" sub: ");
+		hk_con_print_dec(sub);
+		hk_con_putc(' ');
+		hk_con_print_ptr("func: ", raw);
+	}
+	if (stripped != raw) {
+		hk_con_print_ptr("[startup]   stripped: ", stripped);
+	}
+}
+
+/* goi khi kernel_startup_initialize_upto() xong: dong nhom + subsystem cuoi */
+void hk_startup_leave(void)
+{
+	hk_su_close_group();
+	hk_su_close_sub();
 }
