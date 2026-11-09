@@ -1263,32 +1263,19 @@ LEXT(hk_draw_band_stackless)
         else:
             print("  [WARN] __ARM_PAN_AVAILABLE__ not found in BCM2837.h")
 
-    # 7. makedefs/MakeInc.def (-pan for Cortex-A73/A53, and -lse: no ldadd/cas/swp in compiled C)
-    #    Set HK_KEEP_LSE=1 to keep LSE codegen (then every atomic traps to lse_patch_handle_trap).
-    p7 = os.path.join(src, "makedefs", "MakeInc.def")
+    # 7. makedefs/MakeInc.def (replace +pan with -pan for BCM2837 Cortex-A73/A53)
+    #    Note: Do NOT add -lse here (causes Apple Clang NEON intrinsic inline errors)
+    p7 = os.path.join(src, 'makedefs', 'MakeInc.def')
     if os.path.isfile(p7):
-        with open(p7, "r", encoding="utf-8", errors="replace") as f:
-            c7 = f.read().replace("\r\n", "\n")
-        ch7 = False
-        if "-Xclang -target-feature -Xclang +pan" in c7:
-            c7 = c7.replace("-Xclang -target-feature -Xclang +pan", "-Xclang -target-feature -Xclang -pan")
-            ch7 = True
-            print("  [OK] makedefs/MakeInc.def: +pan replaced with -pan")
-        if os.environ.get("HK_KEEP_LSE"):
-            print("  [OK] makedefs/MakeInc.def: HK_KEEP_LSE set, -lse not added")
-        elif "-Xclang -target-feature -Xclang -pan" in c7 and "-Xclang -target-feature -Xclang -lse" not in c7:
-            c7 = c7.replace("-Xclang -target-feature -Xclang -pan",
-                            "-Xclang -target-feature -Xclang -pan -Xclang -target-feature -Xclang -lse")
-            ch7 = True
-            print("  [OK] makedefs/MakeInc.def: -lse added (compiler emits ldxr/stxr instead of ldadd/cas)")
-        elif "-Xclang -target-feature -Xclang -lse" in c7:
-            print("  [OK] makedefs/MakeInc.def: -lse already present")
-        else:
-            print("  [WARN] -pan/-lse anchor not found in MakeInc.def")
-        if ch7:
-            with open(p7, "w", encoding="utf-8", newline="\n") as f:
+        with open(p7, 'r', encoding='utf-8', errors='replace') as f:
+            c7 = f.read().replace('\r\n', '\n')
+        if '-Xclang -target-feature -Xclang +pan' in c7:
+            c7 = c7.replace('-Xclang -target-feature -Xclang +pan', '-Xclang -target-feature -Xclang -pan')
+            with open(p7, 'w', encoding='utf-8', newline='\n') as f:
                 f.write(c7)
-
+            print('  [OK] makedefs/MakeInc.def: +pan replaced with -pan')
+        else:
+            print('  [WARN] +pan not found in MakeInc.def')
     # 8. osfmk/arm64/locore.s & machine_routines_asm.s (fix CHECK_KERNEL_STACK on intstack & stub ml_sign_thread_state / ml_check_signed_state)
     for asm_name in ("locore.s", "machine_routines_asm.s", "cswitch.s"):
         p8 = os.path.join(src, "osfmk", "arm64", asm_name)
