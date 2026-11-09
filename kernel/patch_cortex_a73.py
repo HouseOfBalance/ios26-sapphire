@@ -250,7 +250,7 @@ def main():
         else:
             print("  [WARN] target_mstart not found in arm_init.c")
 
-        c_norm += '\n/* ====================================================================\n * hakios: direct on-screen framebuffer text console\n * ==================================================================== */\nextern const unsigned char iso_font[];\nstatic uint32_t hk_con_x = 24;\nstatic uint32_t hk_con_y = 60;\n\nvoid hk_con_clear(void)\n{\n\tvolatile uint32_t *fb = (volatile uint32_t *)0xfffffff004000000ULL;\n\tfor (uint32_t i = 0; i < 1080 * 2400; i++) {\n\t\tfb[i] = 0x00000000;\n\t}\n\thk_con_x = 24;\n\thk_con_y = 60;\n}\n\nvoid hk_con_putc(char c)\n{\n\tvolatile uint32_t *fb = (volatile uint32_t *)0xfffffff004000000ULL;\n\n\tif (c == \'\\r\') {\n\t\thk_con_x = 24;\n\t\treturn;\n\t}\n\tif (c == \'\\n\') {\n\t\thk_con_x = 24;\n\t\thk_con_y += 34;\n\t\tif (hk_con_y >= 2350) {\n\t\t\thk_con_y = 60;\n\t\t}\n\t\treturn;\n\t}\n\tif ((unsigned char)c < 32 || (unsigned char)c > 126) {\n\t\tc = \' \';\n\t}\n\n\tconst unsigned char *glyph = &iso_font[(unsigned char)c * 16];\n\tuint32_t base_offset = (hk_con_y * 1080) + hk_con_x;\n\n\tfor (int row = 0; row < 16; row++) {\n\t\tunsigned char bits = glyph[row];\n\t\tuint32_t y0 = base_offset + (row * 2 * 1080);\n\t\tuint32_t y1 = y0 + 1080;\n\t\tfor (int col = 0; col < 8; col++) {\n\t\t\tuint32_t color = (bits & (1u << col)) ? 0x00FFFFFF : 0x00000000;\n\t\t\tuint32_t x0 = col * 2;\n\t\t\tfb[y0 + x0] = color;\n\t\t\tfb[y0 + x0 + 1] = color;\n\t\t\tfb[y1 + x0] = color;\n\t\t\tfb[y1 + x0 + 1] = color;\n\t\t}\n\t}\n\n\thk_con_x += 16;\n\tif (hk_con_x + 16 >= 1060) {\n\t\thk_con_x = 24;\n\t\thk_con_y += 34;\n\t\tif (hk_con_y >= 2350) {\n\t\t\thk_con_y = 60;\n\t\t}\n\t}\n}\n\nvoid hk_con_puts(const char *s)\n{\n\tif (!s) return;\n\twhile (*s) {\n\t\thk_con_putc(*s++);\n\t}\n}\n\nvoid hk_con_log(const char *s)\n{\n\thk_con_puts(s);\n\thk_con_putc(10);\n}\n\nvoid hk_con_hex(uint64_t val)\n{\n\tstatic const char hexchars[] = "0123456789abcdef";\n\thk_con_puts("0x");\n\tfor (int i = 60; i >= 0; i -= 4) {\n\t\thk_con_putc(hexchars[(val >> i) & 0xf]);\n\t}\n}\n'
+        c_norm += '\n/* ====================================================================\n * hakios: direct on-screen framebuffer text console\n * ==================================================================== */\nextern const unsigned char iso_font[];\nstatic uint32_t hk_con_x = 24;\nstatic uint32_t hk_con_y = 60;\n\nvoid hk_con_clear(void)\n{\n\tvolatile uint32_t *fb = (volatile uint32_t *)0xfffffff004000000ULL;\n\tfor (uint32_t i = 0; i < 1080 * 2400; i++) {\n\t\tfb[i] = 0x00000000;\n\t}\n\thk_con_x = 24;\n\thk_con_y = 60;\n}\n\nvoid hk_con_putc(char c)\n{\n\tvolatile uint32_t *fb = (volatile uint32_t *)0xfffffff004000000ULL;\n\n\tif (c == \'\\r\') {\n\t\thk_con_x = 24;\n\t\treturn;\n\t}\n\tif (c == \'\\n\') {\n\t\thk_con_x = 24;\n\t\thk_con_y += 34;\n\t\tif (hk_con_y >= 2350) {\n\t\t\thk_con_y = 60;\n\t\t}\n\t\tfor (uint32_t r = 0; r < 34; r++) {\n\t\t\tuint32_t row_idx = (hk_con_y + r) * 1080;\n\t\t\tif (row_idx + 1080 <= 1080 * 2400) {\n\t\t\t\tfor (uint32_t col = 0; col < 1080; col++) {\n\t\t\t\t\tfb[row_idx + col] = 0x00000000;\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t\treturn;\n\t}\n\tif ((unsigned char)c < 32 || (unsigned char)c > 126) {\n\t\tc = \' \';\n\t}\n\n\tconst unsigned char *glyph = &iso_font[(unsigned char)c * 16];\n\tuint32_t base_offset = (hk_con_y * 1080) + hk_con_x;\n\n\tfor (int row = 0; row < 16; row++) {\n\t\tunsigned char bits = glyph[row];\n\t\tuint32_t y0 = base_offset + (row * 2 * 1080);\n\t\tuint32_t y1 = y0 + 1080;\n\t\tfor (int col = 0; col < 8; col++) {\n\t\t\tuint32_t color = (bits & (1u << col)) ? 0x00FFFFFF : 0x00000000;\n\t\t\tuint32_t x0 = col * 2;\n\t\t\tfb[y0 + x0] = color;\n\t\t\tfb[y0 + x0 + 1] = color;\n\t\t\tfb[y1 + x0] = color;\n\t\t\tfb[y1 + x0 + 1] = color;\n\t\t}\n\t}\n\n\thk_con_x += 16;\n\tif (hk_con_x + 16 >= 1060) {\n\t\thk_con_x = 24;\n\t\thk_con_y += 34;\n\t\tif (hk_con_y >= 2350) {\n\t\t\thk_con_y = 60;\n\t\t}\n\t\tfor (uint32_t r = 0; r < 34; r++) {\n\t\t\tuint32_t row_idx = (hk_con_y + r) * 1080;\n\t\t\tif (row_idx + 1080 <= 1080 * 2400) {\n\t\t\t\tfor (uint32_t col = 0; col < 1080; col++) {\n\t\t\t\t\tfb[row_idx + col] = 0x00000000;\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n}\n\nvoid hk_con_puts(const char *s)\n{\n\tif (!s) return;\n\twhile (*s) {\n\t\thk_con_putc(*s++);\n\t}\n}\n\nvoid hk_con_log(const char *s)\n{\n\thk_con_puts(s);\n\thk_con_putc(10);\n}\n\nvoid hk_con_hex(uint64_t val)\n{\n\tstatic const char hexchars[] = "0123456789abcdef";\n\thk_con_puts("0x");\n\tfor (int i = 60; i >= 0; i -= 4) {\n\t\thk_con_putc(hexchars[(val >> i) & 0xf]);\n\t}\n}\n'
         with open(p1, "w", encoding="utf-8", newline="\n") as f:
             f.write(c_norm)
 
@@ -1667,6 +1667,23 @@ kernel_startup_bootstrap(void)
         else:
             print("  [WARN] t_startup not found in startup.c")
 
+        # Instrument kernel_bootstrap_log and kernel_bootstrap_thread_log
+        t_kblog = """static inline void\nkernel_bootstrap_log(const char *message)\n{\n\tif ((startup_debug & STARTUP_DEBUG_VERBOSE) &&\n\t    startup_phase >= STARTUP_SUB_KPRINTF) {\n\t\tkprintf("kernel_bootstrap: %s\\n", message);\n\t}\n\tkernel_debug_string_early(message);\n}"""
+        r_kblog = """static inline void\nkernel_bootstrap_log(const char *message)\n{\n\t{ extern void hk_con_puts(const char *s); extern void hk_con_putc(char c); hk_con_puts("[startup] "); hk_con_puts(message); hk_con_putc(10); }\n\tkernel_debug_string_early(message);\n}"""
+        if t_kblog in c10:
+            c10 = c10.replace(t_kblog, r_kblog, 1)
+            print("  [OK] osfmk/kern/startup.c: kernel_bootstrap_log console print installed")
+        else:
+            print("  [WARN] t_kblog not found in startup.c")
+
+        t_kbthread_log = """static inline void\nkernel_bootstrap_thread_log(const char *message)\n{\n\tif ((startup_debug & STARTUP_DEBUG_VERBOSE) &&\n\t    startup_phase >= STARTUP_SUB_KPRINTF) {\n\t\tkprintf("kernel_bootstrap_thread: %s\\n", message);\n\t}\n\tkernel_debug_string_early(message);\n}"""
+        r_kbthread_log = """static inline void\nkernel_bootstrap_thread_log(const char *message)\n{\n\t{ extern void hk_con_puts(const char *s); extern void hk_con_putc(char c); hk_con_puts("[thread] "); hk_con_puts(message); hk_con_putc(10); }\n\tkernel_debug_string_early(message);\n}"""
+        if t_kbthread_log in c10:
+            c10 = c10.replace(t_kbthread_log, r_kbthread_log, 1)
+            print("  [OK] osfmk/kern/startup.c: kernel_bootstrap_thread_log console print installed")
+        else:
+            print("  [WARN] t_kbthread_log not found in startup.c")
+
         # Instrument kernel_bootstrap(void) entry
         m_kb = re.search(r'(void\s+kernel_bootstrap\s*\(\s*void\s*\)\s*\{)', c10)
         if m_kb:
@@ -1847,7 +1864,7 @@ kernel_startup_bootstrap(void)
         else:
             print("  [OK] osfmk/arm64/pac_patch.c: RCpc SMP race already present")
 
-    # 15. bsd/kern/kdebug.c (visual trace on all early debug milestone strings)
+    # 15. bsd/kern/kdebug.c (console print on all early debug milestone strings)
     p15 = os.path.join(src, "bsd", "kern", "kdebug.c")
     if os.path.isfile(p15):
         with open(p15, "r", encoding="utf-8", errors="replace") as f:
@@ -1857,19 +1874,19 @@ kernel_startup_bootstrap(void)
 kernel_debug_string_early(const char *message)
 {
 \t{
-\t\textern void hk_draw_band(uint32_t color, uint32_t row_start, uint32_t row_count);
-\t\tstatic uint32_t hk_dbg_step = 0;
-\t\tconst uint32_t colors[4] = { 0x00FFD700, 0x0000FFFF, 0x00FF00FF, 0x00FFFF00 }; /* Gold, Cyan, Magenta, Yellow */
-\t\thk_draw_band(colors[hk_dbg_step & 3], 244 + ((hk_dbg_step & 0x3f) * 4), 3);
-\t\thk_dbg_step++;
+\t\textern void hk_con_puts(const char *s);
+\t\textern void hk_con_putc(char c);
+\t\thk_con_puts("[kdbg] ");
+\t\thk_con_puts(message);
+\t\thk_con_putc(10);
 \t}"""
         if t15 in c15:
             c15 = c15.replace(t15, r15, 1)
             with open(p15, "w", encoding="utf-8", newline="\n") as f:
                 f.write(c15)
-            print("  [OK] bsd/kern/kdebug.c: kernel_debug_string_early visual progress installed")
+            print("  [OK] bsd/kern/kdebug.c: kernel_debug_string_early console print installed")
         else:
-            print("  [WARN] t15 not found in kdebug.c")
+            print("  [WARN] t15 not found in bsd/kern/kdebug.c")
 
     # 16. osfmk/vm/vm_resident.c (visual trace for vm_page_bootstrap and pmap_startup)
     p16 = os.path.join(src, "osfmk", "vm", "vm_resident.c")
@@ -2547,23 +2564,82 @@ lck_mtx_assert(lck_mtx_t *lock, unsigned int type)
         else:
             print("  [WARN] zone_bootstrap not found in zalloc.c")
 
-    # 27. pexpert/arm64/pe_serial.c (mirror serial/kprintf output to on-screen console)
-    p27 = os.path.join(src, "pexpert", "arm64", "pe_serial.c")
+    # 27. pexpert/arm/pe_kprintf.c (mirror all serial/kprintf output directly to on-screen console)
+    p27 = os.path.join(src, "pexpert", "arm", "pe_kprintf.c")
     if os.path.isfile(p27):
         with open(p27, "r", encoding="utf-8", errors="replace") as f:
             c27 = f.read().replace("\r\n", "\n")
-        t27 = "loader_log_putc(c);\n\tuart_putc(c);"
-        r27 = "loader_log_putc(c);\n\t{ extern void hk_con_putc(char c); hk_con_putc(c); }\n\tuart_putc(c);"
-        if "hk_con_putc(c);" in c27:
-            print("  [ALREADY PATCHED] pexpert/arm64/pe_serial.c: hk_con_putc mirror already present")
-        elif t27 in c27:
-            c27 = c27.replace(t27, r27, 1)
-            with open(p27, "w", encoding="utf-8", newline="\n") as f:
-                f.write(c27)
-            print("  [OK] pexpert/arm64/pe_serial.c: mirrored serial_putc to on-screen console")
-        else:
-            print("  [WARN] t27 not found in pe_serial.c")
 
+        # Force enable serial and kprintf output unconditionally
+        t_dis = "SECURITY_READ_ONLY_LATE(bool) disable_serial_output = true;\n// disable_kprintf_output only disables kprintf().\nSECURITY_READ_ONLY_LATE(bool) disable_kprintf_output = true;"
+        r_dis = "SECURITY_READ_ONLY_LATE(bool) disable_serial_output = false;\nSECURITY_READ_ONLY_LATE(bool) disable_kprintf_output = false;"
+        if t_dis in c27:
+            c27 = c27.replace(t_dis, r_dis, 1)
+            print("  [OK] pexpert/arm/pe_kprintf.c: forced disable_serial_output/disable_kprintf_output = false")
+
+        # Initialize PE_kputc directly to serial_putc_crlf
+        t_pkp = "static void serial_putc_crlf(char c);\n\n__startup_func"
+        r_pkp = "static void serial_putc_crlf(char c);\n\n__attribute__((constructor)) static void hk_init_pe_kputc(void) { PE_kputc = serial_putc_crlf; }\n\n__startup_func"
+        if t_pkp in c27:
+            c27 = c27.replace(t_pkp, r_pkp, 1)
+            print("  [OK] pexpert/arm/pe_kprintf.c: PE_kputc default constructor installed")
+
+        # Mirror serial_putc_crlf to on-screen console
+        t_spc = "static void\nserial_putc_crlf(char c)\n{"
+        r_spc = """static void
+serial_putc_crlf(char c)
+{
+\t{ extern void hk_con_putc(char c); hk_con_putc(c); }"""
+        if t_spc in c27:
+            c27 = c27.replace(t_spc, r_spc, 1)
+            print("  [OK] pexpert/arm/pe_kprintf.c: mirrored serial_putc_crlf to on-screen console")
+
+        # Mirror serial_putc to on-screen console
+        t_sp = "void\nserial_putc(char c)\n{"
+        r_sp = """void
+serial_putc(char c)
+{
+\t{ extern void hk_con_putc(char c); hk_con_putc(c); }"""
+        if t_sp in c27:
+            c27 = c27.replace(t_sp, r_sp, 1)
+            print("  [OK] pexpert/arm/pe_kprintf.c: mirrored serial_putc to on-screen console")
+
+        with open(p27, "w", encoding="utf-8", newline="\n") as f:
+            f.write(c27)
+    else:
+        print("  [WARN] pexpert/arm/pe_kprintf.c not found")
+
+    # 28. osfmk/kern/printf.c (mirror all standard kernel printf/consdebug directly to on-screen console)
+    p28 = os.path.join(src, "osfmk", "kern", "printf.c")
+    if os.path.isfile(p28):
+        with open(p28, "r", encoding="utf-8", errors="replace") as f:
+            c28 = f.read().replace("\r\n", "\n")
+
+        t_cpl = "void\ncons_putc_locked(char c)\n{\n\tconsole_write_char(c);\n}"
+        r_cpl = """void
+cons_putc_locked(char c)
+{
+\t{ extern void hk_con_putc(char c); hk_con_putc(c); }
+\tconsole_write_char(c);
+}"""
+        if t_cpl in c28:
+            c28 = c28.replace(t_cpl, r_cpl, 1)
+            print("  [OK] osfmk/kern/printf.c: mirrored cons_putc_locked to on-screen console")
+
+        t_cdp = "void\nconsdebug_putc(char c)\n{\n\tconsole_write_char(c);"
+        r_cdp = """void
+consdebug_putc(char c)
+{
+\t{ extern void hk_con_putc(char c); hk_con_putc(c); }
+\tconsole_write_char(c);"""
+        if t_cdp in c28:
+            c28 = c28.replace(t_cdp, r_cdp, 1)
+            print("  [OK] osfmk/kern/printf.c: mirrored consdebug_putc to on-screen console")
+
+        with open(p28, "w", encoding="utf-8", newline="\n") as f:
+            f.write(c28)
+    else:
+        print("  [WARN] osfmk/kern/printf.c not found")
 
     # Post-patch verification assertions: verify files on disk actually contain the patches!
     print("=== Post-patch Verification on Disk ===")

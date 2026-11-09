@@ -1,67 +1,61 @@
-import os, sys, json, subprocess, urllib.request, zipfile
+import subprocess, os, zipfile, sys, json, urllib.request
 
-def get_token():
-    git_path = r'C:\Program Files\Git\cmd\git.exe'
-    proc = subprocess.Popen([git_path, 'credential', 'fill'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    stdout, _ = proc.communicate('protocol=https\nhost=github.com\n\n')
-    for line in stdout.splitlines():
-        if line.startswith('password='):
-            return line.split('=', 1)[1]
-    return ''
+run_id = sys.argv[1] if len(sys.argv) > 1 else '42536240172'
 
-class NoAuthRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        new_req = super().redirect_request(req, fp, code, msg, headers, newurl)
-        if new_req and 'github.com' not in newurl.lower():
-            if 'Authorization' in new_req.headers:
-                del new_req.headers['Authorization']
-            if 'authorization' in new_req.headers:
-                del new_req.headers['authorization']
-        return new_req
+p = subprocess.Popen(['git', 'credential', 'fill'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+out, err = p.communicate(input='protocol=https\nhost=github.com\n\n')
+token = None
+for line in out.splitlines():
+    if line.startswith('password='):
+        token = line.split('=', 1)[1]
+        break
 
-def download_run_artifact(run_id, out_dir='artifacts'):
-    token = get_token()
-    headers = {'Authorization': f'Bearer {token}', 'User-Agent': 'Mozilla/5.0'}
-    
-    url = f'https://api.github.com/repos/HouseOfBalance/ios26-sapphire/actions/runs/{run_id}/artifacts'
-    req = urllib.request.Request(url, headers=headers)
-    resp = urllib.request.urlopen(req)
+headers = {'User-Agent': 'Mozilla/5.0'}
+if token:
+    headers['Authorization'] = f'Bearer {token}'
+
+# Get artifacts list for run
+url = f'https://api.github.com/repos/HouseOfBalance/ios26-sapphire/actions/runs/{run_id}/artifacts'
+req = urllib.request.Request(url, headers=headers)
+with urllib.request.urlopen(req) as resp:
     data = json.loads(resp.read().decode('utf-8'))
-    
-    artifacts = data.get('artifacts', [])
-    print(f"Found {len(artifacts)} artifacts for run {run_id}")
-    os.makedirs(out_dir, exist_ok=True)
-    
-    opener = urllib.request.build_opener(NoAuthRedirect)
-    
-    downloaded = []
-    for art in artifacts:
-        name = art['name']
-        art_id = art['id']
-        dl_url = art['archive_download_url']
-        zip_path = os.path.join(out_dir, f"{name}.zip")
-        extract_dir = os.path.join(out_dir, name)
-        
-        print(f"Downloading {name} (id={art_id}, size={art['size_in_bytes']} bytes)...")
-        req_dl = urllib.request.Request(dl_url, headers=headers)
-        with opener.open(req_dl) as res, open(zip_path, 'wb') as f:
-            while True:
-                chunk = res.read(65536)
-                if not chunk:
-                    break
-                f.write(chunk)
-        print(f"Saved to {zip_path}")
-        
-        with zipfile.ZipFile(zip_path, 'r') as z:
-            z.extractall(extract_dir)
-        print(f"Extracted to {extract_dir}")
-        downloaded.append((name, extract_dir))
-    return downloaded
 
-if __name__ == '__main__':
-    if len(sys.argv) < 2 or sys.argv[1] in ('-h', '--help'):
-        print("Usage: python tools/download_artifact.py <RUN_ID> [OUT_DIR]")
-        sys.exit(0 if sys.argv[1:] and sys.argv[1] in ('-h', '--help') else 1)
-    run_id = sys.argv[1]
-    out_dir = sys.argv[2] if len(sys.argv) > 2 else 'artifacts'
-    download_run_artifact(run_id, out_dir)
+artifacts = data.get('artifacts', [])
+if not artifacts:
+    print(f"No artifacts found for run {run_id}")
+    sys.exit(1)
+
+art = artifacts[0]
+art_id = art['id']
+art_name = art['name']
+dl_url = art['archive_download_url']
+print(f"Found artifact: {art_name} (ID: {art_id})")
+
+os.makedirs('out', exist_ok=True)
+zip_path = f"out/{run_id}.zip"
+
+cmd = ['curl.exe', '-f', '-s', '-S', '-L']
+if token:
+    cmd.extend(['-H', f'Authorization: Bearer {token}'])
+cmd.extend(['-H', 'User-Agent: curl', '-o', zip_path, dl_url])
+
+print(f"Downloading artifact to {zip_path}...")
+subprocess.run(cmd, check=True)
+
+extract_dir = f"out/{run_id}"
+os.makedirs(extract_dir, exist_ok=True)
+print(f"Extracting to {extract_dir}...")
+with zipfile.ZipFile(zip_path) as z:
+    z.extractall(extract_dir)
+
+print("Extracted files:")
+for root, dirs, files in os.walk(extract_dir):
+    for f in files:
+        fp = os.path.join(root, f)
+        print(f"  {f} ({os.path.getsize(fp)} bytes)")
+        if f == 'enxerto-boot.img':
+            # Also copy to root of hakios repo
+            dst = os.path.join('C:\\Users\\hungtv\\Downloads\\hakios-arm64e-dada-main', 'enxerto-boot.img')
+            import shutil
+            shutil.copyfile(fp, dst)
+            print(f"  -> Copied to {dst}")
