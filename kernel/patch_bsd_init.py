@@ -248,21 +248,30 @@ def patch_bsd_init(src_dir):
                 "uint32_t hk_fb_width = 0, hk_fb_height = 0, hk_fb_rowbytes = 0;\n"
                 "int hk_fb_made_mapping = -1; /* -1: never captured, 0: makeMapping FALSE, 1: TRUE */\n\n"
             )
-            cap_target = "new_vinfo.v_baseaddr = newVideoVirt + boot_vinfo->v_offset;"
+            cap_target_options = [
+                "new_vinfo.v_baseaddr = 0xfffffff004000000ULL + boot_vinfo->v_offset;",
+                "new_vinfo.v_baseaddr = newVideoVirt + boot_vinfo->v_offset;",
+            ]
+            cap_target = None
+            for opt in cap_target_options:
+                if opt in cvc:
+                    cap_target = opt
+                    break
+
             cap_line = (
                 "\n\t\t\t/* hakios: record mapping before any ladder shift */\n"
-                "\t\t\thk_fb_kva_base = newVideoVirt + boot_vinfo->v_offset;\n"
+                "\t\t\thk_fb_kva_base = (vm_offset_t)new_vinfo.v_baseaddr;\n"
                 "\t\t\thk_fb_width = (uint32_t)new_vinfo.v_width;\n"
                 "\t\t\thk_fb_height = (uint32_t)boot_vinfo->v_height;\n"
                 "\t\t\thk_fb_rowbytes = (uint32_t)new_vinfo.v_rowbytes;\n"
                 "\t\t\thk_fb_made_mapping = makeMapping ? 1 : 0;"
             )
-            if cap_decl_target in cvc and cvc.count(cap_target) == 1:
+            if cap_decl_target in cvc and cap_target and cvc.count(cap_target) == 1:
                 cvc = cvc.replace(cap_decl_target, cap_decl + cap_decl_target, 1)
                 cvc = cvc.replace(cap_target, cap_target + cap_line, 1)
                 print("  [OK] osfmk/console/video_console.c: framebuffer mapping capture installed in initialize_screen")
             else:
-                print("  [ERROR] osfmk/console/video_console.c: initialize_screen capture anchors not found")
+                print(f"  [ERROR] osfmk/console/video_console.c: initialize_screen capture anchors not found (cap_decl_target={cap_decl_target in cvc}, cap_target={cap_target})")
                 return False
             cvc += r'''
 
