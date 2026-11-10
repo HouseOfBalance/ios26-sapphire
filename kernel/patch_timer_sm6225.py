@@ -499,6 +499,39 @@ def patch_pe_identify_machine(src):
     else:
         print(f"  [WARN] {rel_path}: dec_clock_rate_hz not found for CNTFRQ fallback")
 
+    # 3. Patch pe_arm_init_interrupts: guard against failing when AIC/timer are missing on GICv3 platforms
+    p_pic_block = (
+        'kprintf("pe_arm_map_interrupt_controller: failed to find the interrupt-controller.\\n");\n'
+        '\t\treturn 0;'
+    )
+    if p_pic_block in c:
+        r_pic_fail = (
+            '#if defined(GENERIC_GIC_V3_IRQ)\n'
+            '\t\tkprintf("[gic] pe_arm_map_interrupt_controller: GICv3 platform (SM6225 Bengal), AIC not present\\n");\n'
+            '#else\n'
+            '\t\tkprintf("pe_arm_map_interrupt_controller: failed to find the interrupt-controller.\\n");\n'
+            '\t\treturn 0;\n'
+            '#endif'
+        )
+        c = c.replace(p_pic_block, r_pic_fail, 1)
+        print(f"  [OK] {rel_path}: patched pe_arm_init_interrupts AIC fallback for GICv3")
+
+    p_tmr_block = (
+        'kprintf("pe_arm_map_interrupt_controller: failed to find the timer.\\n");\n'
+        '\t\treturn 0;'
+    )
+    if p_tmr_block in c:
+        r_tmr_fail = (
+            '#if defined(GENERIC_GIC_V3_IRQ)\n'
+            '\t\tkprintf("[gic] pe_arm_map_interrupt_controller: ARM Generic Timer active, MMIO timer not present\\n");\n'
+            '#else\n'
+            '\t\tkprintf("pe_arm_map_interrupt_controller: failed to find the timer.\\n");\n'
+            '\t\treturn 0;\n'
+            '#endif'
+        )
+        c = c.replace(p_tmr_block, r_tmr_fail, 1)
+        print(f"  [OK] {rel_path}: patched pe_arm_init_interrupts timer fallback for GICv3")
+
     with open(p_pe, "w", encoding="utf-8", newline="\n") as f:
         f.write(c)
 

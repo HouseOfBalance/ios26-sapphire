@@ -241,14 +241,94 @@ def main():
         if target_pe_true in c_norm:
             c_norm = c_norm.replace(target_pe_true, replacement_pe_true)
             print("  [OK] osfmk/arm/arm_init.c: PE_init_platform(TRUE) visual markers instrumented")
+        elif "[*] PE_init_platform(TRUE) OK" in c_norm:
+            print("  [ALREADY PATCHED] osfmk/arm/arm_init.c: PE_init_platform(TRUE) visual markers already present")
         else:
             print("  [WARN] target_pe_true not found in arm_init.c")
 
-        if target_mstart in c_norm:
-            c_norm = c_norm.replace(target_mstart, replacement_mstart)
-            print("  [OK] osfmk/arm/arm_init.c: machine_startup visual markers instrumented")
+        # hakios: bypass pe_arm_debug_init_early on Snapdragon 685 (no Apple Silicon cpu-debug-interface)
+        if "hakios: bypass pe_arm_debug_init_early" in c_norm:
+            print("  [ALREADY PATCHED] osfmk/arm/arm_init.c: pe_arm_debug_init_early already bypassed")
         else:
-            print("  [WARN] target_mstart not found in arm_init.c")
+            m_dbg = re.search(r'(\t+)pe_arm_debug_init_early\s*\(\s*&BootCpuData\s*\);', c_norm)
+            if m_dbg:
+                c_norm = c_norm[:m_dbg.start(0)] + (
+                    "\t// hakios: bypass pe_arm_debug_init_early on Bengal (Qualcomm SM6225 has no Apple CPU debug interface)\n"
+                    "\t// pe_arm_debug_init_early(&BootCpuData);\n"
+                    '\t{ extern void hk_con_log(const char *s); hk_con_log("[*] arm_init: pe_arm_debug_init_early bypassed on SM6225"); }'
+                ) + c_norm[m_dbg.end(0):]
+                print("  [OK] osfmk/arm/arm_init.c: pe_arm_debug_init_early bypassed")
+            else:
+                print("  [WARN] pe_arm_debug_init_early not found in arm_init.c")
+
+        # hakios: bypass ml_map_cpu_pio in arm_init (Apple Silicon CPU PIO does not exist on Bengal SM6225)
+        if "hakios: bypass ml_map_cpu_pio" in c_norm:
+            print("  [ALREADY PATCHED] osfmk/arm/arm_init.c: ml_map_cpu_pio already bypassed in arm_init")
+        else:
+            m_pio = re.search(r'(\t+)ml_map_cpu_pio\s*\(\s*\);', c_norm)
+            if m_pio:
+                c_norm = c_norm[:m_pio.start(0)] + (
+                    "\t// hakios: bypass ml_map_cpu_pio (Qualcomm SM6225 Cortex-A73/A53 has no Apple Silicon CPU PIO)\n"
+                    "\t// ml_map_cpu_pio();\n"
+                    '\t{ extern void hk_con_log(const char *s); hk_con_log("[*] arm_init: ml_map_cpu_pio bypassed on SM6225"); }'
+                ) + c_norm[m_pio.end(0):]
+                print("  [OK] osfmk/arm/arm_init.c: ml_map_cpu_pio bypassed")
+            else:
+                print("  [WARN] ml_map_cpu_pio not found in arm_init.c")
+
+        # hakios: instrument cpu_timebase_init(TRUE) telemetry
+        if "[*] arm_init: cpu_timebase_init(TRUE) OK" in c_norm:
+            print("  [ALREADY PATCHED] osfmk/arm/arm_init.c: cpu_timebase_init telemetry already present")
+        else:
+            m_tb = re.search(r'(\t+)cpu_timebase_init\s*\(\s*TRUE\s*\);', c_norm)
+            if m_tb:
+                c_norm = c_norm[:m_tb.start(0)] + (
+                    '\t{ extern void hk_con_log(const char *s); hk_con_log("[*] arm_init: calling cpu_timebase_init(TRUE)..."); }\n'
+                    '\tcpu_timebase_init(TRUE);\n'
+                    '\t{ extern void hk_con_log(const char *s); hk_con_log("[*] arm_init: cpu_timebase_init(TRUE) OK"); }'
+                ) + c_norm[m_tb.end(0):]
+                print("  [OK] osfmk/arm/arm_init.c: cpu_timebase_init telemetry instrumented")
+            else:
+                print("  [WARN] cpu_timebase_init(TRUE) not found in arm_init.c")
+
+        # hakios: instrument PE_init_cpu telemetry
+        if "[*] arm_init: PE_init_cpu OK" in c_norm:
+            print("  [ALREADY PATCHED] osfmk/arm/arm_init.c: PE_init_cpu telemetry already present")
+        else:
+            m_pic = re.search(r'(\t+)PE_init_cpu\s*\(\s*\);', c_norm)
+            if m_pic:
+                c_norm = c_norm[:m_pic.start(0)] + (
+                    '\tPE_init_cpu();\n'
+                    '\t{ extern void hk_con_log(const char *s); hk_con_log("[*] arm_init: PE_init_cpu OK"); }'
+                ) + c_norm[m_pic.end(0):]
+                print("  [OK] osfmk/arm/arm_init.c: PE_init_cpu telemetry instrumented")
+
+        # hakios: instrument robust machine_startup transition markers
+        if "/* hakios: machine_startup transition */" in c_norm:
+            print("  [ALREADY PATCHED] osfmk/arm/arm_init.c: machine_startup transition already present")
+        else:
+            m_mstart = re.search(r'(\t+)(machine_startup\s*\(\s*args\s*\);)', c_norm)
+            if m_mstart:
+                c_norm = c_norm[:m_mstart.start(2)] + (
+                    "/* hakios: machine_startup transition */\n"
+                    "\t{\n"
+                    "\t\textern void hk_con_log(const char *s);\n"
+                    "\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);\n"
+                    "\t\thk_draw_band_direct(0x00FFFF00, 180, 5);  /* Yellow: entering machine_startup */\n"
+                    '\t\thk_con_log("[*] arm_init: transitioning to machine_startup(args)...");\n'
+                    "\t}\n"
+                    "\tmachine_startup(args);\n"
+                    "\t{\n"
+                    "\t\textern void hk_con_log(const char *s);\n"
+                    '\t\thk_con_log("[!] arm_init: machine_startup returned unexpectedly!");\n'
+                    "\t}"
+                ) + c_norm[m_mstart.end(2):]
+                print("  [OK] osfmk/arm/arm_init.c: machine_startup visual & log markers instrumented")
+            elif target_mstart in c_norm:
+                c_norm = c_norm.replace(target_mstart, replacement_mstart)
+                print("  [OK] osfmk/arm/arm_init.c: machine_startup visual markers instrumented (via target_mstart)")
+            else:
+                print("  [WARN] target_mstart not found in arm_init.c")
 
         # hakios: bisect markers right before the call that currently hangs silently
         t_dbg = 'kernel_debug_string_early("kernel_startup_bootstrap");'
@@ -1779,16 +1859,22 @@ hk_call_startup(uint64_t fp, const void *arg)
             print("  [WARN] t_kbthread_log not found in startup.c")
 
         # Instrument kernel_bootstrap(void) entry
-        m_kb = re.search(r'(void\s+kernel_bootstrap\s*\(\s*void\s*\)\s*\{)', c10)
-        if m_kb:
-            c10 = c10.replace(m_kb.group(0), m_kb.group(0) + """
+        if "/* hakios: kernel_bootstrap entry */" in c10:
+            print("  [ALREADY PATCHED] osfmk/kern/startup.c: kernel_bootstrap entry marker already present")
+        else:
+            m_kb = re.search(r'(void\s+kernel_bootstrap\s*\(\s*void\s*\)\s*\{)', c10)
+            if m_kb:
+                c10 = c10.replace(m_kb.group(0), m_kb.group(0) + """
+\t/* hakios: kernel_bootstrap entry */
 \t{
 \t\textern void hk_con_log(const char *s);
-\t\thk_con_log("[*] entered kernel_bootstrap");
+\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);
+\t\thk_draw_band_direct(0x00FFA500, 190, 5); /* Orange band: entered kernel_bootstrap */
+\t\thk_con_log("[*] entered kernel_bootstrap successfully");
 \t}""", 1)
-            print("  [OK] osfmk/kern/startup.c: kernel_bootstrap console log installed")
-        else:
-            print("  [WARN] kernel_bootstrap not found in startup.c")
+                print("  [OK] osfmk/kern/startup.c: kernel_bootstrap console log & visual band installed")
+            else:
+                print("  [WARN] kernel_bootstrap not found in startup.c")
 
         # Instrument kernel_bootstrap_thread(void) entry
         kbt_target = "static void\nkernel_bootstrap_thread(void)\n{"
@@ -2767,12 +2853,19 @@ lck_mtx_assert(lck_mtx_t *lock, unsigned int type)
         else:
             print("  [WARN] t24 pattern not found in GenericARMPE.cpp")
 
-    # 25. osfmk/arm64/machine_routines.c & osfmk/arm/machine_routines.c (safeguard ml_wait_max_cpus against infinite wait)
+    # 25. osfmk/arm64/machine_routines.c & osfmk/arm/machine_routines.c
+    # - safeguard ml_wait_max_cpus against infinite wait
+    # - stub ml_map_cpu_pio (eliminate Apple CPU PIO mapping crash on SM6225)
+    # - instrument machine_startup entry and kernel_bootstrap kickoff
+    # - guarantee runtime topology_info pointers in ml_parse_cpu_topology
     for mr_rel in [("osfmk", "arm64", "machine_routines.c"), ("osfmk", "arm", "machine_routines.c")]:
         p_mr = os.path.join(src, *mr_rel)
         if os.path.isfile(p_mr):
             with open(p_mr, "r", encoding="utf-8", errors="replace") as f:
                 c_mr = f.read().replace("\r\n", "\n")
+            mr_modified = False
+
+            # 25a. ml_wait_max_cpus safeguard
             if "ml_wait_max_cpus" in c_mr:
                 t_mr = "ml_wait_max_cpus(void)\n{"
                 r_mr = "ml_wait_max_cpus(void)\n{\n\tif (!max_cpus_initialized) ml_set_max_cpus(1); /* hakios: unblock single-core */"
@@ -2780,9 +2873,84 @@ lck_mtx_assert(lck_mtx_t *lock, unsigned int type)
                     print(f"  [ALREADY PATCHED] {os.path.join(*mr_rel)}: ml_wait_max_cpus safeguard already present")
                 elif t_mr in c_mr:
                     c_mr = c_mr.replace(t_mr, r_mr, 1)
-                    with open(p_mr, "w", encoding="utf-8", newline="\n") as f:
-                        f.write(c_mr)
+                    mr_modified = True
                     print(f"  [OK] {os.path.join(*mr_rel)}: ml_wait_max_cpus safeguard installed")
+
+            # 25b. Stub ml_map_cpu_pio (Apple Silicon CPU PIO registers do not exist on Qualcomm Cortex-A73/A53)
+            if "/* hakios: stub ml_map_cpu_pio" in c_mr:
+                print(f"  [ALREADY PATCHED] {os.path.join(*mr_rel)}: ml_map_cpu_pio stub already present")
+            else:
+                p_pio_func = re.compile(r'void\s+ml_map_cpu_pio\s*\(\s*void\s*\)\s*\{[\s\S]*?\n\}')
+                m_pio_func = p_pio_func.search(c_mr)
+                if m_pio_func:
+                    r_pio_func = (
+                        "/* hakios: stub ml_map_cpu_pio - Qualcomm Snapdragon 685 SM6225 has no Apple CPU PIO */\n"
+                        "void\n"
+                        "ml_map_cpu_pio(void)\n"
+                        "{\n"
+                        "\textern void hk_con_log(const char *s);\n"
+                        '\thk_con_log("[*] ml_map_cpu_pio: Apple Silicon CPU PIO bypassed on SM6225");\n'
+                        "\treturn;\n"
+                        "}"
+                    )
+                    c_mr = c_mr[:m_pio_func.start()] + r_pio_func + c_mr[m_pio_func.end():]
+                    mr_modified = True
+                    print(f"  [OK] {os.path.join(*mr_rel)}: ml_map_cpu_pio stubbed")
+                else:
+                    print(f"  [WARN] {os.path.join(*mr_rel)}: ml_map_cpu_pio function not found")
+
+            # 25c. Instrument machine_startup entry and transition to kernel_bootstrap
+            if "/* hakios: machine_startup entry */" in c_mr:
+                print(f"  [ALREADY PATCHED] {os.path.join(*mr_rel)}: machine_startup telemetry already present")
+            else:
+                p_mstart_func = re.compile(r'(void\s+machine_startup\s*\(\s*__unused\s+boot_args\s*\*\s*args\s*\)\s*\{)')
+                m_mstart_func = p_mstart_func.search(c_mr)
+                if m_mstart_func:
+                    r_mstart_entry = m_mstart_func.group(1) + (
+                        "\n\t/* hakios: machine_startup entry */\n"
+                        "\t{\n"
+                        "\t\textern void hk_con_log(const char *s);\n"
+                        "\t\textern void hk_draw_band_direct(uint32_t, uint32_t, uint32_t);\n"
+                        "\t\thk_draw_band_direct(0x0000FF00, 185, 5);  /* Green band: machine_startup entered */\n"
+                        '\t\thk_con_log("[*] machine_startup: entered successfully");\n'
+                        "\t}"
+                    )
+                    c_mr = c_mr[:m_mstart_func.start()] + r_mstart_entry + c_mr[m_mstart_func.end():]
+
+                    # Also instrument machine_conf() completion
+                    m_mconf = re.search(r'(\t+)(machine_conf\s*\(\s*\);)', c_mr)
+                    if m_mconf:
+                        c_mr = c_mr[:m_mconf.end(0)] + (
+                            '\n\t{ extern void hk_con_log(const char *s); '
+                            'hk_con_log("[*] machine_startup: machine_conf OK, kicking off kernel_bootstrap..."); }'
+                        ) + c_mr[m_mconf.end(0):]
+
+                    mr_modified = True
+                    print(f"  [OK] {os.path.join(*mr_rel)}: machine_startup telemetry instrumented")
+                else:
+                    print(f"  [WARN] {os.path.join(*mr_rel)}: machine_startup not found")
+
+            # 25d. Guarantee runtime topology_info pointers in ml_parse_cpu_topology
+            if "/* hakios: guarantee topology_info pointers */" in c_mr:
+                print(f"  [ALREADY PATCHED] {os.path.join(*mr_rel)}: topology_info pointers already initialized")
+            else:
+                p_topo = re.compile(r'(void\s+ml_parse_cpu_topology\s*\(\s*void\s*\)\s*\{)')
+                m_topo = p_topo.search(c_mr)
+                if m_topo:
+                    r_topo = m_topo.group(1) + (
+                        "\n\t/* hakios: guarantee topology_info pointers regardless of chained fixups */\n"
+                        "\ttopology_info.cpus = topology_cpu_array;\n"
+                        "\ttopology_info.clusters = topology_cluster_array;\n"
+                    )
+                    c_mr = c_mr[:m_topo.start()] + r_topo + c_mr[m_topo.end():]
+                    mr_modified = True
+                    print(f"  [OK] {os.path.join(*mr_rel)}: ml_parse_cpu_topology pointer guarantee installed")
+                else:
+                    print(f"  [WARN] {os.path.join(*mr_rel)}: ml_parse_cpu_topology not found")
+
+            if mr_modified:
+                with open(p_mr, "w", encoding="utf-8", newline="\n") as f:
+                    f.write(c_mr)
 
     # 26. osfmk/kern/zalloc.c (clamp PAGE_SHIFT_CONST and instrument zone_bootstrap)
     p26 = os.path.join(src, "osfmk", "kern", "zalloc.c")

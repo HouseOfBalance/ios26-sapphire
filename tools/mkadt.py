@@ -339,11 +339,17 @@ def build(seed=None, qemu=False, highmem=False, board='sweet', display_scale=Non
     gic = node('gic', [
         ph(),
         ('compatible', cstr('arm,gic-v3')),
-        ('interrupt-controller', b''),
+        ('interrupt-controller', cstr('master')),
         ('virtual-timer-intid', u32(QEMU_VTIMER_INTID if qemu else VTIMER_INTID)),
         ('reg', u64(gicd - SOC_BASE, gicd_sz, gicr - SOC_BASE, gicr_sz)),
     ])
-    arm_io_children = [gic]
+    timer = node('timer', [
+        ph(),
+        ('device_type', cstr('timer')),
+        ('compatible', cstr('arm,armv8-timer') + cstr('arm,generic-timer')),
+        ('reg', u64(gicd - SOC_BASE, 0x1000)),
+    ])
+    arm_io_children = [gic, timer]
     if b.get('bluetooth') and not qemu:
         arm_io_children.append(bluetooth_node(ph))
     arm_io_children.append(node('wdt', [ph(), ('no-pmu', u32(1))]))

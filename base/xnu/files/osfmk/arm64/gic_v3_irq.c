@@ -451,6 +451,11 @@ gic_v3_irq_cpu_shutdown(void)
 	__builtin_arm_isb(ISB_SY);
 }
 
+#define SM6225_GICD_BASE        0x0f200000UL
+#define SM6225_GICD_SIZE        0x00010000UL
+#define SM6225_GICR_BASE        0x0f300000UL
+#define SM6225_GICR_SIZE        0x00100000UL    /* 1MB: 8 CPUs * 128KB */
+
 /* the distance between redistributors when the device tree gives one (redistributor-stride), else 0 */
 static uint64_t gicr_stride;
 
@@ -472,6 +477,16 @@ gic_find_redistributor(void)
 		}
 		frame += gicr_stride ? gicr_stride : (typer & GICR_TYPER_VLPIS) ? 2 * GICR_FRAME_SIZE : GICR_FRAME_SIZE;
 	}
+
+	/* Fallback: linear CPU index if affinity match was not found */
+	int cpu = cpu_number();
+	vm_offset_t fallback_frame = gicr_base + (vm_offset_t)cpu * GICR_FRAME_SIZE;
+	if (fallback_frame + GICR_FRAME_SIZE <= gicr_base + gicr_size) {
+		kprintf("[gic] warning: redistributor affinity 0x%x not found, using CPU %d linear frame %p\n",
+		    affinity, cpu, (void *)fallback_frame);
+		return fallback_frame;
+	}
+
 	return 0;
 }
 
@@ -487,31 +502,65 @@ gic_v3_irq_cpu_init(void)
 		DTEntry entry;
 		void const *prop;
 		unsigned int prop_size;
+		vm_offset_t gicd_phys = 0;
+		vm_size_t   gicd_sz = 0;
+		vm_offset_t gicr_phys = 0;
+		vm_size_t   gicr_sz = 0;
+		bool dt_found = false;
 
-		if (SecureDTLookupEntry(NULL, "/arm-io/gic", &entry) != kSuccess ||
-		    SecureDTGetProperty(entry, "reg", &prop, &prop_size) != kSuccess ||
-		    prop_size < 4 * sizeof(uint64_t)) {
-			hk_draw_band(0x00FF0000, 400, 2); /* Red: unusable GIC device-tree node */
-			return;
+		if (SecureDTLookupEntry(NULL, "/arm-io/gic", &entry) == kSuccess &&
+		    SecureDTGetProperty(entry, "reg", &prop, &prop_size) == kSuccess &&
+		    prop_size >= 4 * sizeof(uint64_t)) {
+			uint64_t const *reg = prop;
+			vm_offset_t soc_base = pe_arm_get_soc_base_phys();
+
+			/* If reg is relative to soc_base (< 0x08000000), add soc_base; else absolute */
+			gicd_phys = (reg[0] < 0x08000000UL) ? (soc_base + reg[0]) : reg[0];
+			gicd_sz   = reg[1];
+			gicr_phys = (reg[2] < 0x08000000UL) ? (soc_base + reg[2]) : reg[2];
+			gicr_sz   = reg[3];
+
+			if (SecureDTGetProperty(entry, "redistributor-stride", &prop, &prop_size) == kSuccess &&
+			    prop_size >= sizeof(uint64_t)) {
+				gicr_stride = *(uint64_t const *)prop;
+			}
+			dt_found = true;
 		}
-		uint64_t const *reg = prop;
-		vm_offset_t soc_base = pe_arm_get_soc_base_phys();
+
+		if (!dt_found) {
+			/* Fallback statically for Qualcomm Snapdragon 680/685 SM6225 Bengal */
+			kprintf("[gic] warning: /arm-io/gic missing or invalid in DT, using SM6225 static fallback\n");
+			gicd_phys = SM6225_GICD_BASE;
+			gicd_sz   = SM6225_GICD_SIZE;
+			gicr_phys = SM6225_GICR_BASE;
+			gicr_sz   = SM6225_GICR_SIZE;
+			gicr_stride = 0;
+		}
 
 		simple_lock_init(&gic_spi_lock, 0);
-		gicd_base = ml_io_map(soc_base + reg[0], reg[1]);
-		gicr_base = ml_io_map(soc_base + reg[2], reg[3]);
-		gicr_size = reg[3];
-		if (SecureDTGetProperty(entry, "redistributor-stride", &prop, &prop_size) == kSuccess &&
-		    prop_size >= sizeof(uint64_t)) {
-			gicr_stride = *(uint64_t const *)prop;
-		}
+
+		gicd_base = ml_io_map(gicd_phys, gicd_sz);
+		gicr_base = ml_io_map(gicr_phys, gicr_sz);
+		gicr_size = gicr_sz;
+
 		if (gicd_base == 0 || gicr_base == 0) {
+			kprintf("[gic] fatal: GIC MMIO mapping failed (GICD=%p, GICR=%p)\n",
+			    (void *)gicd_base, (void *)gicr_base);
 			gicd_base = 0;
 			gicr_base = 0;
 			gicr_size = 0;
 			hk_draw_band(0x00FF0000, 402, 2); /* Red: GIC MMIO mapping failed */
 			return;
 		}
+
+		/* Flush pipeline and memory ordering for newly mapped MMIO */
+		__asm__ volatile("dsb sy" ::: "memory");
+		__builtin_arm_isb(ISB_SY);
+
+		kprintf("[gic] GICD mapped: 0x%lx (phys 0x%lx, size 0x%lx)\n",
+		    (unsigned long)gicd_base, (unsigned long)gicd_phys, (unsigned long)gicd_sz);
+		kprintf("[gic] GICR mapped: 0x%lx (phys 0x%lx, size 0x%lx)\n",
+		    (unsigned long)gicr_base, (unsigned long)gicr_phys, (unsigned long)gicr_sz);
 	} else if (gicr_cpu_base[cpu] != 0) {
 		return;
 	}
@@ -529,9 +578,11 @@ gic_v3_irq_cpu_init(void)
 	gicr = gicr_cpu_base[cpu] = gic_find_redistributor();
 	if (gicr == 0) {
 		gicr_cpu_base[cpu] = 0;
+		kprintf("[gic] fatal: no GIC redistributor matched CPU %d\n", cpu);
 		hk_draw_band(0x00FF0000, 404, 2); /* Red: no GIC redistributor matched this CPU */
 		return;
 	}
+	kprintf("[gic] CPU %d redistributor matched: 0x%lx\n", cpu, (unsigned long)gicr);
 
 	uint32_t waker = gic_read32(gicr + GICR_WAKER);
 	if (waker & (GICR_WAKER_PROCSLEEP | GICR_WAKER_CHILDASLEEP)) {
@@ -598,8 +649,8 @@ gic_v3_irq_cpu_init(void)
 	__builtin_arm_wsr64("ICC_IGRPEN1_EL1", 1);
 	__builtin_arm_isb(ISB_SY);
 
-	kprintf("gic: v3, distributor %p, cpu %d's redistributor %p, virtual timer on PPI %d\n",
-	    (void *)gicd_base, cpu, (void *)gicr, GIC_INTID_VTIMER);
+	kprintf("[gic] GICv3 ready on CPU %d (distributor %p, redistributor %p, virtual timer on PPI %d)\n",
+	    cpu, (void *)gicd_base, (void *)gicr, GIC_INTID_VTIMER);
 }
 
 #endif /* GENERIC_GIC_V3_IRQ */
