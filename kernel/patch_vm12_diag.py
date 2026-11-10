@@ -54,7 +54,7 @@ def patch_sleh_diag(src):
 
     for m in reversed(matches):
         c = c[:m.end()] + BLOCK + c[m.end():]
-    inc = '#include <pexpert/pexpert.h>\n#include <arm/pmap.h>\n#include <pexpert/arm/boot.h>\n'
+    inc = '#include <pexpert/pexpert.h>\n#include <arm/pmap.h>\n'
     if "pexpert/pexpert.h" not in c:
         k = c.find("#include")
         c = c[:k] + inc + c[k:]
