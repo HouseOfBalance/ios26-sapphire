@@ -91,6 +91,11 @@ if [ -f "$K/patch_vm10_bisect.py" ]; then
 	python3 "$K/patch_vm10_bisect.py" "$D"
 fi
 
+# Apply Part 5i: VM12 Diagnostics for PAR and boot_args (Claude Code)
+if [ -f "$K/patch_vm12_diag.py" ]; then
+	python3 "$K/patch_vm12_diag.py" "$D"
+fi
+
 # Fix kasan-denylist regex for older/host Clang parser
 if [ -f "$D/san/memory/kasan-denylist" ]; then
 	sed -i '' 's/\[\*\]/\[\.\*\]/g' "$D/san/memory/kasan-denylist" 2>/dev/null || sed -i 's/\[\*\]/\[\.\*\]/g' "$D/san/memory/kasan-denylist"
