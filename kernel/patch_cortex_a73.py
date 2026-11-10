@@ -2488,7 +2488,7 @@ kernel_debug_string_early(const char *message)
 
 		const uint64_t hk_fb_va = 0xfffffff004000000ULL;
 		const uint64_t hk_fb_pa = 0x5c000000ULL;
-		const uint64_t hk_fb_bytes = 32ULL * 1024ULL * 1024ULL; /* 32MB covers full 15MB cont_splash_region + console partition shift */
+		const uint64_t hk_fb_bytes = 16ULL * 1024ULL * 1024ULL; /* 16MB (8 blocks of 2MB) fully covers 15 MiB cont_splash_region (0x5c000000..0x5cf00000) safely within Gunyah stage-2 */
 		/* PXN|UXN | AF | SH=outer | AttrIdx=1 (CACHE_ATTRINDX_WRITECOMB, Normal Non-Cacheable) | AP=RW(EL1) | BLOCK */
 		const uint64_t hk_fb_attr = 0x0060000000000605ULL;
 		const uint64_t l2sz = (uint64_t)ARM_TT_L2_SIZE;
