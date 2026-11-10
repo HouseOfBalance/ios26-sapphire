@@ -2628,25 +2628,44 @@ kernel_debug_string_early(const char *message)
             f.write(c20)
 
 
-    # 21. osfmk/console/video_console.c (reserve rows 0..719 for diagnostic ladder, start console text at row 720)
+    # 21. osfmk/console/video_console.c (direct map FB to Phase 2 VA 0xfffffff004000000ULL, eliminate FSC=6 Translation Fault)
     p21 = os.path.join(src, "osfmk", "console", "video_console.c")
     if os.path.isfile(p21):
         with open(p21, "r", encoding="utf-8", errors="replace") as f:
             c21 = f.read().replace("\r\n", "\n")
+
+        # FIX 1: Override newVideoVirt to Phase 2 direct-mapped FB VA 0xfffffff004000000ULL
+        vc_map_target = "newVideoVirt = ml_io_map_unmappable((vm_map_offset_t)new_vinfo.v_physaddr, newMapSize, flags);"
+        vc_map_repl = (
+            "/* hakios: Phase 2 Framebuffer is ALREADY mapped at VA 0xfffffff004000000ULL in cpu_tte.\n"
+            "\t\t\t * ml_io_map_unmappable allocates dynamic KVA lacking Level 2 table entries in early boot,\n"
+            "\t\t\t * triggering Translation Fault Level 2 (FSC=6) on the first vcputc/cursor access.\n"
+            "\t\t\t * Directly aliasing 0xfffffff004000000ULL safely reuses the verified 16MB mapping. */\n"
+            "\t\t\t\tnewVideoVirt = 0xfffffff004000000ULL;"
+        )
+        if vc_map_target in c21:
+            c21 = c21.replace(vc_map_target, vc_map_repl, 1)
+            print("  [OK] osfmk/console/video_console.c: newVideoVirt direct mapped to 0xfffffff004000000ULL")
+        else:
+            print("  [WARN] vc_map_target not found in video_console.c")
+
+        # FIX 2: Set new_vinfo.v_baseaddr to 0xfffffff004000000ULL, log geometry, and remove 720-line shift
         vc_target = "new_vinfo.v_baseaddr = newVideoVirt + boot_vinfo->v_offset;"
         vc_repl = (
-            "new_vinfo.v_baseaddr = newVideoVirt + boot_vinfo->v_offset;\n"
-            "\t\t\t/* hakios: reserve rows 0..719 for diagnostic ladder bands, clamp console to row 720..2399 */\n"
-            "\t\t\tif (new_vinfo.v_height > 720) {\n"
-            "\t\t\t\tnew_vinfo.v_baseaddr += 720 * new_vinfo.v_rowbytes;\n"
-            "\t\t\t\tnew_vinfo.v_height -= 720;\n"
+            "new_vinfo.v_baseaddr = 0xfffffff004000000ULL + boot_vinfo->v_offset;\n"
+            "\t\t\t/* hakios: print console geometry and verified baseaddr */\n"
+            "\t\t\t{ extern void hk_con_print_ptr(const char *tag, uint64_t val);\n"
+            "\t\t\t  hk_con_print_ptr(\"[vc] v_baseaddr: \", (uint64_t)new_vinfo.v_baseaddr);\n"
+            "\t\t\t  hk_con_print_ptr(\"[vc] v_rowbytes: \", (uint64_t)new_vinfo.v_rowbytes);\n"
+            "\t\t\t  hk_con_print_ptr(\"[vc] v_height  : \", (uint64_t)new_vinfo.v_height);\n"
+            "\t\t\t  hk_con_print_ptr(\"[vc] v_width   : \", (uint64_t)new_vinfo.v_width);\n"
             "\t\t\t}"
         )
         if "/* hakios: reserve rows 0..719 for diagnostic ladder bands" in c21:
             print("  [ALREADY PATCHED] osfmk/console/video_console.c: dual-region framebuffer partition already present")
         elif vc_target in c21:
             c21 = c21.replace(vc_target, vc_repl, 1)
-            print("  [OK] osfmk/console/video_console.c: dual-region framebuffer partition installed (rows 0..719 ladder, rows 720..2399 console)")
+            print("  [OK] osfmk/console/video_console.c: v_baseaddr direct mapped and telemetry installed")
         else:
             print("  [WARN] vc_target not found in video_console.c")
 
