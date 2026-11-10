@@ -2429,7 +2429,7 @@ kernel_debug_string_early(const char *message)
         with open(p20, "r", encoding="utf-8", errors="replace") as f:
             c20 = f.read().replace("\r\n", "\n")
 
-        # 20a. Allocate L2 table on demand if *cpu_l1_tte is EMPTY in bootstrap L3 loop
+        # 20a. Allocate L2 table on demand if *cpu_l1_tte is EMPTY in bootstrap L3 loop (loop 1)
         t20_l1 = 'cpu_l1_tte = cpu_tte + L1_TABLE_T1_INDEX(va_l1, TCR_EL1_BOOT);\n\n\twhile (va_l1 < va_l1_end) {\n\t\tva_l2 = va_l1;'
         r20_l1 = """cpu_l1_tte = cpu_tte + L1_TABLE_T1_INDEX(va_l1, TCR_EL1_BOOT);
 
@@ -2445,6 +2445,22 @@ kernel_debug_string_early(const char *message)
             print("  [OK] osfmk/arm64/arm_vm_init.c: on-demand L2 table allocation in bootstrap L3 loop installed")
         else:
             print("  [WARN] t20_l1 not found in arm_vm_init.c")
+
+        # 20a-bis. Allocate L2 table on demand if *cpu_l1_tte is EMPTY in CPUWINDOWS L3 loop (loop 2)
+        r20_l1_cpuwin = """cpu_l1_tte = cpu_tte + L1_TABLE_T1_INDEX(va_l1, TCR_EL1_BOOT);
+
+\t{ extern void hk_con_log(const char *s); hk_con_log("[vm] 10: CPUWINDOWS L3 loop starting..."); }\n\twhile (va_l1 < va_l1_end) {
+\t\tif (*cpu_l1_tte == ARM_TTE_EMPTY) {
+\t\t\tvm_offset_t l2_page = alloc_ptpage(FALSE);
+\t\t\t*cpu_l1_tte = (kvtophys(l2_page) & ARM_TTE_TABLE_MASK) | ARM_TTE_TYPE_TABLE | ARM_TTE_VALID | ARM_DYNAMIC_TABLE_XN | ARM_TTE_TABLE_AP(ARM_TTE_TABLE_AP_USER_NA);
+\t\t\tbzero((void *)l2_page, ARM_PGBYTES);
+\t\t}
+\t\tva_l2 = va_l1;"""
+        if t20_l1 in c20:
+            c20 = c20.replace(t20_l1, r20_l1_cpuwin, 1)
+            print("  [OK] osfmk/arm64/arm_vm_init.c: on-demand L2 table allocation in CPUWINDOWS L3 loop installed")
+        else:
+            print("  [WARN] t20_l1 (CPUWINDOWS loop) not found in arm_vm_init.c")
 
         # 20b. Expand va_l1_end to pre-cover 64MB of heap
         t20_end = '\tva_l1_end = va_l1 + ((2 + (mem_segments * 10)) << 20);'
@@ -2603,6 +2619,11 @@ kernel_debug_string_early(const char *message)
         if t20_end_loop in c20 and "[vm] 9:" not in c20:
             c20 = c20.replace(t20_end_loop, t20_end_loop + '\t{ extern void hk_con_log(const char *s); hk_con_log("[vm] 9: bootstrap L3 loop done"); }\n', 1)
             print("  [OK] osfmk/arm64/arm_vm_init.c: [vm] 9 marker installed")
+
+        # 20f-bis. [vm] 10: end of the CPUWINDOWS L3 loop
+        if t20_end_loop in c20 and "[vm] 10: CPUWINDOWS L3 loop done" not in c20:
+            c20 = c20.replace(t20_end_loop, t20_end_loop + '\t{ extern void hk_con_log(const char *s); hk_con_log("[vm] 10: CPUWINDOWS L3 loop done"); }\n', 1)
+            print("  [OK] osfmk/arm64/arm_vm_init.c: [vm] 10 CPUWINDOWS loop done marker installed")
         with open(p20, "w", encoding="utf-8", newline="\n") as f:
             f.write(c20)
 
