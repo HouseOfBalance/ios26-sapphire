@@ -2506,6 +2506,59 @@ kernel_debug_string_early(const char *message)
         else:
             print("  [WARN] t19_ptd not found in pmap.c")
 
+        # 19b. Flush newly allocated table page and parent TTE to PoC in pmap_expand (Cortex-A73 non-coherent PTW)
+        t19_expand_flush = """\t\t\tif ((pmap_ttne(pmap, ttlevel + 1, v) == PT_ENTRY_NULL)) {
+\t\t\t\tpmap_init_pte_page(pmap, (pt_entry_t *) tt_p, v, ttlevel + 1, FALSE);
+\t\t\t\tpa = kvtophys_nofail((vm_offset_t)tt_p);
+\t\t\t\ttte_p = pmap_ttne(pmap, ttlevel, v);
+\t\t\t\t*tte_p = (pa & ARM_TTE_TABLE_MASK) | ARM_TTE_TYPE_TABLE | ARM_TTE_VALID;
+\t\t\t\tPMAP_TRACE(4 + ttlevel, PMAP_CODE(PMAP__TTE), VM_KERNEL_ADDRHIDE(pmap), VM_KERNEL_ADDRHIDE(v & ~pt_attr_ln_offmask(pt_attr, ttlevel)),
+\t\t\t\t    VM_KERNEL_ADDRHIDE((v & ~pt_attr_ln_offmask(pt_attr, ttlevel)) + pt_attr_ln_size(pt_attr, ttlevel)), *tte_p);
+\t\t\t\tpa = 0x0ULL;
+\t\t\t\ttt_p = (tt_entry_t *)NULL;
+\t\t\t}"""
+        r19_expand_flush = """\t\t\tif ((pmap_ttne(pmap, ttlevel + 1, v) == PT_ENTRY_NULL)) {
+\t\t\t\tpmap_init_pte_page(pmap, (pt_entry_t *) tt_p, v, ttlevel + 1, FALSE);
+\t\t\t\tpa = kvtophys_nofail((vm_offset_t)tt_p);
+\t\t\t\ttte_p = pmap_ttne(pmap, ttlevel, v);
+\t\t\t\t*tte_p = (pa & ARM_TTE_TABLE_MASK) | ARM_TTE_TYPE_TABLE | ARM_TTE_VALID;
+\t\t\t\tPMAP_TRACE(4 + ttlevel, PMAP_CODE(PMAP__TTE), VM_KERNEL_ADDRHIDE(pmap), VM_KERNEL_ADDRHIDE(v & ~pt_attr_ln_offmask(pt_attr, ttlevel)),
+\t\t\t\t    VM_KERNEL_ADDRHIDE((v & ~pt_attr_ln_offmask(pt_attr, ttlevel)) + pt_attr_ln_size(pt_attr, ttlevel)), *tte_p);
+
+\t\t\t\t/* hakios: flush newly allocated table page and parent TTE to PoC for non-coherent PTW (Cortex-A73) */
+\t\t\t\tfor (vm_offset_t _p = (vm_offset_t)tt_p; _p < (vm_offset_t)tt_p + ARM_PGBYTES; _p += 64) {
+\t\t\t\t\t__asm__ volatile("dc civac, %0" : : "r" (_p) : "memory");
+\t\t\t\t}
+\t\t\t\t__asm__ volatile("dc civac, %0" : : "r" (tte_p) : "memory");
+\t\t\t\t__asm__ volatile("dsb sy\\ntlbi vmalle1is\\ndsb sy\\nisb" ::: "memory");
+
+\t\t\t\tpa = 0x0ULL;
+\t\t\t\ttt_p = (tt_entry_t *)NULL;
+\t\t\t}"""
+        if t19_expand_flush in c19:
+            c19 = c19.replace(t19_expand_flush, r19_expand_flush, 1)
+            print("  [OK] osfmk/arm/pmap/pmap.c: pmap_expand PoC cache flush installed")
+        else:
+            print("  [WARN] t19_expand_flush not found in pmap.c")
+
+        # 19c. TLB invalidation on new mapping in pmap_enter_pte
+        t19_pte_new = """\t\t} else {
+\t\t\tFLUSH_PTE();
+\t\t\t__builtin_arm_isb(ISB_SY);
+\t\t}"""
+        r19_pte_new = """\t\t} else {
+\t\t\tFLUSH_PTE();
+\t\t\tif (TEST_PAGE_RATIO_4) {
+\t\t\t\tpmap_quad_tlb_invalidate(pmap, v);
+\t\t\t}
+\t\t\t__builtin_arm_isb(ISB_SY);
+\t\t}"""
+        if t19_pte_new in c19:
+            c19 = c19.replace(t19_pte_new, r19_pte_new, 1)
+            print("  [OK] osfmk/arm/pmap/pmap.c: pmap_enter_pte new mapping TLB invalidate installed")
+        else:
+            print("  [WARN] t19_pte_new not found in pmap.c")
+
         with open(p19, "w", encoding="utf-8", newline="\n") as f:
             f.write(c19)
 
