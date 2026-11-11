@@ -2,7 +2,10 @@
 """patch_vm16_panicmsg.py <xnu_src_dir>  (idempotent)
 Print the panic() message on the framebuffer console at the entry of
 panic_trap_to_debugger(). The EL1 dump alone only shows the 0xe7ffdeff panic-trap
-opcode (decoded as UNDEF), hiding the real panic string."""
+opcode (decoded as UNDEF), hiding the real panic string.
+
+The block is inserted right BEFORE the "For very early panics" comment, which is
+robust against other patches that edit the head of the function."""
 import os, sys
 src = sys.argv[1] if len(sys.argv) > 1 else "."
 p = os.path.join(src, "osfmk", "kern", "debug.c")
@@ -11,12 +14,11 @@ if not os.path.isfile(p):
 c = open(p, encoding="utf-8", errors="replace").read().replace("\r\n", "\n")
 if "hk-panicmsg" in c:
     print("  [OK] already present"); sys.exit(0)
-anchor = ("uint64_t panic_options_mask, void *panic_data_ptr, unsigned long panic_caller, const char *panic_initiator)\n"
-          "{\n#pragma clang diagnostic pop\n")
+anchor = "\t/* For very early panics before XNU serial initialization. */\n"
 i = c.find(anchor)
 if i < 0:
     print("  [WARN] panic_trap_to_debugger anchor not found"); sys.exit(0)
-blk = ('\n\t/* hk-panicmsg: show the panic string on the console */\n'
+blk = ('\t/* hk-panicmsg: show the panic string on the console */\n'
        '\t{\n'
        '\t\textern void hk_con_log(const char *s);\n'
        '\t\tchar hk_pb[200];\n'
@@ -33,8 +35,7 @@ blk = ('\n\t/* hk-panicmsg: show the panic string on the console */\n'
        '\t\t\t\thk_con_log(panic_format_str);\n'
        '\t\t\t}\n'
        '\t\t}\n'
-       '\t}\n')
-j = i + len(anchor)
-c = c[:j] + blk + c[j:]
+       '\t}\n\n')
+c = c[:i] + blk + c[i:]
 open(p, "w", encoding="utf-8", newline="\n").write(c)
 print("  [OK] debug.c: panic message print added")
