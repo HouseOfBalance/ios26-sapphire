@@ -2821,15 +2821,17 @@ lck_mtx_assert(lck_mtx_t *lock, unsigned int type)
         if t22 in c22:
             c22 = c22.replace(t22, r22, 1)
             for fn_sig in [
+                "__mockable void\nlck_mtx_lock(lck_mtx_t *lock)\n{",
                 "void\nlck_mtx_lock(lck_mtx_t *lock)\n{",
                 "void\nlck_mtx_lock_spin(lck_mtx_t *lock)\n{",
                 "void\nlck_mtx_lock_spin_always(lck_mtx_t *lock)\n{",
+                "__mockable void\nlck_mtx_unlock(lck_mtx_t *lock)\n{",
                 "void\nlck_mtx_unlock(lck_mtx_t *lock)\n{",
             ]:
                 if fn_sig in c22:
                     c22 = c22.replace(
                         fn_sig,
-                        fn_sig + "\n\tif (startup_phase < STARTUP_SUB_LOCKS || lock->lck_mtx_tsid == 0) {\n\t\treturn;\n\t}",
+                        fn_sig + "\n\tif (startup_phase < STARTUP_SUB_LOCKS) {\n\t\treturn;\n\t}",
                         1,
                     )
             for try_sig in [
@@ -2840,7 +2842,7 @@ lck_mtx_assert(lck_mtx_t *lock, unsigned int type)
                 if try_sig in c22:
                     c22 = c22.replace(
                         try_sig,
-                        try_sig + "\n\tif (startup_phase < STARTUP_SUB_LOCKS || lock->lck_mtx_tsid == 0) {\n\t\treturn TRUE;\n\t}",
+                        try_sig + "\n\tif (startup_phase < STARTUP_SUB_LOCKS) {\n\t\treturn TRUE;\n\t}",
                         1,
                     )
             with open(p22, "w", encoding="utf-8", newline="\n") as f:
