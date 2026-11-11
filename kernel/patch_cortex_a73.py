@@ -3251,3 +3251,4 @@ consdebug_putc(char c)
 
 if __name__ == "__main__":
     main()
+# CI Trigger: 2026-11-11-1707
