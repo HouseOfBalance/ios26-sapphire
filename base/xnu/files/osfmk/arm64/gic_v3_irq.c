@@ -576,13 +576,7 @@ gic_v3_irq_cpu_init(void)
 			return;
 		}
 
-		/* Flush newly mapped page tables and MMIO translations to PoC */
-		for (vm_offset_t p = gicd_base; p < gicd_base + gicd_sz; p += 4096) {
-			__asm__ volatile("dc civac, %0" : : "r"(p) : "memory");
-		}
-		for (vm_offset_t p = gicr_base; p < gicr_base + gicr_sz; p += 4096) {
-			__asm__ volatile("dc civac, %0" : : "r"(p) : "memory");
-		}
+		/* Ensure memory ordering and TLB sync for newly mapped MMIO */
 		__asm__ volatile("dsb sy" ::: "memory");
 		__builtin_arm_isb(ISB_SY);
 		flush_mmu_tlb();
