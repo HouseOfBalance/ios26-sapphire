@@ -2524,6 +2524,10 @@ kernel_debug_string_early(const char *message)
 \t\t\tvm_offset_t l2_page = alloc_ptpage(FALSE);
 \t\t\t*cpu_l1_tte = (kvtophys(l2_page) & ARM_TTE_TABLE_MASK) | ARM_TTE_TYPE_TABLE | ARM_TTE_VALID | ARM_DYNAMIC_TABLE_XN | ARM_TTE_TABLE_AP(ARM_TTE_TABLE_AP_USER_NA);
 \t\t\tbzero((void *)l2_page, ARM_PGBYTES);
+			for (vm_offset_t _p = l2_page; _p < l2_page + ARM_PGBYTES; _p += 64) {
+				__asm__ volatile ("dc civac, %0" : : "r" (_p) : "memory");
+			}
+			__asm__ volatile ("dc civac, %0\n\tdsb sy; isb" : : "r" (cpu_l1_tte) : "memory");
 \t\t}
 \t\tva_l2 = va_l1;"""
         if t20_l1 in c20:
@@ -2540,6 +2544,10 @@ kernel_debug_string_early(const char *message)
 \t\t\tvm_offset_t l2_page = alloc_ptpage(FALSE);
 \t\t\t*cpu_l1_tte = (kvtophys(l2_page) & ARM_TTE_TABLE_MASK) | ARM_TTE_TYPE_TABLE | ARM_TTE_VALID | ARM_DYNAMIC_TABLE_XN | ARM_TTE_TABLE_AP(ARM_TTE_TABLE_AP_USER_NA);
 \t\t\tbzero((void *)l2_page, ARM_PGBYTES);
+			for (vm_offset_t _p = l2_page; _p < l2_page + ARM_PGBYTES; _p += 64) {
+				__asm__ volatile ("dc civac, %0" : : "r" (_p) : "memory");
+			}
+			__asm__ volatile ("dc civac, %0\n\tdsb sy; isb" : : "r" (cpu_l1_tte) : "memory");
 \t\t}
 \t\tva_l2 = va_l1;"""
         if t20_l1 in c20:
@@ -2592,6 +2600,10 @@ kernel_debug_string_early(const char *message)
 			if ((*fb_l1_tte & ARM_TTE_VALID) == 0) {
 				vm_offset_t l2_page = alloc_ptpage(FALSE);
 				bzero((void *)l2_page, ARM_PGBYTES);
+			for (vm_offset_t _p = l2_page; _p < l2_page + ARM_PGBYTES; _p += 64) {
+				__asm__ volatile ("dc civac, %0" : : "r" (_p) : "memory");
+			}
+			__asm__ volatile ("dc civac, %0\n\tdsb sy; isb" : : "r" (cpu_l1_tte) : "memory");
 				*fb_l1_tte = (kvtophys(l2_page) & ARM_TTE_TABLE_MASK) | ARM_TTE_TYPE_TABLE | ARM_TTE_VALID | ARM_DYNAMIC_TABLE_XN | ARM_TTE_TABLE_AP(ARM_TTE_TABLE_AP_USER_NA);
 				fb_l2_base = (tt_entry_t *)l2_page;
 			} else if ((*fb_l1_tte & ARM_TTE_TYPE_MASK) == ARM_TTE_TYPE_TABLE) {
@@ -2706,10 +2718,30 @@ kernel_debug_string_early(const char *message)
             c20 = c20.replace(t20_end_loop, t20_end_loop + '\t{ extern void hk_con_log(const char *s); hk_con_log("[vm] 9: bootstrap L3 loop done"); }\n', 1)
             print("  [OK] osfmk/arm64/arm_vm_init.c: [vm] 9 marker installed")
 
-        # 20f-bis. [vm] 10: end of the CPUWINDOWS L3 loop
+        # 20f-bis. [vm] 10: end of the CPUWINDOWS L3 loop & flush all PT pages to PoC
         if t20_end_loop in c20 and "[vm] 10: CPUWINDOWS L3 loop done" not in c20:
-            c20 = c20.replace(t20_end_loop, t20_end_loop + '\t{ extern void hk_con_log(const char *s); hk_con_log("[vm] 10: CPUWINDOWS L3 loop done"); }\n', 1)
-            print("  [OK] osfmk/arm64/arm_vm_init.c: [vm] 10 CPUWINDOWS loop done marker installed")
+            r20_flush_all = (
+                t20_end_loop +
+                '\t{\n' +
+                '\t\textern void hk_con_log(const char *s);\n' +
+                '\t\thk_con_log("[vm] 10: CPUWINDOWS L3 loop done");\n' +
+                '\t\t/* hakios: Clean ALL translation table pages to PoC for Cortex-A73 MMU walker */\n' +
+                '\t\tfor (vm_offset_t _p = (vm_offset_t)cpu_tte; _p < (vm_offset_t)cpu_tte + ARM_PGBYTES; _p += 64) {\n' +
+                '\t\t\t__asm__ volatile ("dc civac, %0" : : "r" (_p) : "memory");\n' +
+                '\t\t}\n' +
+                '\t\tif (first_avail_phys != 0 && avail_start > first_avail_phys) {\n' +
+                '\t\t\tvm_offset_t _p_start = phystokv(first_avail_phys);\n' +
+                '\t\t\tvm_offset_t _p_end   = phystokv(avail_start);\n' +
+                '\t\t\tfor (vm_offset_t _p = _p_start; _p < _p_end; _p += 64) {\n' +
+                '\t\t\t\t__asm__ volatile ("dc civac, %0" : : "r" (_p) : "memory");\n' +
+                '\t\t\t}\n' +
+                '\t\t}\n' +
+                '\t\t__asm__ volatile ("dsb sy; isb" ::: "memory");\n' +
+                '\t\tflush_mmu_tlb();\n' +
+                '\t}\n'
+            )
+            c20 = c20.replace(t20_end_loop, r20_flush_all, 1)
+            print("  [OK] osfmk/arm64/arm_vm_init.c: [vm] 10 loop done and MMU table PoC flush installed")
         with open(p20, "w", encoding="utf-8", newline="\n") as f:
             f.write(c20)
 

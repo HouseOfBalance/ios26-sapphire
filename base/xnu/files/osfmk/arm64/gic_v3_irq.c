@@ -150,15 +150,32 @@ void gic_v3_irq_cpu_shutdown(void);
 void gic_v3_irq_signal(uint32_t phys_id);
 void gic_v3_irq_signal_stop(uint32_t phys_id);
 
+static inline bool
+gic_addr_valid(vm_offset_t addr)
+{
+	uint64_t par = 0;
+	__asm__ volatile("at s1e1r, %1\n\tisb\n\tmrs %0, par_el1" : "=r"(par) : "r"(addr));
+	return (par & 1) == 0;
+}
+
 static inline uint32_t
 gic_read32(vm_offset_t addr)
 {
+	if (!gic_addr_valid(addr)) {
+		kprintf("[gic] gic_read32: MMU translation fault at 0x%lx, skipping read\n", (unsigned long)addr);
+		return 0;
+	}
 	return *(volatile uint32_t *)addr;
 }
 
 static inline void
 gic_write32(vm_offset_t addr, uint32_t value)
 {
+	if (!gic_addr_valid(addr)) {
+		kprintf("[gic] gic_write32: MMU translation fault at 0x%lx, skipping write 0x%x\n",
+		    (unsigned long)addr, value);
+		return;
+	}
 	*(volatile uint32_t *)addr = value;
 }
 
@@ -467,6 +484,12 @@ gic_find_redistributor(void)
 	uint32_t affinity = (uint32_t)(((mpidr >> 32) & 0xff) << 24 | (mpidr & 0xffffff));
 
 	for (vm_offset_t frame = gicr_base; frame + GICR_FRAME_SIZE <= gicr_base + gicr_size;) {
+		if (!gic_addr_valid(frame + GICR_TYPER)) {
+			kprintf("[gic] warning: GICR TYPER at 0x%lx invalid in Stage 1 translation, falling back to frame 0\n",
+			    (unsigned long)(frame + GICR_TYPER));
+			return gicr_base;
+		}
+
 		uint64_t typer = *(volatile uint64_t *)(frame + GICR_TYPER);
 
 		if ((uint32_t)(typer >> 32) == affinity) {
@@ -487,7 +510,7 @@ gic_find_redistributor(void)
 		return fallback_frame;
 	}
 
-	return 0;
+	return gicr_base;
 }
 
 /* Per-CPU bring-up: every processor calls this for itself, the boot processor first. */
@@ -553,14 +576,25 @@ gic_v3_irq_cpu_init(void)
 			return;
 		}
 
-		/* Flush pipeline and memory ordering for newly mapped MMIO */
+		/* Flush newly mapped page tables and MMIO translations to PoC */
+		for (vm_offset_t p = gicd_base; p < gicd_base + gicd_sz; p += 4096) {
+			__asm__ volatile("dc civac, %0" : : "r"(p) : "memory");
+		}
+		for (vm_offset_t p = gicr_base; p < gicr_base + gicr_sz; p += 4096) {
+			__asm__ volatile("dc civac, %0" : : "r"(p) : "memory");
+		}
 		__asm__ volatile("dsb sy" ::: "memory");
 		__builtin_arm_isb(ISB_SY);
+		flush_mmu_tlb();
 
-		kprintf("[gic] GICD mapped: 0x%lx (phys 0x%lx, size 0x%lx)\n",
-		    (unsigned long)gicd_base, (unsigned long)gicd_phys, (unsigned long)gicd_sz);
-		kprintf("[gic] GICR mapped: 0x%lx (phys 0x%lx, size 0x%lx)\n",
-		    (unsigned long)gicr_base, (unsigned long)gicr_phys, (unsigned long)gicr_sz);
+		uint64_t par_gicd = 0, par_gicr = 0;
+		__asm__ volatile("at s1e1r, %1\n\tisb\n\tmrs %0, par_el1" : "=r"(par_gicd) : "r"(gicd_base));
+		__asm__ volatile("at s1e1r, %1\n\tisb\n\tmrs %0, par_el1" : "=r"(par_gicr) : "r"(gicr_base + 8));
+
+		kprintf("[gic] GICD mapped: 0x%lx (phys 0x%lx, size 0x%lx, PAR 0x%lx)\n",
+		    (unsigned long)gicd_base, (unsigned long)gicd_phys, (unsigned long)gicd_sz, (unsigned long)par_gicd);
+		kprintf("[gic] GICR mapped: 0x%lx (phys 0x%lx, size 0x%lx, PAR+8 0x%lx)\n",
+		    (unsigned long)gicr_base, (unsigned long)gicr_phys, (unsigned long)gicr_sz, (unsigned long)par_gicr);
 	} else if (gicr_cpu_base[cpu] != 0) {
 		return;
 	}
