@@ -377,6 +377,46 @@ static inline uint64_t atomic_ldadd64_llsc(volatile uint64_t *ptr, uint64_t val)
  * Atomic Bitwise Operations (LDCLR, LDSET, LDEOR)
  * ------------------------------------------------------------------------- */
 
+static inline uint8_t atomic_ldclr8_llsc(volatile uint8_t *ptr, uint8_t val) {
+    uint32_t old, tmp, retries;
+    int failed;
+    __asm__ volatile (
+        "   mov     %w3, #1000      \n"
+        "1: ldaxrb  %w0, [%4]       \n"
+        "   bic     %w1, %w0, %w5   \n"
+        "   stlxrb  %w2, %w1, [%4]  \n"
+        "   cbz     %w2, 2f         \n"
+        "   subs    %w3, %w3, #1    \n"
+        "   b.ne    1b              \n"
+        "   strb    %w1, [%4]       \n"
+        "2:                         \n"
+        : "=&r"(old), "=&r"(tmp), "=&r"(failed), "=&r"(retries)
+        : "r"(ptr), "r"((uint32_t)val)
+        : "cc", "memory"
+    );
+    return (uint8_t)old;
+}
+
+static inline uint16_t atomic_ldclr16_llsc(volatile uint16_t *ptr, uint16_t val) {
+    uint32_t old, tmp, retries;
+    int failed;
+    __asm__ volatile (
+        "   mov     %w3, #1000      \n"
+        "1: ldaxrh  %w0, [%4]       \n"
+        "   bic     %w1, %w0, %w5   \n"
+        "   stlxrh  %w2, %w1, [%4]  \n"
+        "   cbz     %w2, 2f         \n"
+        "   subs    %w3, %w3, #1    \n"
+        "   b.ne    1b              \n"
+        "   strh    %w1, [%4]       \n"
+        "2:                         \n"
+        : "=&r"(old), "=&r"(tmp), "=&r"(failed), "=&r"(retries)
+        : "r"(ptr), "r"((uint32_t)val)
+        : "cc", "memory"
+    );
+    return (uint16_t)old;
+}
+
 static inline uint32_t atomic_ldclr32_llsc(volatile uint32_t *ptr, uint32_t val) {
     uint32_t old, tmp, retries;
     int failed;
@@ -418,6 +458,46 @@ static inline uint64_t atomic_ldclr64_llsc(volatile uint64_t *ptr, uint64_t val)
     return old;
 }
 
+static inline uint8_t atomic_ldset8_llsc(volatile uint8_t *ptr, uint8_t val) {
+    uint32_t old, tmp, retries;
+    int failed;
+    __asm__ volatile (
+        "   mov     %w3, #1000      \n"
+        "1: ldaxrb  %w0, [%4]       \n"
+        "   orr     %w1, %w0, %w5   \n"
+        "   stlxrb  %w2, %w1, [%4]  \n"
+        "   cbz     %w2, 2f         \n"
+        "   subs    %w3, %w3, #1    \n"
+        "   b.ne    1b              \n"
+        "   strb    %w1, [%4]       \n"
+        "2:                         \n"
+        : "=&r"(old), "=&r"(tmp), "=&r"(failed), "=&r"(retries)
+        : "r"(ptr), "r"((uint32_t)val)
+        : "cc", "memory"
+    );
+    return (uint8_t)old;
+}
+
+static inline uint16_t atomic_ldset16_llsc(volatile uint16_t *ptr, uint16_t val) {
+    uint32_t old, tmp, retries;
+    int failed;
+    __asm__ volatile (
+        "   mov     %w3, #1000      \n"
+        "1: ldaxrh  %w0, [%4]       \n"
+        "   orr     %w1, %w0, %w5   \n"
+        "   stlxrh  %w2, %w1, [%4]  \n"
+        "   cbz     %w2, 2f         \n"
+        "   subs    %w3, %w3, #1    \n"
+        "   b.ne    1b              \n"
+        "   strh    %w1, [%4]       \n"
+        "2:                         \n"
+        : "=&r"(old), "=&r"(tmp), "=&r"(failed), "=&r"(retries)
+        : "r"(ptr), "r"((uint32_t)val)
+        : "cc", "memory"
+    );
+    return (uint16_t)old;
+}
+
 static inline uint32_t atomic_ldset32_llsc(volatile uint32_t *ptr, uint32_t val) {
     uint32_t old, tmp, retries;
     int failed;
@@ -457,6 +537,46 @@ static inline uint64_t atomic_ldset64_llsc(volatile uint64_t *ptr, uint64_t val)
         : "cc", "memory"
     );
     return old;
+}
+
+static inline uint8_t atomic_ldeor8_llsc(volatile uint8_t *ptr, uint8_t val) {
+    uint32_t old, tmp, retries;
+    int failed;
+    __asm__ volatile (
+        "   mov     %w3, #1000      \n"
+        "1: ldaxrb  %w0, [%4]       \n"
+        "   eor     %w1, %w0, %w5   \n"
+        "   stlxrb  %w2, %w1, [%4]  \n"
+        "   cbz     %w2, 2f         \n"
+        "   subs    %w3, %w3, #1    \n"
+        "   b.ne    1b              \n"
+        "   strb    %w1, [%4]       \n"
+        "2:                         \n"
+        : "=&r"(old), "=&r"(tmp), "=&r"(failed), "=&r"(retries)
+        : "r"(ptr), "r"((uint32_t)val)
+        : "cc", "memory"
+    );
+    return (uint8_t)old;
+}
+
+static inline uint16_t atomic_ldeor16_llsc(volatile uint16_t *ptr, uint16_t val) {
+    uint32_t old, tmp, retries;
+    int failed;
+    __asm__ volatile (
+        "   mov     %w3, #1000      \n"
+        "1: ldaxrh  %w0, [%4]       \n"
+        "   eor     %w1, %w0, %w5   \n"
+        "   stlxrh  %w2, %w1, [%4]  \n"
+        "   cbz     %w2, 2f         \n"
+        "   subs    %w3, %w3, #1    \n"
+        "   b.ne    1b              \n"
+        "   strh    %w1, [%4]       \n"
+        "2:                         \n"
+        : "=&r"(old), "=&r"(tmp), "=&r"(failed), "=&r"(retries)
+        : "r"(ptr), "r"((uint32_t)val)
+        : "cc", "memory"
+    );
+    return (uint16_t)old;
 }
 
 static inline uint32_t atomic_ldeor32_llsc(volatile uint32_t *ptr, uint32_t val) {

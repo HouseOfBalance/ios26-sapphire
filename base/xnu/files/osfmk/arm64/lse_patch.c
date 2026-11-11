@@ -157,6 +157,62 @@ static bool lse_emulate_atomic(arm_saved_state_t *state, const lse_decoded_t *de
         kptr = (void *)addr;
     }
 
+    /*
+     * Hardware Alignment Guard:
+     * Cortex-A73 ARMv8.0 exclusive monitor generates Alignment Fault (FSC=33)
+     * if exclusive load/store (ldxr/stxr) is not naturally aligned.
+     * If unaligned, perform atomic read-modify-write with local DAIF masked.
+     */
+    size_t req_align = (dec->size == LSE_SIZE_64) ? 8 : ((dec->size == LSE_SIZE_32) ? 4 : ((dec->size == LSE_SIZE_16) ? 2 : 1));
+    if (((uintptr_t)kptr & (req_align - 1)) != 0) {
+        uint64_t daif;
+        __asm__ volatile("mrs %0, daif\n msr daifset, #7" : "=r"(daif) :: "memory");
+        if (dec->type == LSE_TYPE_CAS) {
+            uint64_t cur = 0;
+            const uint8_t *s = (const uint8_t *)kptr;
+            uint8_t *d = (uint8_t *)&cur;
+            for (size_t i = 0; i < req_align; i++) d[i] = s[i];
+            uint64_t mask = (req_align == 8) ? ~0ULL : ((req_align == 4) ? 0xFFFFFFFFULL : 0xFFFFULL);
+            if ((cur & mask) == (rs_val & mask)) {
+                const uint8_t *ws = (const uint8_t *)&rt_val;
+                uint8_t *wd = (uint8_t *)kptr;
+                for (size_t i = 0; i < req_align; i++) wd[i] = ws[i];
+            }
+            lse_set_reg(state, dec->rs, cur);
+            __asm__ volatile("msr daif, %0" :: "r"(daif) : "memory");
+            return true;
+        } else {
+            uint64_t cur = 0, next = 0;
+            const uint8_t *s = (const uint8_t *)kptr;
+            uint8_t *d = (uint8_t *)&cur;
+            for (size_t i = 0; i < req_align; i++) d[i] = s[i];
+            switch (dec->type) {
+                case LSE_TYPE_SWP:   next = rs_val; break;
+                case LSE_TYPE_LDADD: next = cur + rs_val; break;
+                case LSE_TYPE_LDCLR: next = cur & ~rs_val; break;
+                case LSE_TYPE_LDSET: next = cur | rs_val; break;
+                case LSE_TYPE_LDEOR: next = cur ^ rs_val; break;
+                case LSE_TYPE_LDSMAX:
+                    if (req_align == 8) next = ((int64_t)cur > (int64_t)rs_val) ? cur : rs_val;
+                    else next = ((int32_t)cur > (int32_t)rs_val) ? cur : rs_val;
+                    break;
+                case LSE_TYPE_LDSMIN:
+                    if (req_align == 8) next = ((int64_t)cur < (int64_t)rs_val) ? cur : rs_val;
+                    else next = ((int32_t)cur < (int32_t)rs_val) ? cur : rs_val;
+                    break;
+                case LSE_TYPE_LDUMAX: next = (cur > rs_val) ? cur : rs_val; break;
+                case LSE_TYPE_LDUMIN: next = (cur < rs_val) ? cur : rs_val; break;
+                default: next = cur; break;
+            }
+            const uint8_t *ws = (const uint8_t *)&next;
+            uint8_t *wd = (uint8_t *)kptr;
+            for (size_t i = 0; i < req_align; i++) wd[i] = ws[i];
+            __asm__ volatile("msr daif, %0" :: "r"(daif) : "memory");
+            lse_set_reg(state, dec->rt, cur);
+            return true;
+        }
+    }
+
     if (dec->type == LSE_TYPE_CAS) {
         if (dec->size == LSE_SIZE_64) {
             uint64_t exp = rs_val;
@@ -222,15 +278,21 @@ static bool lse_emulate_atomic(arm_saved_state_t *state, const lse_decoded_t *de
             break;
         case LSE_TYPE_LDCLR:
             if (is_64) old_val = atomic_ldclr64_llsc((volatile uint64_t *)kptr, rs_val);
-            else old_val = atomic_ldclr32_llsc((volatile uint32_t *)kptr, (uint32_t)rs_val);
+            else if (dec->size == LSE_SIZE_32) old_val = atomic_ldclr32_llsc((volatile uint32_t *)kptr, (uint32_t)rs_val);
+            else if (dec->size == LSE_SIZE_16) old_val = atomic_ldclr16_llsc((volatile uint16_t *)kptr, (uint16_t)rs_val);
+            else old_val = atomic_ldclr8_llsc((volatile uint8_t *)kptr, (uint8_t)rs_val);
             break;
         case LSE_TYPE_LDSET:
             if (is_64) old_val = atomic_ldset64_llsc((volatile uint64_t *)kptr, rs_val);
-            else old_val = atomic_ldset32_llsc((volatile uint32_t *)kptr, (uint32_t)rs_val);
+            else if (dec->size == LSE_SIZE_32) old_val = atomic_ldset32_llsc((volatile uint32_t *)kptr, (uint32_t)rs_val);
+            else if (dec->size == LSE_SIZE_16) old_val = atomic_ldset16_llsc((volatile uint16_t *)kptr, (uint16_t)rs_val);
+            else old_val = atomic_ldset8_llsc((volatile uint8_t *)kptr, (uint8_t)rs_val);
             break;
         case LSE_TYPE_LDEOR:
             if (is_64) old_val = atomic_ldeor64_llsc((volatile uint64_t *)kptr, rs_val);
-            else old_val = atomic_ldeor32_llsc((volatile uint32_t *)kptr, (uint32_t)rs_val);
+            else if (dec->size == LSE_SIZE_32) old_val = atomic_ldeor32_llsc((volatile uint32_t *)kptr, (uint32_t)rs_val);
+            else if (dec->size == LSE_SIZE_16) old_val = atomic_ldeor16_llsc((volatile uint16_t *)kptr, (uint16_t)rs_val);
+            else old_val = atomic_ldeor8_llsc((volatile uint8_t *)kptr, (uint8_t)rs_val);
             break;
         case LSE_TYPE_LDSMAX:
             if (is_64) old_val = atomic_ldsmax64_llsc((volatile uint64_t *)kptr, (int64_t)rs_val);
