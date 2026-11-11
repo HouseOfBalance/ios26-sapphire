@@ -106,6 +106,11 @@ if [ -f "$K/patch_vm15_insn.py" ]; then
 	python3 "$K/patch_vm15_insn.py" "$D"
 fi
 
+# Apply Part 5l: print panic() string on console
+if [ -f "$K/patch_vm16_panicmsg.py" ]; then
+	python3 "$K/patch_vm16_panicmsg.py" "$D"
+fi
+
 # Fix kasan-denylist regex for older/host Clang parser
 if [ -f "$D/san/memory/kasan-denylist" ]; then
 	sed -i '' 's/\[\*\]/\[\.\*\]/g' "$D/san/memory/kasan-denylist" 2>/dev/null || sed -i 's/\[\*\]/\[\.\*\]/g' "$D/san/memory/kasan-denylist"
