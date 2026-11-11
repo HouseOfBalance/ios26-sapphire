@@ -96,6 +96,11 @@ if [ -f "$K/patch_vm12_diag.py" ]; then
 	python3 "$K/patch_vm12_diag.py" "$D"
 fi
 
+# Apply Part 5j: VM14 page-table walk diagnostics (va_l1 range + GIC L1/L2/L3)
+if [ -f "$K/patch_vm14_ptwalk_diag.py" ]; then
+	python3 "$K/patch_vm14_ptwalk_diag.py" "$D/osfmk/arm64/gic_v3_irq.c" "$D"
+fi
+
 # Fix kasan-denylist regex for older/host Clang parser
 if [ -f "$D/san/memory/kasan-denylist" ]; then
 	sed -i '' 's/\[\*\]/\[\.\*\]/g' "$D/san/memory/kasan-denylist" 2>/dev/null || sed -i 's/\[\*\]/\[\.\*\]/g' "$D/san/memory/kasan-denylist"

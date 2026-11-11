@@ -158,6 +158,16 @@ gic_addr_valid(vm_offset_t addr)
 	return (par & 1) == 0;
 }
 
+static inline void
+gic_write8(vm_offset_t addr, uint8_t value)
+{
+	if (!gic_addr_valid(addr)) {
+		kprintf("[gic] skipping write8 to unmapped 0x%lx\n", (unsigned long)addr);
+		return;
+	}
+	*(volatile uint8_t *)addr = value;
+}
+
 static inline uint32_t
 gic_read32(vm_offset_t addr)
 {
@@ -634,8 +644,8 @@ gic_v3_irq_cpu_init(void)
 
 		gic_write32(gicr + GICR_ICACTIVER0, sgis);
 		gic_write32(gicr + GICR_ICPENDR0, sgis);        /* ... or one that it never took */
-		*(volatile uint8_t *)(gicr + GICR_IPRIORITYR(GIC_SGI_SIGNAL)) = GIC_PRIORITY_DEFAULT;
-		*(volatile uint8_t *)(gicr + GICR_IPRIORITYR(GIC_SGI_STOP)) = GIC_PRIORITY_DEFAULT;
+		gic_write8(gicr + GICR_IPRIORITYR(GIC_SGI_SIGNAL), GIC_PRIORITY_DEFAULT);
+		gic_write8(gicr + GICR_IPRIORITYR(GIC_SGI_STOP), GIC_PRIORITY_DEFAULT);
 		mine |= sgis;
 	}
 
@@ -646,9 +656,9 @@ gic_v3_irq_cpu_init(void)
 	/* Virtual and physical timer PPIs (and SGIs): Group 1 (IRQ), default priority, enabled */
 	gic_write32(gicr + GICR_IGROUPR0, gic_read32(gicr + GICR_IGROUPR0) | mine);
 	gic_write32(gicr + GICR_IGRPMODR0, gic_read32(gicr + GICR_IGRPMODR0) & ~mine);
-	*(volatile uint8_t *)(gicr + GICR_IPRIORITYR(GIC_INTID_VTIMER)) = GIC_PRIORITY_DEFAULT;
-	*(volatile uint8_t *)(gicr + GICR_IPRIORITYR(GIC_INTID_PTIMER)) = GIC_PRIORITY_DEFAULT;
-	*(volatile uint8_t *)(gicr + GICR_IPRIORITYR(GIC_INTID_VTIMER_LEGACY)) = GIC_PRIORITY_DEFAULT;
+	gic_write8(gicr + GICR_IPRIORITYR(GIC_INTID_VTIMER), GIC_PRIORITY_DEFAULT);
+	gic_write8(gicr + GICR_IPRIORITYR(GIC_INTID_PTIMER), GIC_PRIORITY_DEFAULT);
+	gic_write8(gicr + GICR_IPRIORITYR(GIC_INTID_VTIMER_LEGACY), GIC_PRIORITY_DEFAULT);
 
 	/* Distributor: affinity routing, Group 1 enabled (normally already so) */
 	uint32_t ctlr = gic_read32(gicd_base + GICD_CTLR);
