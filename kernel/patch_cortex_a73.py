@@ -2524,10 +2524,11 @@ kernel_debug_string_early(const char *message)
 \t\t\tvm_offset_t l2_page = alloc_ptpage(FALSE);
 \t\t\t*cpu_l1_tte = (kvtophys(l2_page) & ARM_TTE_TABLE_MASK) | ARM_TTE_TYPE_TABLE | ARM_TTE_VALID | ARM_DYNAMIC_TABLE_XN | ARM_TTE_TABLE_AP(ARM_TTE_TABLE_AP_USER_NA);
 \t\t\tbzero((void *)l2_page, ARM_PGBYTES);
-			for (vm_offset_t _p = l2_page; _p < l2_page + ARM_PGBYTES; _p += 64) {
-				__asm__ volatile ("dc civac, %0" : : "r" (_p) : "memory");
-			}
-			__asm__ volatile ("dc civac, %0\n\tdsb sy; isb" : : "r" (cpu_l1_tte) : "memory");
+\t\t\tfor (vm_offset_t _p = l2_page; _p < l2_page + ARM_PGBYTES; _p += 64) {
+\t\t\t\t__asm__ volatile ("dc civac, %0" : : "r" (_p) : "memory");
+\t\t\t}
+\t\t\t__asm__ volatile ("dc civac, %0" : : "r" (cpu_l1_tte) : "memory");
+\t\t\t__asm__ volatile ("dsb sy; isb" ::: "memory");
 \t\t}
 \t\tva_l2 = va_l1;"""
         if t20_l1 in c20:
@@ -2544,10 +2545,11 @@ kernel_debug_string_early(const char *message)
 \t\t\tvm_offset_t l2_page = alloc_ptpage(FALSE);
 \t\t\t*cpu_l1_tte = (kvtophys(l2_page) & ARM_TTE_TABLE_MASK) | ARM_TTE_TYPE_TABLE | ARM_TTE_VALID | ARM_DYNAMIC_TABLE_XN | ARM_TTE_TABLE_AP(ARM_TTE_TABLE_AP_USER_NA);
 \t\t\tbzero((void *)l2_page, ARM_PGBYTES);
-			for (vm_offset_t _p = l2_page; _p < l2_page + ARM_PGBYTES; _p += 64) {
-				__asm__ volatile ("dc civac, %0" : : "r" (_p) : "memory");
-			}
-			__asm__ volatile ("dc civac, %0\n\tdsb sy; isb" : : "r" (cpu_l1_tte) : "memory");
+\t\t\tfor (vm_offset_t _p = l2_page; _p < l2_page + ARM_PGBYTES; _p += 64) {
+\t\t\t\t__asm__ volatile ("dc civac, %0" : : "r" (_p) : "memory");
+\t\t\t}
+\t\t\t__asm__ volatile ("dc civac, %0" : : "r" (cpu_l1_tte) : "memory");
+\t\t\t__asm__ volatile ("dsb sy; isb" ::: "memory");
 \t\t}
 \t\tva_l2 = va_l1;"""
         if t20_l1 in c20:
@@ -2600,10 +2602,6 @@ kernel_debug_string_early(const char *message)
 			if ((*fb_l1_tte & ARM_TTE_VALID) == 0) {
 				vm_offset_t l2_page = alloc_ptpage(FALSE);
 				bzero((void *)l2_page, ARM_PGBYTES);
-			for (vm_offset_t _p = l2_page; _p < l2_page + ARM_PGBYTES; _p += 64) {
-				__asm__ volatile ("dc civac, %0" : : "r" (_p) : "memory");
-			}
-			__asm__ volatile ("dc civac, %0\n\tdsb sy; isb" : : "r" (cpu_l1_tte) : "memory");
 				*fb_l1_tte = (kvtophys(l2_page) & ARM_TTE_TABLE_MASK) | ARM_TTE_TYPE_TABLE | ARM_TTE_VALID | ARM_DYNAMIC_TABLE_XN | ARM_TTE_TABLE_AP(ARM_TTE_TABLE_AP_USER_NA);
 				fb_l2_base = (tt_entry_t *)l2_page;
 			} else if ((*fb_l1_tte & ARM_TTE_TYPE_MASK) == ARM_TTE_TYPE_TABLE) {
