@@ -55,7 +55,6 @@ on:
         required: false
         default: 'true'
         type: boolean
-    secrets: inherit
 
 jobs:
   build-boot:
