@@ -89,21 +89,26 @@ jobs:
 
           chmod -R +x base/xnu-deps/host/bin base/xnu-deps/build/pthread/*.sh
 
-          # Install availability.pl and internal headers into host Xcode iPhoneOS SDK
-          SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
-          echo "Xcode iPhoneOS SDK path: $SDK_PATH"
-          sudo mkdir -p "$SDK_PATH/usr/local/libexec" "$SDK_PATH/usr/local/include/kernel/os" "$SDK_PATH/usr/local/lib/kernel"
+          # Install availability.pl and internal headers into host Xcode iPhoneOS SDK and macOS SDK
+          SDK_PATH_IOS=$(xcrun --sdk iphoneos --show-sdk-path)
+          SDK_PATH_MACOS=$(xcrun --sdk macosx --show-sdk-path)
+          echo "Xcode iPhoneOS SDK path: $SDK_PATH_IOS"
+          echo "Xcode macOS SDK path: $SDK_PATH_MACOS"
 
-          if [ -f base/xnu-deps/AvailabilityVersions/availability.pl ]; then
-            sudo cp base/xnu-deps/AvailabilityVersions/availability.pl "$SDK_PATH/usr/local/libexec/"
-            sudo chmod +x "$SDK_PATH/usr/local/libexec/availability.pl"
-            echo "Installed availability.pl"
-          fi
+          for SDK_PATH in "$SDK_PATH_IOS" "$SDK_PATH_MACOS"; do
+            sudo mkdir -p "$SDK_PATH/usr/local/libexec" "$SDK_PATH/usr/local/include/kernel/os" "$SDK_PATH/usr/local/lib/kernel"
 
-          if [ -d base/xnu-deps/sdk/iPhoneOS.xnu.sdk/usr/local ]; then
-            sudo cp -R base/xnu-deps/sdk/iPhoneOS.xnu.sdk/usr/local/. "$SDK_PATH/usr/local/" 2>/dev/null || true
-            echo "Synced overlay usr/local headers"
-          fi
+            if [ -f base/xnu-deps/AvailabilityVersions/availability.pl ]; then
+              sudo cp base/xnu-deps/AvailabilityVersions/availability.pl "$SDK_PATH/usr/local/libexec/"
+              sudo chmod +x "$SDK_PATH/usr/local/libexec/availability.pl"
+              echo "Installed availability.pl to $SDK_PATH"
+            fi
+
+            if [ -d base/xnu-deps/sdk/iPhoneOS.xnu.sdk/usr/local ]; then
+              sudo cp -R base/xnu-deps/sdk/iPhoneOS.xnu.sdk/usr/local/. "$SDK_PATH/usr/local/" 2>/dev/null || true
+              echo "Synced overlay usr/local headers to $SDK_PATH"
+            fi
+          done
 
       - name: Export Kernel Headers (exporthdrs)
         run: |
