@@ -1,0 +1,15 @@
+# drivers/gpu/conf: the GPU.
+# CONFIG_HAKIOS_<NAME>=y in a defconfig builds a driver into the kernel; "standard" files are always built.
+# tools/hakios-config.py reads this file; docs/drivers-config.md says what each word means and how it reaches XNU.
+
+driver ADRENO
+	file    bsd/dev/hakios.adreno.c
+	file    iokit/Kernel/hakios.gpu.cpp iokitcpp
+	help    the Adreno 642L of the SC7280 woken step by step (adreno=N), and HakiosGPU, the IOKit service Mesa, Metal and
+	help    the window server draw through (gpu=1, adreno_keep=1; docs/reference/metal.md). Needs the GPU's firmware from the phone (fw-gpu/)
+
+driver A610
+	file    iokit/Kernel/hakios.a610.cpp iokitcpp
+	help    the Adreno 610 of the SM6225 (sapphire), ported from ios-sapphire's SapphireGpu.cpp: the clock tree, power-up, the zap
+	help    shader through TrustZone, the GPU's SMMU context, the ring and 2D/compute commands (gpu=1..3, gpu_mmu=1, gpu_service=1), and
+	help    the msm-style user client "SapphireGPU". Needs the GPU's microcode and zap shader from the phone (gpu_fw[] or the ADT)
