@@ -55,7 +55,7 @@ jobs:
           brew update
           brew install jq bash cmake ninja ccache aarch64-elf-gcc aarch64-elf-binutils python3 zstd
 
-      - name: Install Arm GNU Toolchain (AArch64 bare-metal for enxerto)
+      - name: Download Arm GNU Toolchain (AArch64 bare-metal for enxerto)
         run: |
           TOOLCHAIN_DIR="$HOME/arm-gnu-toolchain"
           if [ ! -f "$TOOLCHAIN_DIR/bin/aarch64-none-elf-gcc" ]; then
@@ -67,6 +67,9 @@ jobs:
             tar -xf arm-toolchain.tar.xz -C "$TOOLCHAIN_DIR" --strip-components=1
           fi
           echo "$TOOLCHAIN_DIR/bin" >> $GITHUB_PATH
+
+      - name: Verify Arm GNU Toolchain
+        run: |
           aarch64-none-elf-gcc --version
 
       - name: Ensure Executable Permissions
