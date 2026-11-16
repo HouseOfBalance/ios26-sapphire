@@ -158,11 +158,11 @@ jobs:
           fi
 
       # ========================================================================
-      # Phase 4: Export Kernel Headers (exporthdrs)
+      # Phase 4: Export Kernel Headers (exporthdrs for SAPPHIRE)
       # ========================================================================
       - name: Export Kernel Headers (exporthdrs)
         run: |
-          echo "=== Exporting kernel headers ==="
+          echo "=== Exporting kernel headers for SAPPHIRE ==="
           export XNU_SRC="$PWD/xnu-src"
           export XNUDEPS="$PWD/base/xnu-deps"
           export XNU_SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
@@ -181,8 +181,17 @@ jobs:
           # Clean old EXPORT_HDRS to ensure headers are regenerated with SAPPHIRE config
           rm -rf xnu-src/BUILD/obj/EXPORT_HDRS
 
-          # Export headers first (needed for stage2 static libs)
-          bash base/xnu-build.sh exporthdrs
+          # Export headers for SAPPHIRE specifically (first build config might be BCM2837)
+          # We need to run exporthdrs for the SAPPHIRE build config
+          cd xnu-src
+          make -j$(sysctl -n hw.ncpu) \
+            RC_DARWIN_KERNEL_VERSION=26.0.0 RC_ProjectSourceVersion=12377.121.6 \
+            ARCH_CONFIGS=ARM64 MACHINE_CONFIGS=SAPPHIRE KERNEL_CONFIGS=DEVELOPMENT \
+            ARCH_STRING_FOR_CURRENT_MACHINE_CONFIG=arm64e BUILD_WERROR=0 BUILD_LTO=0 DO_CTFMERGE=0 BUILD_DSYM=0 \
+            HOST_CC="clang -I$XNUDEPS/hostinc-darwin -Wno-unused-command-line-argument" \
+            HOST_FLEX=flex HOST_BISON=bison HOST_GM4=m4 CC=xnu-clang CXX=xnu-clang++ LOGCOLORS=n \
+            exporthdrs
+          cd ..
 
       # ========================================================================
       # Phase 5: Build Static Libraries (Stage 2 with MACHINE_CONFIGS=SAPPHIRE)
