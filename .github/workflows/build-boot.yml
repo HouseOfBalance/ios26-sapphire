@@ -1,0 +1,415 @@
+name: Build HakiOS 26 Boot Image (Sapphire/SM6225)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "kernel/**"
+      - "base/**"
+      - "enxerto/**"
+      - "tools/**"
+      - "sapphire.adt"
+      - "dtb/sapphire/**"
+      - ".github/workflows/build-boot.yml"
+  workflow_dispatch:
+    inputs:
+      compress_payload:
+        description: 'Compress payload segments >=1MiB with DEFLATE (payload v2)'
+        required: false
+        default: 'true'
+        type: boolean
+      bootlog:
+        description: 'Enable boot UI log window (BOOTUI_LOG=1)'
+        required: false
+        default: 'false'
+        type: boolean
+      bergamota_fastboot:
+        description: 'Force bergamota.fastboot=1 in kernel cmdline'
+        required: false
+        default: 'false'
+        type: boolean
+      skip_host_tests:
+        description: 'Skip compiling/running host PPM and fastboot unit tests'
+        required: false
+        default: 'true'
+        type: boolean
+  workflow_call:
+    inputs:
+      compress_payload:
+        description: 'Compress payload segments >=1MiB with DEFLATE (payload v2)'
+        required: false
+        default: 'true'
+        type: boolean
+      bootlog:
+        description: 'Enable boot UI log window (BOOTUI_LOG=1)'
+        required: false
+        default: 'false'
+        type: boolean
+      bergamota_fastboot:
+        description: 'Force bergamota.fastboot=1 in kernel cmdline'
+        required: false
+        default: 'false'
+        type: boolean
+      skip_host_tests:
+        description: 'Skip compiling/running host PPM and fastboot unit tests'
+        required: false
+        default: 'true'
+        type: boolean
+    secrets: inherit
+
+jobs:
+  build-boot:
+    name: Build Boot Image (Sapphire)
+    runs-on: macos-15
+    timeout-minutes: 180
+    env:
+      BOARD: sapphire
+      XNU_ARCH: arm64e
+      MACHINE_CONFIGS: sapphire
+      RC_DARWIN_KERNEL_VERSION: 26.0.0
+      RC_ProjectSourceVersion: 12377.121.6
+      RC_ProjectName: xnu
+      XNU_SDK_VERSION: 26.0
+      # Boot arguments for Sapphire (SM6225)
+      # modempool= - 16MB pool below 0xF0000000 for TrustZone/modem (from loader)
+      # gpupool=   - GPU pool allocation (from loader)
+      # rpm=1      - Enable RPMh power management
+      # hv_wdt_pet=1 - Enable hypervisor watchdog petting
+      CMDLINE_BASE: "-v debug=0xc serial=0 cpus=1 keepsyms=1 -enable_kprintf_spam sweetearlyfb=1 sweethidtest=3 ipc_legacy=1 cs_enforcement_disable=1 amfi_get_out_of_my_way=1 rootless=0 rd=md0 rpm=1 hv_wdt_pet=1"
+
+    steps:
+      # ========================================================================
+      # Phase 1: Environment Setup & Toolchain Installation
+      # ========================================================================
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Build Dependencies (macOS)
+        run: |
+          echo "=== Installing build dependencies ==="
+          brew update
+          brew install jq bash cmake ninja ccache aarch64-elf-gcc aarch64-elf-binutils python3 zstd
+          # Install Arm GNU Toolchain for AArch64 bare-metal (enxerto)
+          # Download portable toolchain if not available
+          TOOLCHAIN_DIR="$HOME/arm-gnu-toolchain"
+          if [ ! -f "$TOOLCHAIN_DIR/bin/aarch64-none-elf-gcc" ]; then
+            echo "Downloading Arm GNU Toolchain 13.3.Rel1..."
+            mkdir -p "$TOOLCHAIN_DIR"
+            cd /tmp
+            curl -L -o arm-toolchain.tar.xz \
+              "https://developer.arm.com/-/media/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-darwin-x86_64-aarch64-none-elf.tar.xz"
+            tar -xf arm-toolchain.tar.xz -C "$TOOLCHAIN_DIR" --strip-components=1
+          fi
+          echo "$TOOLCHAIN_DIR/bin" >> $GITHUB_PATH
+          sw_vers
+          xcodebuild -version
+          aarch64-none-elf-gcc --version
+
+      - name: Ensure Executable Permissions
+        run: |
+          chmod -R +x base/xnu-deps/host/bin base/*.sh kernel/*.sh tools/*.py enxerto/*.py enxerto/*.sh
+
+      # ========================================================================
+      # Phase 2: Prepare XNU Source Tree with All Patches
+      # ========================================================================
+      - name: Prepare XNU 12377 Source Tree (Dada + Sapphire Patches)
+        run: |
+          echo "=== Cloning and applying patches to XNU 12377.121.6 ==="
+          bash kernel/apply.sh xnu-src
+          echo "XNU source tree prepared at xnu-src"
+
+      # ========================================================================
+      # Phase 3: Setup XNU Build Environment
+      # ========================================================================
+      - name: Setup XNU Build Environment
+        run: |
+          echo "=== Setting up XNU build environment ==="
+          export XNU_SRC="$PWD/xnu-src"
+          export XNUDEPS="$PWD/base/xnu-deps"
+          export XNU_SDK_PATH="$XNUDEPS/sdk/iPhoneOS.xnu.sdk"
+          export XNU_SDK_VERSION=26.0
+          export XNU_PLATFORM_PATH="$XNUDEPS/sdk/Platforms/iPhoneOS.platform"
+          export THEOS="${THEOS:-$HOME/theos}"
+          export PATH="$XNUDEPS/host/bin:$PATH"
+
+          cd base/xnu-deps
+          bash setup.sh --stage1
+          cd ../..
+
+          chmod -R +x base/xnu-deps/host/bin base/xnu-deps/build/pthread/*.sh
+
+          # Install availability.pl and internal headers into host Xcode iPhoneOS SDK
+          SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
+          echo "Xcode iPhoneOS SDK path: $SDK_PATH"
+          sudo mkdir -p "$SDK_PATH/usr/local/libexec" "$SDK_PATH/usr/local/include/kernel/os" "$SDK_PATH/usr/local/lib/kernel"
+
+          if [ -f base/xnu-deps/AvailabilityVersions/availability.pl ]; then
+            sudo cp base/xnu-deps/AvailabilityVersions/availability.pl "$SDK_PATH/usr/local/libexec/"
+            sudo chmod +x "$SDK_PATH/usr/local/libexec/availability.pl"
+            echo "Installed availability.pl"
+          fi
+
+          if [ -d base/xnu-deps/sdk/iPhoneOS.xnu.sdk/usr/local ]; then
+            sudo cp -R base/xnu-deps/sdk/iPhoneOS.xnu.sdk/usr/local/. "$SDK_PATH/usr/local/" 2>/dev/null || true
+            echo "Synced overlay usr/local headers"
+          fi
+
+          # Compile HakiOS Sapphire kernel stubs
+          echo "Compiling HakiOS Sapphire kernel stubs..."
+          xcrun -sdk iphoneos clang -arch arm64e -target arm64e-apple-ios26.0 -mkernel -c kernel/stubs.c -o kernel/stubs.o
+
+          # Create static libraries for SDK
+          sudo xcrun -sdk iphoneos libtool -static -o "$SDK_PATH/usr/local/lib/kernel/libfirehose_kernel.a" kernel/stubs.o
+          sudo xcrun -sdk iphoneos libtool -static -o "$SDK_PATH/usr/local/lib/kernel/libpthread_kext.a" kernel/stubs.o
+
+          # Install into overlay SDK and target build obj dir
+          mkdir -p base/xnu-deps/sdk/iPhoneOS.xnu.sdk/usr/local/lib/kernel xnu-src/BUILD/obj/DEVELOPMENT_ARM64_SAPPHIRE
+          sudo cp -v "$SDK_PATH/usr/local/lib/kernel/"*.a base/xnu-deps/sdk/iPhoneOS.xnu.sdk/usr/local/lib/kernel/
+          cp -v "$SDK_PATH/usr/local/lib/kernel/"*.a xnu-src/BUILD/obj/DEVELOPMENT_ARM64_SAPPHIRE/
+
+      # ========================================================================
+      # Phase 4: Compile XNU Kernel for Sapphire Platform
+      # ========================================================================
+      - name: Compile XNU Kernel (Sapphire/SM6225)
+        run: |
+          echo "=== Compiling XNU Kernel for Sapphire ==="
+          export XNU_SRC="$PWD/xnu-src"
+          export XNUDEPS="$PWD/base/xnu-deps"
+          export XNU_SDK_PATH="$XNUDEPS/sdk/iPhoneOS.xnu.sdk"
+          export XNU_SDK_VERSION=26.0
+          export XNU_PLATFORM_PATH="$XNUDEPS/sdk/Platforms/iPhoneOS.platform"
+          export THEOS="${THEOS:-$HOME/theos}"
+          export PATH="$XNUDEPS/host/bin:$PATH"
+
+          export XNU_ARCH=arm64e
+          export MACHINE_CONFIGS=sapphire
+          export RC_DARWIN_KERNEL_VERSION=26.0.0
+          export RC_ProjectSourceVersion=12377.121.6
+          export RC_ProjectName=xnu
+          export XNU_SDK_VERSION=26.0
+          export LIBRARY_PATH="$(xcrun --sdk iphoneos --show-sdk-path)/usr/local/lib/kernel:$PWD/base/xnu-deps/sdk/iPhoneOS.xnu.sdk/usr/local/lib/kernel:$LIBRARY_PATH"
+
+          # The build uses MACHINE_CONFIGS=sapphire (not BCM2837)
+          # This selects the sapphire platform from base/common/devices/sapphire.platform.c
+          bash base/xnu-build.sh -j$(sysctl -n hw.ncpu) -k
+
+          # Verify kernel binary
+          ls -la xnu-src/BUILD/obj/*/mach.* 2>/dev/null || true
+
+      # ========================================================================
+      # Phase 5: Verify & Patch Kernel
+      # ========================================================================
+      - name: Verify and Patch Kernel
+        run: |
+          echo "=== Verifying and patching kernel ==="
+          mkdir -p out
+          KERNEL=""
+          for k in $(find xnu-src/BUILD/obj -name 'mach.*' -type f 2>/dev/null); do
+            if file "$k" | grep -q 'Mach-O'; then
+              KERNEL="$k"
+              break
+            fi
+          done
+          if [ -z "$KERNEL" ]; then
+            echo "ERROR: Compiled kernel binary not found!"
+            exit 1
+          fi
+          echo "Found compiled Mach-O kernel: $KERNEL"
+
+          # Verify kernel markers (PAC, LSE, 4KB pmap, etc.)
+          python3 tools/verify_kernel_markers.py "$KERNEL"
+
+          # Apply PAC patching (trap-and-self-patch)
+          python3 kernel/patch_kernel_pac.py "$KERNEL"
+
+          cp "$KERNEL" out/mach.development.sapphire
+          echo "Kernel copied to out/mach.development.sapphire"
+
+      # ========================================================================
+      # Phase 6: Build Mockfs RAMDisk for md0
+      # ========================================================================
+      - name: Build Mockfs RAMDisk
+        run: |
+          echo "=== Building Mockfs RAMDisk for md0 ==="
+          python3 tools/mkramdisk.py --format mockfs --arch arm64e out/ramdisk.img
+          python3 tools/patch_userland_pac.py out/ramdisk.img
+          ls -lh out/ramdisk.img
+
+      # ========================================================================
+      # Phase 7: Build Payload (mkpayload.py)
+      # ========================================================================
+      - name: Build Payload with mkpayload.py
+        id: mkpayload
+        run: |
+          echo "=== Building payload.bin with mkpayload.py ==="
+
+          # Construct full cmdline with modempool/gpupool placeholders
+          # These will be filled by enxerto loader at runtime
+          CMDLINE="${CMDLINE_BASE} modempool= gpupool="
+          if [ "${{ inputs.bergamota_fastboot }}" = "true" ]; then
+            CMDLINE="${CMDLINE} bergamota.fastboot=1"
+          fi
+          echo "Kernel cmdline: $CMDLINE"
+
+          python3 tools/mkpayload.py \
+            --compress="${{ inputs.compress_payload }}" \
+            --cmdline "$CMDLINE" \
+            --ramdisk out/ramdisk.img \
+            out/mach.development.sapphire \
+            sapphire.adt \
+            out/payload.bin
+
+          ls -lh out/payload.bin
+          echo "payload_size=$(stat -c%s out/payload.bin)" >> $GITHUB_OUTPUT
+
+      # ========================================================================
+      # Phase 8: Build Enxerto Bootloader & Package Boot Images
+      # ========================================================================
+      - name: Build Enxerto Bootloader & Package Boot Images
+        id: enxerto
+        env:
+          BOOTLOG: "${{ inputs.bootlog }}"
+          BERGAMOTA: "${{ inputs.bergamota_fastboot }}"
+          CHARGER: "0"
+        run: |
+          echo "=== Building Enxerto bootloader for Sapphire ==="
+
+          # enxerto/build.py will:
+          # 1. Cross-compile enxerto with aarch64-none-elf-gcc
+          # 2. Link with enxerto.ld
+          # 3. Generate Image binary
+          # 4. For sapphire (boot.img v4/GKI): append payload directly to Image at 4K boundary
+          # 5. Pack boot.img v4 header (ANDROID! magic, page_size=4096)
+          # 6. Generate: enxerto-boot.img, charge-test.img, bergamota-fastboot.img, bergamota-fastboot-flash.img
+
+          SKIP_HOST_TESTS_FLAG=""
+          if [ "${{ inputs.skip_host_tests }}" = "true" ]; then
+            SKIP_HOST_TESTS_FLAG="--skip-host-tests"
+          fi
+          python3 enxerto/build.py \
+            --board sapphire \
+            --payload out/payload.bin \
+            --bootlog "${BOOTLOG}" \
+            --bergamota "${BERGAMOTA}" \
+            --charger "${CHARGER}" \
+            ${SKIP_HOST_TESTS_FLAG}
+
+          # Copy artifacts to out/ for upload
+          if [ -f enxerto/out/enxerto-boot.img ]; then
+            cp enxerto/out/enxerto-boot.img out/
+            echo "enxerto_boot_img=out/enxerto-boot.img" >> $GITHUB_OUTPUT
+          fi
+          if [ -f enxerto/out/charge-test.img ]; then
+            cp enxerto/out/charge-test.img out/
+            echo "charge_test_img=out/charge-test.img" >> $GITHUB_OUTPUT
+          fi
+          if [ -f enxerto/out/bergamota-fastboot.img ]; then
+            cp enxerto/out/bergamota-fastboot.img out/
+            echo "bergamota_fastboot_img=out/bergamota-fastboot.img" >> $GITHUB_OUTPUT
+          fi
+          if [ -f enxerto/out/bergamota-fastboot-flash.img ]; then
+            cp enxerto/out/bergamota-fastboot-flash.img out/
+            echo "bergamota_fastboot_flash_img=out/bergamota-fastboot-flash.img" >> $GITHUB_OUTPUT
+          fi
+
+          ls -la out/*.img 2>/dev/null || true
+
+      # ========================================================================
+      # Phase 9: Verify Generated Images
+      # ========================================================================
+      - name: Verify Boot Images
+        run: |
+          echo "=== Verifying generated boot images ==="
+
+          for img in out/*.img; do
+            if [ -f "$img" ]; then
+              echo "--- $img ---"
+              # Check boot.img header
+              xxd -l 64 "$img"
+              echo ""
+
+              # Verify magic
+              MAGIC=$(xxd -l 8 -p "$img")
+              if [ "$MAGIC" = "414e44524f494421" ]; then
+                echo "  ✓ Valid ANDROID! magic"
+              else
+                echo "  ✗ Invalid magic: $MAGIC"
+              fi
+
+              # Check header version (offset 0x14 for v4, little-endian)
+              HDR_VER=$(xxd -s 20 -l 4 -p "$img" | sed 's/\(..\)\(..\)\(..\)\(..\)/\4\3\2\1/')
+              echo "  Header version: 0x$HDR_VER"
+
+              # File size
+              SIZE=$(stat -c%s "$img")
+              echo "  Size: $SIZE bytes ($((SIZE/1024/1024)) MiB)"
+
+              # SHA256
+              SHA=$(sha256sum "$img" | cut -d' ' -f1)
+              echo "  SHA256: $SHA"
+            fi
+          done
+
+      # ========================================================================
+      # Phase 10: Upload Artifacts
+      # ========================================================================
+      - name: Upload Boot Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hakios-ios26-sapphire-boot
+          path: |
+            out/enxerto-boot.img
+            out/charge-test.img
+            out/bergamota-fastboot.img
+            out/bergamota-fastboot-flash.img
+            out/payload.bin
+            out/mach.development.sapphire
+            out/ramdisk.img
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload Kernel & Build Logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: hakios-ios26-sapphire-kernel
+          path: |
+            out/mach.development.sapphire
+            xnu-src/BUILD/obj/DEVELOPMENT_ARM64_SAPPHIRE/
+          if-no-files-found: warn
+          retention-days: 14
+
+      # ========================================================================
+      # Phase 11: Build Summary
+      # ========================================================================
+      - name: Build Summary
+        if: always()
+        run: |
+          echo "=== BUILD SUMMARY ==="
+          echo "Platform: Sapphire (SM6225 / Snapdragon 685)"
+          echo "Architecture: ARM64E (Cortex-A73/A53, ARMv8.0-A baseline)"
+          echo "XNU Version: 12377.121.6 (iOS 26)"
+          echo "Bootloader: Enxerto (boot.img v4 / GKI layout)"
+          echo ""
+          echo "Applied Patches:"
+          echo "  - Dada base patch (xnu-12377.121.6-dada.patch)"
+          echo "  - PAC Trap-and-Self-Patch (0001-pac-trap-and-self-patch.patch)"
+          echo "  - LSE Branch Islands (0002-lse-branch-islands.patch)"
+          echo "  - SLEH Trap Hooks (0003-sleh-hook.patch)"
+          echo "  - 4KB Quad-PTE Pmap (0004-pmap-4kb-quad-pte.patch)"
+          echo "  - Cortex-A73 sysreg stub"
+          echo "  - VM fixes (vm7-hang, ram-alignment, breadcrumbs, timer, aperture, bsd, iokit, vm10, vm12, vm14, vm15, vm16)"
+          echo ""
+          echo "Key Boot Arguments:"
+          echo "  - modempool= (16MB below 0xF0000000 for TrustZone/modem)"
+          echo "  - gpupool= (GPU pool allocation)"
+          echo "  - rpm=1 (RPMh power management)"
+          echo "  - hv_wdt_pet=1 (Hypervisor watchdog)"
+          echo "  - rd=md0 (Mockfs ramdisk as root)"
+          echo ""
+          ls -lh out/ 2>/dev/null || true
+
+  # ========================================================================
+  # Optional: Build RootFS in Parallel (separate workflow)
+  # ========================================================================

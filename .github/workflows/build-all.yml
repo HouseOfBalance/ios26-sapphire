@@ -1,0 +1,403 @@
+name: Build HakiOS 26 Complete (Boot + RootFS) - Sapphire
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_boot:
+        description: 'Build boot image (kernel + enxerto + payload)'
+        required: false
+        default: 'true'
+        type: boolean
+      build_rootfs:
+        description: 'Build rootfs/userdata sparse image from IPSW'
+        required: false
+        default: 'true'
+        type: boolean
+      ipsw_url:
+        description: 'Direct Apple IPSW URL for iOS 26 (optional)'
+        required: false
+        default: ''
+        type: string
+      device:
+        description: 'Apple Device Identifier (e.g. iPhone14,7)'
+        required: false
+        default: 'iPhone14,7'
+        type: string
+      build_version:
+        description: 'Target OS Version (e.g. 26.0)'
+        required: false
+        default: '26.0'
+        type: string
+      compress_payload:
+        description: 'Compress payload segments >=1MiB with DEFLATE'
+        required: false
+        default: 'true'
+        type: boolean
+      bootlog:
+        description: 'Enable boot UI log window'
+        required: false
+        default: 'false'
+        type: boolean
+      bergamota_fastboot:
+        description: 'Force bergamota.fastboot=1 in kernel cmdline'
+        required: false
+        default: 'false'
+        type: boolean
+
+jobs:
+  # ========================================================================
+  # Job 1: Build Boot Image (kernel + enxerto + payload)
+  # ========================================================================
+  build-boot:
+    name: Build Boot Image
+    if: ${{ github.event.inputs.build_boot == 'true' }}
+    uses: ./.github/workflows/build-boot.yml
+    with:
+      compress_payload: ${{ github.event.inputs.compress_payload }}
+      bootlog: ${{ github.event.inputs.bootlog }}
+      bergamota_fastboot: ${{ github.event.inputs.bergamota_fastboot }}
+      skip_host_tests: 'true'
+    secrets: inherit
+
+  # ========================================================================
+  # Job 2: Build RootFS (userdata sparse image from IPSW)
+  # ========================================================================
+  build-rootfs:
+    name: Build RootFS (Userdata)
+    if: ${{ github.event.inputs.build_rootfs == 'true' }}
+    needs: build-boot
+    runs-on: macos-15
+    timeout-minutes: 180
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: |
+          brew install blacktop/tap/ipsw zstd
+
+      - name: Verify Dyld Shared Cache Flattener
+        run: |
+          python3 tools/dsc_flatten_v2.py --test
+
+      - name: Fetch Root DMGs from IPSW
+        run: |
+          mkdir -p research/ios26/ipsw
+          if [ -n "${{ github.event.inputs.ipsw_url }}" ]; then
+            URL="${{ github.event.inputs.ipsw_url }}"
+            python3 tools/renegade/fetch_root.py --url "$URL" --out-dir research/ios26/ipsw
+          else
+            python3 tools/renegade/fetch_root.py --device "${{ github.event.inputs.device }}" --version "${{ github.event.inputs.build_version }}" --out-dir research/ios26/ipsw
+          fi
+
+      - name: Build Root Image with Renegade & DSC Flattener
+        run: |
+          mkdir -p out
+          python3 tools/renegade/mkroot-full.py \
+            --ipsw-dir research/ios26/ipsw \
+            --out out/ios-root.img \
+            --simg out/userdata.simg \
+            --delete-sources \
+            --size 16g
+
+      - name: Verify Generated Sparse Image
+        run: |
+          ls -lh out/ || true
+          mkdir -p out/parts
+          if [ -f out/userdata.simg ]; then
+            echo "Successfully generated userdata.simg"
+            # Split if larger than 2GB for GitHub artifact upload limits
+            split -b 1900M out/userdata.simg out/parts/userdata.simg.part_
+            echo "To join split parts on Windows: copy /b userdata.simg.part_* userdata.simg" > out/parts/HOW_TO_JOIN.txt
+            echo "To join split parts on macOS/Linux: cat userdata.simg.part_* > userdata.simg" >> out/parts/HOW_TO_JOIN.txt
+            echo "Then flash: fastboot -S 512M flash userdata userdata.simg" >> out/parts/HOW_TO_JOIN.txt
+          fi
+
+      - name: Upload RootFS Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hakios-ios-rootfs
+          path: out/parts/
+          if-no-files-found: error
+          retention-days: 30
+
+  # ========================================================================
+  # Job 3: Create Complete Flash Package
+  # ========================================================================
+  create-flash-package:
+    name: Create Complete Flash Package
+    needs: [build-boot, build-rootfs]
+    if: ${{ github.event.inputs.build_boot == 'true' && github.event.inputs.build_rootfs == 'true' }}
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Download Boot Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: hakios-ios26-sapphire-boot
+          path: boot-artifacts
+
+      - name: Download RootFS Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: hakios-ios-rootfs
+          path: rootfs-artifacts
+
+      - name: Assemble Flash Package
+        run: |
+          echo "=== Assembling complete flash package ==="
+          mkdir -p out/flash-package
+
+          # Copy boot images
+          cp boot-artifacts/*.img out/flash-package/ 2>/dev/null || true
+          cp boot-artifacts/payload.bin out/flash-package/ 2>/dev/null || true
+          cp boot-artifacts/mach.development.sapphire out/flash-package/ 2>/dev/null || true
+          cp boot-artifacts/ramdisk.img out/flash-package/ 2>/dev/null || true
+
+          # Copy and join rootfs parts
+          if [ -d rootfs-artifacts ]; then
+            cd rootfs-artifacts
+            if ls userdata.simg.part_* 2>/dev/null; then
+              cat userdata.simg.part_* > ../out/flash-package/userdata.simg
+              echo "Joined userdata.simg parts"
+            elif [ -f userdata.simg ]; then
+              cp userdata.simg ../out/flash-package/
+            fi
+            cd ..
+          fi
+
+          # Create flash script (Linux/macOS)
+          cat > out/flash-package/flash-all.sh << 'EOF'
+#!/bin/bash
+# HakiOS 26 Sapphire - Complete Flash Script
+# Run from fastboot mode: fastboot oem unlock && ./flash-all.sh
+
+set -e
+
+echo "=== HakiOS 26 Sapphire Flash Script ==="
+echo "Device: Redmi Note 13 4G (SM6225 / Snapdragon 685)"
+echo ""
+
+# Check fastboot
+if ! command -v fastboot &> /dev/null; then
+    echo "ERROR: fastboot not found in PATH"
+    exit 1
+fi
+
+# Check device
+echo "Waiting for device in fastboot mode..."
+fastboot wait-for-device
+
+# Get device info
+echo "Device info:"
+fastboot getvar product 2>&1 | grep -v "Finished"
+fastboot getvar version 2>&1 | grep -v "Finished"
+
+# Unlock bootloader (if needed)
+echo ""
+echo "Checking bootloader status..."
+if fastboot getvar unlocked 2>&1 | grep -q "yes"; then
+    echo "Bootloader already unlocked"
+else
+    echo "Unlocking bootloader..."
+    fastboot flashing unlock
+    echo "Confirm unlock on device screen, then press Enter"
+    read -r
+fi
+
+# Flash boot images
+echo ""
+echo "=== Flashing Boot Images ==="
+
+echo "Flashing enxerto-boot.img to boot_a..."
+fastboot flash boot_a enxerto-boot.img
+
+echo "Flashing enxerto-boot.img to boot_b..."
+fastboot flash boot_b enxerto-boot.img
+
+echo "Flashing charge-test.img to recovery..."
+fastboot flash recovery charge-test.img
+
+# Flash userdata (rootfs)
+echo ""
+echo "=== Flashing Userdata (RootFS) ==="
+if [ -f userdata.simg ]; then
+    echo "Flashing userdata.simg (sparse image)..."
+    fastboot -S 512M flash userdata userdata.simg
+else
+    echo "WARNING: userdata.simg not found. Run with --build-rootfs to generate."
+fi
+
+# Optional: flash bergamota fastboot for recovery
+echo ""
+echo "=== Optional: Flash bergamota-fastboot to dtbo ==="
+if [ -f bergamota-fastboot.img ]; then
+    fastboot flash dtbo bergamota-fastboot.img
+fi
+
+echo ""
+echo "=== Flash Complete ==="
+echo "Rebooting device..."
+fastboot reboot
+
+echo "Done! Device should boot into HakiOS 26."
+EOF
+          chmod +x out/flash-package/flash-all.sh
+
+          # Create Windows batch version
+          cat > out/flash-package/flash-all.bat << 'EOF'
+@echo off
+REM HakiOS 26 Sapphire - Complete Flash Script (Windows)
+REM Run from fastboot mode: fastboot oem unlock && flash-all.bat
+
+echo === HakiOS 26 Sapphire Flash Script ===
+echo Device: Redmi Note 13 4G (SM6225 / Snapdragon 685)
+echo.
+
+REM Check fastboot
+where fastboot >nul 2>nul
+if %errorlevel% neq 0 (
+    echo ERROR: fastboot not found in PATH
+    exit /b 1
+)
+
+echo Waiting for device in fastboot mode...
+fastboot wait-for-device
+
+echo Device info:
+fastboot getvar product 2>&1 | findstr /v "Finished"
+fastboot getvar version 2>&1 | findstr /v "Finished"
+
+echo.
+echo Checking bootloader status...
+fastboot getvar unlocked 2>&1 | findstr "yes" >nul
+if %errorlevel% equ 0 (
+    echo Bootloader already unlocked
+) else (
+    echo Unlocking bootloader...
+    fastboot flashing unlock
+    echo Confirm unlock on device screen, then press any key
+    pause >nul
+)
+
+echo.
+echo === Flashing Boot Images ===
+
+echo Flashing enxerto-boot.img to boot_a...
+fastboot flash boot_a enxerto-boot.img
+
+echo Flashing enxerto-boot.img to boot_b...
+fastboot flash boot_b enxerto-boot.img
+
+echo Flashing charge-test.img to recovery...
+fastboot flash recovery charge-test.img
+
+echo.
+echo === Flashing Userdata (RootFS) ===
+if exist userdata.simg (
+    echo Flashing userdata.simg (sparse image)...
+    fastboot -S 512M flash userdata userdata.simg
+) else (
+    echo WARNING: userdata.simg not found.
+)
+
+echo.
+echo === Optional: Flash bergamota-fastboot to dtbo ===
+if exist bergamota-fastboot.img (
+    fastboot flash dtbo bergamota-fastboot.img
+)
+
+echo.
+echo === Flash Complete ===
+echo Rebooting device...
+fastboot reboot
+
+echo Done! Device should boot into HakiOS 26.
+pause
+EOF
+
+      - name: Create Archive
+        run: |
+          cd out/flash-package
+          zip -r ../hakios-26-sapphire-flash-package.zip .
+          cd ../..
+          ls -lh out/hakios-26-sapphire-flash-package.zip
+
+      - name: Upload Complete Flash Package
+        uses: actions/upload-artifact@v4
+        with:
+          name: hakios-26-sapphire-flash-package
+          path: out/hakios-26-sapphire-flash-package.zip
+          if-no-files-found: error
+          retention-days: 30
+
+  # ========================================================================
+  # Job 4: Summary
+  # ========================================================================
+  summary:
+    name: Build Summary
+    needs: [build-boot, build-rootfs, create-flash-package]
+    if: always()
+    runs-on: macos-15
+    steps:
+      - name: Print Summary
+        run: |
+          echo "=== HAKIOS 26 SAPPHIRE BUILD COMPLETE ==="
+          echo ""
+          echo "Build Configuration:"
+          echo "  Platform: Sapphire (Xiaomi Redmi Note 13 4G)"
+          echo "  SoC: Snapdragon 685 (SM6225-AD Bengal)"
+          echo "  CPU: 4x Cortex-A73 (Gold) + 4x Cortex-A53 (Silver)"
+          echo "  Architecture: ARM64E (ARMv8.0-A baseline)"
+          echo "  XNU Version: 12377.121.6 (iOS 26)"
+          echo ""
+          echo "Applied Kernel Patches:"
+          echo "  1. Dada base patch (xnu-12377.121.6-dada.patch)"
+          echo "  2. PAC Trap-and-Self-Patch (ARMv8.0 emulation)"
+          echo "  3. LSE Branch Islands + LL/SC Emulation (ARMv8.0)"
+          echo "  4. SLEH Trap Hooks (PAC + LSE)"
+          echo "  5. 4KB Quad-PTE Pmap Emulation (16KB VM -> 4KB HW)"
+          echo "  6. Cortex-A73 PAC sysreg stub"
+          echo "  7. VM fixes: vm7-hang, ram-alignment, breadcrumbs, timer"
+          echo "  8. BSD/IOKit/VM10/VM12/VM14/VM15/VM16 fixes"
+          echo ""
+          echo "Boot Image Artifacts:"
+          echo "  - enxerto-boot.img (main boot image, boot.img v4/GKI)"
+          echo "  - charge-test.img (charging mode)"
+          echo "  - bergamota-fastboot.img (fastboot mode)"
+          echo "  - bergamota-fastboot-flash.img (fastboot flash)"
+          echo "  - payload.bin (XNU kernel + ADT + ramdisk)"
+          echo "  - mach.development.sapphire (raw kernel Mach-O)"
+          echo "  - ramdisk.img (Mockfs for md0)"
+          echo ""
+          echo "RootFS Artifacts:"
+          echo "  - userdata.simg (16GB sparse image from IPSW)"
+          echo "  - Split parts for GitHub artifact limits"
+          echo ""
+          echo "Flash Package:"
+          echo "  - hakios-26-sapphire-flash-package.zip (complete)"
+          echo "  - flash-all.sh (Linux/macOS)"
+          echo "  - flash-all.bat (Windows)"
+          echo ""
+          echo "Boot Arguments (kernel cmdline):"
+          echo "  - modempool= (16MB below 0xF0000000 for TrustZone/modem)"
+          echo "  - gpupool= (GPU pool allocation)"
+          echo "  - rpm=1 (RPMh power management)"
+          echo "  - hv_wdt_pet=1 (Hypervisor watchdog)"
+          echo "  - rd=md0 (Mockfs ramdisk as root)"
+          echo "  - -v debug=0xc serial=0 cpus=1 keepsyms=1 ..."
+          echo ""
+          echo "Next Steps:"
+          echo "  1. Download flash package artifact"
+          echo "  2. Unzip and run ./flash-all.sh (or flash-all.bat on Windows)"
+          echo "  3. Device must be in fastboot mode with unlocked bootloader"
+          echo ""
+          echo "Documentation:"
+          echo "  - PORTING_SOLUTIONS_ARM64E_SM6225.md (architecture)"
+          echo "  - PORTING_PLAN_AUDIO_WIFI_SM6225.md (audio/wifi/modem)"
+          echo "  - NOTES_SAPPHIRE_HARDWARE.md (iOS 16 port analysis)"
