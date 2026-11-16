@@ -84454,10 +84454,10 @@ index e37762b..ec4c59b 100644
  
  SPTM_ENABLED_SOCS_MacOSX = t6000 t8112 t6020 t8122 t6030 t6031 t6041 t6050 t8132 t8142
  EXCLAVES_ENABLED_SOCS_MacOSX = t8142 t6050
-@@ -79,6 +79,7 @@ COMPONENT_LIST	= osfmk bsd libkern iokit pexpert libsa security san
+@@ -82,6 +82,8 @@ COMPONENT_LIST	= osfmk bsd libkern iokit pexpert libsa security san
  COMPONENT	= $(if $(word 2,$(subst /, ,$(RELATIVE_SOURCE_PATH))),$(word 2,$(subst /, ,$(RELATIVE_SOURCE_PATH))),$(firstword $(subst /, ,$(RELATIVE_SOURCE_PATH))))
  COMPONENT_IMPORT_LIST = $(filter-out $(COMPONENT),$(COMPONENT_LIST))
- 
+
 +MACHINE_FLAGS_ARM64_BCM2837 = -DARM64_BOARD_CONFIG_BCM2837 -Xclang -target-feature -Xclang +pan
 +MACHINE_FLAGS_ARM64_SAPPHIRE = -DARM64_BOARD_CONFIG_SAPPHIRE -Xclang -target-feature -Xclang +pan
  MACHINE_FLAGS_ARM64_T8101 = -DARM64_BOARD_CONFIG_T8101			-mcpu=apple-a14
