@@ -86,25 +86,24 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install Build Dependencies (macOS)
+      - name: Install Build Dependencies (Homebrew)
         run: |
           echo "=== Installing build dependencies ==="
           brew update
           brew install jq bash cmake ninja ccache aarch64-elf-gcc aarch64-elf-binutils python3 zstd
-          # Install Arm GNU Toolchain for AArch64 bare-metal (enxerto)
-          # Download portable toolchain if not available
+
+      - name: Install Arm GNU Toolchain (AArch64 bare-metal for enxerto)
+        run: |
           TOOLCHAIN_DIR="$HOME/arm-gnu-toolchain"
           if [ ! -f "$TOOLCHAIN_DIR/bin/aarch64-none-elf-gcc" ]; then
-            echo "Downloading Arm GNU Toolchain 13.3.Rel1..."
+            echo "Downloading Arm GNU Toolchain 13.3.Rel1 for darwin-arm64..."
             mkdir -p "$TOOLCHAIN_DIR"
             cd /tmp
             curl -L -o arm-toolchain.tar.xz \
-              "https://developer.arm.com/-/media/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-darwin-x86_64-aarch64-none-elf.tar.xz"
+              "https://developer.arm.com/-/media/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-darwin-arm64-aarch64-none-elf.tar.xz"
             tar -xf arm-toolchain.tar.xz -C "$TOOLCHAIN_DIR" --strip-components=1
           fi
           echo "$TOOLCHAIN_DIR/bin" >> $GITHUB_PATH
-          sw_vers
-          xcodebuild -version
           aarch64-none-elf-gcc --version
 
       - name: Ensure Executable Permissions
