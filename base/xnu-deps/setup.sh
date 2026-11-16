@@ -199,6 +199,7 @@ stage1_darwin() {
 		link "$(/usr/bin/xcrun --sdk iphoneos -f $tool)" host/bin/$tool
 	done
 	link "$(/usr/bin/xcrun --sdk iphoneos -f ld)" host/bin/ld64
+	link /usr/bin/xcrun host/bin/xcrun
 	link /usr/bin/unifdef host/bin/unifdef
 	link /bin/tcsh host/bin/tcsh
 	link /bin/csh host/bin/csh

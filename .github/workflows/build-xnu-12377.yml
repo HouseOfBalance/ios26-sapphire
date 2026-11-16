@@ -220,7 +220,7 @@ jobs:
             mkdir -p "$TOOLCHAIN_DIR"
             cd /tmp
             curl -L -o arm-toolchain.tar.xz \
-              "https://developer.arm.com/-/media/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-darwin-x86_64-aarch64-none-elf.tar.xz"
+              "https://developer.arm.com/-/media/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-darwin-arm64-aarch64-none-elf.tar.xz"
             tar -xf arm-toolchain.tar.xz -C "$TOOLCHAIN_DIR" --strip-components=1
           fi
           echo "$TOOLCHAIN_DIR/bin" >> $GITHUB_PATH
