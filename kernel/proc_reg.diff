@@ -1,0 +1,83 @@
+--- xnu-orig/osfmk/arm64/proc_reg.h	2026-11-17 01:44:29.713694000 +0700
++++ xnu-test/osfmk/arm64/proc_reg.h	2026-11-17 01:41:43.930921500 +0700
+@@ -80,6 +80,19 @@
+ #include <pexpert/arm/board_config.h>
+ #endif
+ 
++/*
++ * hakios/HAS_STD_PAC: mirror libkern/os/base.h's XNU_PTRAUTH_DATA_PTRS_PLAIN here so the
++ * assembler sees it too.  machine_routines_asm.h includes this header but NOT base.h, and the
++ * data-pointer auth macros (AUTDA_DIVERSIFIED etc.) must be gated on the exact same condition
++ * the C field qualifiers (XNU_PTRAUTH_SIGNED_PTR) are, or asm will autda a field the C side
++ * stored plain -> FPAC.  On this arm64e tree data pointers are left unsigned (the plain Mach-O
++ * loader has no keys to sign chained data fixups with); only code pointers / return addresses
++ * and the pacga state hash are authenticated.
++ */
++#if defined(__arm64e__) && !defined(XNU_PTRAUTH_SIGNED_DATA_PTRS) && !defined(XNU_PTRAUTH_DATA_PTRS_PLAIN)
++#define XNU_PTRAUTH_DATA_PTRS_PLAIN 1
++#endif
++
+ #if !CONFIG_SPTM
+ /*
+  * Processor registers for ARM
+@@ -251,6 +264,18 @@
+ /* D-Cache. */
+ #define MMU_CLINE   6
+ 
++#elif defined (BCM2837)
++
++/* Generic ARMv8.2+/ARMv9 (Cortex-A, QEMU virt): 64-byte cache lines. */
++#define MMU_I_CLINE 6
++#define MMU_CLINE   6
++
++#elif defined (SAPPHIRE)
++
++/* Qualcomm SM6225 (Cortex-A73/A53): 64-byte cache lines. */
++#define MMU_I_CLINE 6
++#define MMU_CLINE   6
++
+ #else
+ #error processor not supported
+ #endif
+@@ -609,7 +634,21 @@
+ 
+ #define SCTLR_RESERVED     ((3ULL << 28) | (1ULL << 20))
+ #if defined(HAS_APPLE_PAC)
+-
++#if HAS_STD_PAC
++/*
++ * Standard ARMv8.3 SCTLR_EL1.  EnIA, EnIB, EnDA and EnDB enable the signing instructions that use
++ * the A and B keys for EL0 and EL1 alike (with a bit clear, the instruction executes as a NOP and
++ * authentication always passes, which is how the kernel boots before it has keys).  The positions
++ * are architectural (ARM DDI 0487): EnIA 31, EnIB 30, EnDA 27, EnDB 13.  Bits 29:28 are LSMAOE and
++ * nTLSMD (RES1, set by SCTLR_RESERVED) -- not PAC enables; the loader's pac_enable() must set the
++ * same four bits, or it signs with a data key the kernel never actually enabled.
++ */
++#define SCTLR_PACIA_ENABLED_SHIFT 31
++#define SCTLR_PACIA_ENABLED       (1ULL << SCTLR_PACIA_ENABLED_SHIFT)
++#define SCTLR_PACIB_ENABLED       (1ULL << 30)
++#define SCTLR_PACDA_ENABLED       (1ULL << 27)
++#define SCTLR_PACDB_ENABLED       (1ULL << 13)
++#else /* HAS_STD_PAC */
+ // 31    PACIA_ENABLED AddPACIA and AuthIA functions enabled
+ #define SCTLR_PACIA_ENABLED_SHIFT 31
+ #define SCTLR_PACIA_ENABLED       (1ULL << SCTLR_PACIA_ENABLED_SHIFT)
+@@ -620,6 +659,7 @@
+ #define SCTLR_PACDA_ENABLED       (1ULL << 27)
+ // 13    PACDB_ENABLED  AddPACDB and AuthDB functions enabled
+ #define SCTLR_PACDB_ENABLED       (1ULL << 13)
++#endif /* HAS_STD_PAC */
+ 
+ #define SCTLR_PAC_KEYS_ENABLED    (SCTLR_PACIA_ENABLED | SCTLR_PACIB_ENABLED | SCTLR_PACDA_ENABLED | SCTLR_PACDB_ENABLED)
+ #endif /* defined(HAS_APPLE_PAC) */
+@@ -3011,7 +3051,9 @@
+ #define MIDR_TILOS_ACCP    (0x07B << MIDR_EL1_PNUM_SHIFT)
+ #endif /* defined(APPLEACC8) */
+ 
+-
++/* Qualcomm SM6225 (Cortex-A73/A53) */
++#define MIDR_CORTEX_A73           (0xC0A << MIDR_EL1_PNUM_SHIFT) | (0x41 << MIDR_EL1_IMP_SHIFT)
++#define MIDR_CORTEX_A53           (0xD03 << MIDR_EL1_PNUM_SHIFT) | (0x41 << MIDR_EL1_IMP_SHIFT)
+ 
+ /*
+  * Apple-ISA-Extensions ID Register.

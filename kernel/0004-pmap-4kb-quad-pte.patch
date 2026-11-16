@@ -115,9 +115,9 @@ index 563d118..bc660e9 100644
 @@ -983,7 +983,10 @@
  #define TCR_TG0_GRANULE_64KB    (1ULL << TCR_TG0_GRANULE_SHIFT)
  #define TCR_TG0_GRANULE_16KB    (2ULL << TCR_TG0_GRANULE_SHIFT)
- 
+
 -#if __ARM_16K_PG__
-+#if defined(BCM2837)
++#if defined(BCM2837) || defined(SAPPHIRE)
 +/* Snapdragon 685 SM6225 Cortex-A73/A53 baseline: TGran16==0, hardware requires 4KB granule */
 +#define TCR_TG0_GRANULE_SIZE    (TCR_TG0_GRANULE_4KB)
 +#elif __ARM_16K_PG__
@@ -127,9 +127,9 @@ index 563d118..bc660e9 100644
 @@ -1020,7 +1023,10 @@
  #define TCR_TG1_GRANULE_4KB      (2ULL << TCR_TG1_GRANULE_SHIFT)
  #define TCR_TG1_GRANULE_64KB     (3ULL << TCR_TG1_GRANULE_SHIFT)
- 
+
 -#if __ARM_16K_PG__
-+#if defined(BCM2837)
++#if defined(BCM2837) || defined(SAPPHIRE)
 +/* Snapdragon 685 SM6225 Cortex-A73/A53 baseline: TGran16==0, hardware requires 4KB granule */
 +#define TCR_TG1_GRANULE_SIZE     (TCR_TG1_GRANULE_4KB)
 +#elif __ARM_16K_PG__
@@ -141,7 +141,7 @@ index 563d118..bc660e9 100644
   * ARM Page Granule
   */
 -#ifdef __ARM_16K_PG__
-+#if defined(BCM2837)
++#if defined(BCM2837) || defined(SAPPHIRE)
 +#define ARM_PGSHIFT 12
 +#elif defined(__ARM_16K_PG__)
  #define ARM_PGSHIFT 14
@@ -168,3 +168,17 @@ index 2c9ea3f..779318c 100644
  /*
   * Pointer authentication.  These cores are standard ARMv8.3+/ARMv9 ones, not Apple silicon: the
   * signing instructions are the architectural ones and the key registers (APIAKey_EL1 and the rest)
+diff --git a/pexpert/pexpert/arm64/SAPPHIRE.h b/pexpert/pexpert/arm64/SAPPHIRE.h
+index 0000000..1234567 100644
+--- /dev/null
++++ b/pexpert/pexpert/arm64/SAPPHIRE.h
+@@ -0,0 +1,25 @@
++/*
++ * Translation Granule: Snapdragon 685 SM6225 Cortex-A73/A53 baseline has TGran16 == 0.
++ * The hardware MMU uses 4KB translation granules (ARM_PGSHIFT = 12), while the Mach VM
++ * uses 16KB virtual pages (PAGE_SHIFT = 14) via Quad-PTE emulation (PAGE_RATIO = 4).
++ */
++#undef __ARM_16K_PG__
++#define ARM_PGSHIFT               12
++#define ARM_PGBYTES               (1 << ARM_PGSHIFT)
++#define ARM_PGMASK                (ARM_PGBYTES - 1)

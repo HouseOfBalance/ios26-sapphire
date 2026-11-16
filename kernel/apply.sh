@@ -6,6 +6,9 @@ K=$(cd "$(dirname "$0")" && pwd)
 D=${1:?usage: apply.sh DIR}
 git clone --depth 1 --branch xnu-12377.121.6 https://github.com/apple-oss-distributions/xnu.git "$D"
 git -C "$D" apply --whitespace=nowarn "$K/xnu-12377.121.6-dada.patch"
+# Apply proc_reg.h fix for SAPPHIRE (Cortex-A73/A53 cache line config + MIDR)
+git -C "$D" apply --whitespace=nowarn "$K/proc_reg.diff"
+echo "applied proc_reg.diff (SAPPHIRE Cortex-A73/A53 support)"
 if [ -f "$K/0001-pac-trap-and-self-patch.patch" ]; then
 	git -C "$D" apply --whitespace=nowarn "$K/0001-pac-trap-and-self-patch.patch"
 	echo "applied 0001-pac-trap-and-self-patch.patch (ARMv8.0 PAC Trap-and-Self-Patch engine)"

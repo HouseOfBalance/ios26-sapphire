@@ -256,6 +256,8 @@ stage2() {
 	[ "$(cat $lib/.arch 2>/dev/null)" = "${XNU_ARCH:-arm64e}" ] || rm -f $lib/libfirehose_kernel.a $lib/libpthread_kext.a
 	[ "$(cat $lib/.machine 2>/dev/null)" = "$machine_config" ] || rm -f $lib/libfirehose_kernel.a $lib/libpthread_kext.a
 	log "exporting the kernel's headers (xnu-build.sh exporthdrs)"
+	# Ensure MACHINE_CONFIGS is exported for xnu-build.sh (must be uppercase SAPPHIRE)
+	export MACHINE_CONFIGS="${MACHINE_CONFIGS:-SAPPHIRE}"
 	"$DARWIN_REDWOOD/xnu-build.sh" -j$JOBS exporthdrs ||
 		{ [ -f exporthdrs.log ] && cat exporthdrs.log >&2; die "the kernel headers were not exported"; }
 	if [ ! -f $lib/libfirehose_kernel.a ]; then
