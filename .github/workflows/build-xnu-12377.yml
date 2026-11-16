@@ -55,22 +55,12 @@ jobs:
           brew update
           brew install jq bash cmake ninja ccache aarch64-elf-gcc aarch64-elf-binutils python3 zstd
 
-      - name: Download Arm GNU Toolchain (AArch64 bare-metal for enxerto)
+      - name: Verify Arm GNU Toolchain (Homebrew)
         run: |
-          TOOLCHAIN_DIR="$HOME/arm-gnu-toolchain"
-          if [ ! -f "$TOOLCHAIN_DIR/bin/aarch64-none-elf-gcc" ]; then
-            echo "Downloading Arm GNU Toolchain 13.3.Rel1 for darwin-arm64..."
-            mkdir -p "$TOOLCHAIN_DIR"
-            cd /tmp
-            curl -L -o arm-toolchain.tar.xz \
-              "https://developer.arm.com/-/media/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-darwin-arm64-aarch64-none-elf.tar.xz"
-            tar -xf arm-toolchain.tar.xz -C "$TOOLCHAIN_DIR" --strip-components=1
-          fi
-          echo "$TOOLCHAIN_DIR/bin" >> $GITHUB_PATH
-
-      - name: Verify Arm GNU Toolchain
-        run: |
-          aarch64-none-elf-gcc --version
+          aarch64-elf-gcc --version
+          aarch64-elf-ld --version
+          which aarch64-elf-gcc
+          echo "$(dirname $(which aarch64-elf-gcc))" >> $GITHUB_PATH
 
       - name: Ensure Executable Permissions
         run: |
