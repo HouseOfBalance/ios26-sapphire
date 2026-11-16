@@ -129,9 +129,9 @@ jobs:
           echo "=== Setting up XNU build environment (Stage 1) ==="
           export XNU_SRC="$PWD/xnu-src"
           export XNUDEPS="$PWD/base/xnu-deps"
-          export XNU_SDK_PATH="$XNUDEPS/sdk/iPhoneOS.xnu.sdk"
+          export XNU_SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
           export XNU_SDK_VERSION=26.0
-          export XNU_PLATFORM_PATH="$XNUDEPS/sdk/Platforms/iPhoneOS.platform"
+          export XNU_PLATFORM_PATH="$(xcrun --sdk iphoneos --show-sdk-platform-path)"
           export THEOS="${THEOS:-$HOME/theos}"
           export PATH="$XNUDEPS/host/bin:$PATH"
 
@@ -165,9 +165,9 @@ jobs:
           echo "=== Exporting kernel headers ==="
           export XNU_SRC="$PWD/xnu-src"
           export XNUDEPS="$PWD/base/xnu-deps"
-          export XNU_SDK_PATH="$XNUDEPS/sdk/iPhoneOS.xnu.sdk"
+          export XNU_SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
           export XNU_SDK_VERSION=26.0
-          export XNU_PLATFORM_PATH="$XNUDEPS/sdk/Platforms/iPhoneOS.platform"
+          export XNU_PLATFORM_PATH="$(xcrun --sdk iphoneos --show-sdk-platform-path)"
           export THEOS="${THEOS:-$HOME/theos}"
           export PATH="$XNUDEPS/host/bin:$PATH"
           export XNU_ARCH=arm64e
@@ -189,9 +189,9 @@ jobs:
           echo "=== Building static libraries for Sapphire ==="
           export XNU_SRC="$PWD/xnu-src"
           export XNUDEPS="$PWD/base/xnu-deps"
-          export XNU_SDK_PATH="$XNUDEPS/sdk/iPhoneOS.xnu.sdk"
+          export XNU_SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
           export XNU_SDK_VERSION=26.0
-          export XNU_PLATFORM_PATH="$XNUDEPS/sdk/Platforms/iPhoneOS.platform"
+          export XNU_PLATFORM_PATH="$(xcrun --sdk iphoneos --show-sdk-platform-path)"
           export THEOS="${THEOS:-$HOME/theos}"
           export PATH="$XNUDEPS/host/bin:$PATH"
           export XNU_ARCH=arm64e
@@ -219,9 +219,9 @@ jobs:
           echo "=== Compiling XNU Kernel for Sapphire ==="
           export XNU_SRC="$PWD/xnu-src"
           export XNUDEPS="$PWD/base/xnu-deps"
-          export XNU_SDK_PATH="$XNUDEPS/sdk/iPhoneOS.xnu.sdk"
+          export XNU_SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
           export XNU_SDK_VERSION=26.0
-          export XNU_PLATFORM_PATH="$XNUDEPS/sdk/Platforms/iPhoneOS.platform"
+          export XNU_PLATFORM_PATH="$(xcrun --sdk iphoneos --show-sdk-platform-path)"
           export THEOS="${THEOS:-$HOME/theos}"
           export PATH="$XNUDEPS/host/bin:$PATH"
 
